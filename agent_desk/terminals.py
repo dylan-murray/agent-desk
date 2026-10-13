@@ -179,7 +179,8 @@ class TerminalSession:
                     turn_ended=self.screen.turn_ended() if getattr(self, 'screen', None) else None,
                     events=[], question=question, exit_code=code, runtime_status=bool(status),
                     event_delivery_error='Claude channels are blocked by organization policy. Worker replies remain in Inbox.' if self.channel_blocked else None,
-                    coordinator_events=bool(self.coordinator), readouts=self.readouts_info(), restored=self.restored)
+                    coordinator_events=bool(self.coordinator), readouts=self.readouts_info(), restored=self.restored,
+                    cols=self.cols, rows=self.rows)
 
     def set_readouts(self, token, payload, published=None):
         if not isinstance(token, str) or not secrets.compare_digest(token, self.pane_token):
