@@ -41,6 +41,11 @@ iPhone ──SSH──▶ agent-desk mobile info | watch | launch     (JSON over
 
 ## Annotating the app
 
+<p>
+  <img src="../docs/images/ios-annotate.png" width="250" alt="A note pinned on a session row, naming the view and its source line">
+  <img src="../docs/images/ios-annotation-review.png" width="250" alt="Reviewing notes and choosing the agent to send them to">
+</p>
+
 For working on this app, turn on **Developer → Annotate this app**. A pencil button then floats
 over every screen, sheets included. Tap it, tap what should change, and type or dictate what you
 want. Each note keeps:
