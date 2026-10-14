@@ -23,8 +23,10 @@ struct TerminalScreen: View {
                 } description: {
                     Text("Only the desk itself can read or type into this session. To use it from your phone, turn off its lock in the pane's header on the desk.")
                 }
+                .annotationTarget("ProtectedSession")
             } else if let controller {
                 StatusBanner(phase: controller.phase, retry: controller.retry)
+                    .annotationTarget("StatusBanner")
                 ZStack {
                     GeometryReader { space in
                         // Whole rows only: SwiftTerm pins the last row to the bottom, so a height
@@ -32,6 +34,7 @@ struct TerminalScreen: View {
                         let row = Self.rowHeight(fontSize)
                         TerminalHost(controller: controller, fontSize: fontSize)
                             .frame(width: space.size.width, height: max(row, (space.size.height / row).rounded(.down) * row))
+                            .annotationTarget("Terminal", session?.name)
                     }
                     if controller.phase == .starting {
                         ProgressView("Attaching…").tint(Theme.ink2).foregroundStyle(Theme.ink2)
@@ -39,6 +42,7 @@ struct TerminalScreen: View {
                 }
                 if let menu = controller.approval, session?.isRunning != false {
                     ApprovalBar(menu: menu, question: session?.question) { controller.send($0) }
+                        .annotationTarget("ApprovalBar")
                 }
             }
         }
@@ -80,6 +84,7 @@ struct TerminalScreen: View {
         .sheet(isPresented: $dictating) {
             DictationSheet { text in controller?.send(text) }
                 .presentationDetents([.height(260)])
+                .annotationLayer()
         }
         .task {
             guard controller == nil, let connection, session?.isProtected != true else { return }

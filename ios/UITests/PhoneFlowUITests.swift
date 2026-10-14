@@ -88,6 +88,44 @@ final class PhoneFlowUITests: XCTestCase {
         shot("08b-protected")
         back()
 
+        // Developer annotations: turned on, a note pinned on a session row goes to an agent.
+        back()
+        app.buttons["developer-link"].tap()
+        let toggle = app.switches["developer-annotations"]
+        XCTAssert(toggle.waitForExistence(timeout: 5))
+        // The switch itself, at the trailing end of the row.
+        toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
+        XCTAssertEqual(toggle.value as? String, "1")
+        XCTAssert(app.buttons["annotate"].waitForExistence(timeout: 5))
+        shot("08c-developer")
+        back()
+        app.staticTexts["Studio Mac"].firstMatch.tap()
+        let row = app.descendants(matching: .any)["session-Partial refunds"].firstMatch
+        XCTAssert(row.waitForExistence(timeout: 20))
+        app.buttons["annotate"].tap()
+        row.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        let text = app.descendants(matching: .any)["annotation-text"].firstMatch
+        XCTAssert(text.waitForExistence(timeout: 5))
+        text.typeText("Show how long the session has been producing output")
+        shot("09a-annotation-note")
+        app.buttons["annotation-save"].tap()
+        app.buttons["annotations-review"].tap()
+        app.buttons["annotations-destination"].tap()
+        app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Partial refunds'")).firstMatch.tap()
+        shot("09b-annotation-review")
+        app.buttons["annotations-send"].tap()
+        let queued = app.staticTexts.matching(NSPredicate(format: "label CONTAINS '1 note queued for Partial refunds'")).firstMatch
+        XCTAssert(queued.waitForExistence(timeout: 30))
+        shot("09c-annotation-sent")
+        // The desk saved the note with the view it was pinned to, and its screenshot beside it.
+        let saved = try submittedNote(containing: "Show how long the session has been producing output")
+        let element = try XCTUnwrap(saved["element"] as? [String: Any])
+        XCTAssertEqual(element["id"] as? String, "SessionRow")
+        XCTAssertEqual(element["detail"] as? String, "Partial refunds")
+        XCTAssert((element["source"] as? String)?.wholeMatch(of: /SessionsView\.swift:\d+/) != nil, "\(element)")
+        XCTAssertEqual(saved["screen"] as? String, "Sessions · Studio Mac")
+        XCTAssert(FileManager.default.fileExists(atPath: try XCTUnwrap(saved["screenshot"] as? String)))
+
         // Launch a new agent into a project.
         app.navigationBars.buttons["Launch an agent"].tap()
         app.buttons["launch-agent"].tap()
@@ -126,6 +164,24 @@ final class PhoneFlowUITests: XCTestCase {
             .press(forDuration: 0.1, thenDragTo: springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.7)))
         sleep(3)
         shot("13-lock-screen")
+    }
+
+    /// The note the desk saved for its agent, from the desk's data directory.
+    private func submittedNote(containing text: String) throws -> [String: Any] {
+        let folder = URL(fileURLWithPath: try XCTUnwrap(env["E2E_DATA_DIR"])).appendingPathComponent("feedback-submissions")
+        // Newest first: earlier runs may have sent the same words.
+        let files = try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.contentModificationDateKey])
+            .filter { $0.pathExtension == "json" }
+            .sorted { modified($0) > modified($1) }
+        for file in files {
+            let notes = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [[String: Any]] ?? []
+            if let note = notes.first(where: { ($0["note"] as? String) == text }) { return note }
+        }
+        return try XCTUnwrap(nil as [String: Any]?, "No submission with that note in \(folder.path)")
+    }
+
+    private func modified(_ file: URL) -> Date {
+        (try? file.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
     }
 
     /// Every failure leaves a picture of what was on screen.

@@ -307,6 +307,56 @@ class DeskTests(unittest.TestCase):
         with self.assertRaisesRegex(mobile.DeskError, f'Agent Desk on port {self.port} has not written its helper token to '):
             desk.request('/api/agents')
 
+    def submitted(self, request):
+        """What `feedback` hands the desk's annotation endpoint, without delivering it."""
+        sent = []
+
+        def request_to(path, body=None):
+            self.assertEqual(path, '/api/coordinators/submit-feedback')
+            sent.append(body)
+            return {'sent': False, 'queued': True, 'target_id': body['target_id'], 'duplicate': False}
+
+        with patch.object(self.desk, 'request', request_to):
+            result = mobile.feedback(self.desk, request)
+        return result, sent
+
+    def test_feedback_saves_screenshots_beside_the_notes_and_uses_the_desks_annotation_delivery(self):
+        jpeg = b'\xff\xd8\xff\xe0' + b'pixels' * 100
+        note = dict(id='note-1', note='Make the approve button say Approve', screen='Terminal · Fix coupon total',
+                    element=dict(id='ApprovalBar', source='App/Views/TerminalScreen.swift:120'))
+        request = dict(request_id='phone-1', target_id='terminal-abc', notes=[note, dict(id='note-2', note='Typo in the title')],
+                       screenshots={'note-1': base64.b64encode(jpeg).decode()})
+        result, sent = self.submitted(request)
+        self.assertEqual(result, dict(type='feedback', target_id='terminal-abc', sent=False, queued=True, duplicate=False))
+        [body] = sent
+        original = json.loads(json.dumps(body))
+        self.assertEqual((body['request_id'], body['target_id']), ('phone-1', 'terminal-abc'))
+        first, second = body['notes']
+        screenshot = Path(first.pop('screenshot'))
+        self.assertEqual((first, second), (note, dict(id='note-2', note='Typo in the title')))
+        # Owner-only, in the desk's data directory, named after the submission so a repeat reuses it.
+        self.assertEqual(screenshot, Path(self.temp.name) / 'feedback-submissions' / 'screenshots' / 'phone-1-note-1.jpg')
+        self.assertEqual((screenshot.read_bytes(), screenshot.stat().st_mode & 0o777, screenshot.parent.stat().st_mode & 0o777),
+                         (jpeg, 0o600, 0o700))
+        _, again = self.submitted(request)
+        self.assertEqual(again, [original])
+
+    def test_feedback_refuses_what_it_cannot_save(self):
+        note = dict(id='n', note='x')
+        for request, error in ((dict(request_id='../x', target_id='t', notes=[note]), 'Submission ID required'),
+                               (dict(request_id='r', target_id='t', notes=[]), 'Choose annotations to send'),
+                               (dict(request_id='r', target_id='t', notes=[note], screenshots={'n': 'not base64!'}), 'not valid base64'),
+                               (dict(request_id='r', target_id='t', notes=[note], screenshots={'n': base64.b64encode(b'GIF89a').decode()}),
+                                'JPEG or PNG'),
+                               ([], 'Expected a JSON object')):
+            with self.subTest(error=error), self.assertRaisesRegex(mobile.DeskError, error):
+                self.submitted(request)
+
+    def test_feedback_reaches_the_desks_annotation_endpoint(self):
+        # The real endpoint, with the phone's helper token: it validates the target before anything is delivered.
+        with self.assertRaisesRegex(mobile.DeskError, 'Terminal not found|Choose an agent'):
+            mobile.feedback(self.desk, dict(request_id='phone-2', target_id='terminal-missing', notes=[dict(id='n', note='x')]))
+
     def test_info_lists_desks_launch_choices_and_projects(self):
         value = mobile.info(self.desk)
         self.assertEqual((value['type'], value['protocol'], value['port']), ('info', mobile.PROTOCOL, self.port))

@@ -20,9 +20,12 @@ struct HostEditor: View {
             Form {
                 Section {
                     field("Name", text: $host.name, prompt: "Studio Mac", id: "host-name", plain: true)
+                        .annotationTarget("HostEditorName")
                     field("Host", text: $host.hostname, prompt: "mac.tail1234.ts.net", id: "host-hostname")
                         .keyboardType(.URL)
+                        .annotationTarget("HostEditorHost")
                     field("User", text: $host.username, prompt: "you", id: "host-user")
+                        .annotationTarget("HostEditorUser")
                 } footer: {
                     Text("The machine running Agent Desk, as you would reach it with ssh.")
                 }

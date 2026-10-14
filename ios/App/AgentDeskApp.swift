@@ -35,6 +35,8 @@ struct AgentDeskApp: App {
 struct RootView: View {
     @Environment(AppModel.self) private var model
     @State private var openedOnlyHost = false
+    @State private var window: UIWindow?
+    @AppStorage(DeveloperSettings.annotationsKey) private var annotating = false
 
     var body: some View {
         @Bindable var model = model
@@ -45,15 +47,49 @@ struct RootView: View {
                     case .host(let id): SessionsView(hostID: id)
                     case .terminal(let host, let session): TerminalScreen(hostID: host, sessionID: session)
                     case .phoneKey: PhoneKeyView()
+                    case .developer: DeveloperView()
                     }
                 }
         }
         .background(Theme.page)
+        .background(WindowReader(window: $window))
+        .onChange(of: [annotating, window != nil], initial: true) {
+            // Developer annotations live in a window of their own, above every sheet.
+            guard let window else { return }
+            if annotating {
+                Annotations.shared.describeScreen = { [model] in model.describeScreen() }
+                AnnotationOverlay.install(over: window, model: model)
+            } else {
+                AnnotationOverlay.remove()
+            }
+        }
         .onAppear {
             // With one desk there is nothing to choose: go straight to its sessions.
             guard !openedOnlyHost, model.path.isEmpty, model.hosts.count == 1, let only = model.hosts.first else { return }
             openedOnlyHost = true
             model.path = [.host(only.id)]
+        }
+    }
+}
+
+/// Finds the window SwiftUI put the app in.
+private struct WindowReader: UIViewRepresentable {
+    @Binding var window: UIWindow?
+
+    func makeUIView(context: Context) -> Reader {
+        let view = Reader()
+        view.found = { window = $0 }
+        return view
+    }
+
+    func updateUIView(_ view: Reader, context: Context) {}
+
+    final class Reader: UIView {
+        var found: ((UIWindow) -> Void)?
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            if let window { DispatchQueue.main.async { [found] in found?(window) } }
         }
     }
 }

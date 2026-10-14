@@ -17,6 +17,7 @@ final class AppModel {
         case host(UUID)
         case terminal(host: UUID, session: String)
         case phoneKey
+        case developer
     }
 
     init(defaults: UserDefaults = .standard) {
@@ -27,6 +28,20 @@ final class AppModel {
     }
 
     func host(_ id: UUID) -> DeskHost? { hosts.first { $0.id == id } }
+
+    /// Connections opened so far, in the order of the hosts list.
+    var openConnections: [DeskConnection] { hosts.compactMap { connections[$0.id] } }
+
+    /// The screen on show, as a developer annotation describes it.
+    func describeScreen() -> String {
+        switch path.last {
+        case nil: hosts.isEmpty ? "Welcome" : "Desks"
+        case .host(let id): "Sessions · \(host(id)?.name ?? "desk")"
+        case .terminal(let host, let session): "Terminal · \(connections[host]?.session(session)?.name ?? session)"
+        case .phoneKey: "This iPhone's key"
+        case .developer: "Developer"
+        }
+    }
 
     func save(_ host: DeskHost) {
         if let index = hosts.firstIndex(where: { $0.id == host.id }) {

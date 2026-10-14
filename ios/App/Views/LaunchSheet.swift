@@ -62,6 +62,7 @@ struct LaunchSheet: View {
                     }
                     .pickerStyle(.navigationLink)
                     .accessibilityIdentifier("launch-agent")
+                    .annotationTarget("LaunchAgentPicker")
                     NavigationLink {
                         ProjectPicker(projects: info.projects, selection: $project)
                     } label: {
@@ -70,6 +71,7 @@ struct LaunchSheet: View {
                         }
                     }
                     .accessibilityIdentifier("launch-project")
+                    .annotationTarget("LaunchProjectPicker")
                     if info.desks.count > 1 {
                         Picker("Desk", selection: $desk) {
                             ForEach(info.desks) { Text($0.name).tag($0.id) }
@@ -112,6 +114,7 @@ struct LaunchSheet: View {
                     Section {
                         TextField("What should it do?", text: $prompt, axis: .vertical)
                             .lineLimit(3...8)
+                            .annotationTarget("LaunchPrompt")
                         Button {
                             dictating = .prompt
                         } label: {
@@ -150,6 +153,7 @@ struct LaunchSheet: View {
                     }
                 }
                 .presentationDetents([.height(260)])
+                .annotationLayer()
             }
             .onChange(of: coordinating) {
                 // As at the desk: a shell or another CLI cannot coordinate, so Claude stands in.

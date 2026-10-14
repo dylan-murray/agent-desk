@@ -27,6 +27,7 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 from agent_desk import desk_tokens, websocket
+from agent_desk.paths import DATA_DIR
 
 # Bumped when a reply changes shape in a way an installed app cannot ignore.
 PROTOCOL = 1
@@ -399,6 +400,56 @@ def launch(desk, request):
     return dict(type='launched', session=session)
 
 
+# The desk's own limits for a submission ID; screenshots are named after it.
+SUBMISSION_ID = re.compile(r'[a-zA-Z0-9_-]{1,90}')
+SCREENSHOT_LIMIT = 4 * 1024 * 1024
+SCREENSHOT_TYPES = {b'\xff\xd8\xff': '.jpg', b'\x89PNG\r\n\x1a\n': '.png'}
+
+
+def feedback(desk, request):
+    """Hands annotations made on the phone to a coding agent, as the desk's annotation tools do.
+
+    Each note's screenshot is saved in the desk's data directory, owner-only, and the note points
+    at it, so the agent sees what the person saw. Delivery, queueing and duplicate submissions are
+    the desk's: this goes through the same endpoint as its annotation tools.
+    """
+    if not isinstance(request, dict):
+        raise DeskError('Expected a JSON object')
+    submission, notes, images = request.get('request_id'), request.get('notes'), request.get('screenshots') or {}
+    if not isinstance(submission, str) or not SUBMISSION_ID.fullmatch(submission):
+        raise DeskError('Submission ID required')
+    if not isinstance(notes, list) or not notes or not all(isinstance(n, dict) and isinstance(n.get('id'), str) for n in notes):
+        raise DeskError('Choose annotations to send')
+    if not isinstance(images, dict):
+        raise DeskError('Screenshots must map note IDs to images')
+    folder = Path(desk.data_dir or DATA_DIR) / 'feedback-submissions' / 'screenshots'
+    sent = []
+    for note in notes:
+        image = images.get(note['id'])
+        if image is not None:
+            try:
+                data = base64.b64decode(image, validate=True)
+            except (TypeError, ValueError):
+                raise DeskError('A screenshot is not valid base64') from None
+            if len(data) > SCREENSHOT_LIMIT:
+                raise DeskError('A screenshot is larger than 4 MB')
+            suffix = next((kind for magic, kind in SCREENSHOT_TYPES.items() if data.startswith(magic)), None)
+            if not suffix:
+                raise DeskError('Screenshots must be JPEG or PNG images')
+            folder.mkdir(mode=0o700, parents=True, exist_ok=True)
+            path = folder / (submission + '-' + re.sub(r'[^a-zA-Z0-9_-]', '_', note['id'])[:60] + suffix)
+            # Replaced whole, so a repeated submission names the same file with the same bytes.
+            temp = path.with_suffix('.tmp')
+            with os.fdopen(os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), 'wb') as stream:
+                stream.write(data)
+            os.replace(temp, path)
+            note = dict(note, screenshot=str(path))
+        sent.append(note)
+    result = desk.request('/api/coordinators/submit-feedback', dict(request_id=submission, target_id=request.get('target_id'), notes=sent))
+    return dict(type='feedback', target_id=result.get('target_id'), sent=bool(result.get('sent')),
+                queued=bool(result.get('queued')), duplicate=bool(result.get('duplicate')))
+
+
 def session_record(agent, approval, now):
     live = agent.get('exit_code') is None
     status = agent.get('status')
@@ -596,6 +647,8 @@ def mobile_main(argv):
     watch = commands.add_parser('watch', help='One JSON line per change to desks and sessions')
     watch.add_argument('--once', action='store_true', help='Print one snapshot after every screen has been read, then exit')
     commands.add_parser('launch', help='Start a pane from a JSON request on stdin: {"choice", "cwd", "desk", "prompt"}')
+    commands.add_parser('feedback', help='Send annotations to a coding agent, from JSON on stdin: '
+                                         '{"request_id", "target_id", "notes", "screenshots": {note id: base64 image}}')
     args = parser.parse_args(argv)
     desk = Desk(args.port)
     try:
@@ -608,7 +661,7 @@ def mobile_main(argv):
                 request = json.loads(sys.stdin.read())
             except ValueError:
                 raise DeskError('Expected a JSON object on stdin') from None
-            print(json.dumps(launch(desk, request)))
+            print(json.dumps(feedback(desk, request) if args.command == 'feedback' else launch(desk, request)))
     except DeskError as error:
         print(json.dumps(dict(type='error', protocol=PROTOCOL, message=str(error))))
         return 1

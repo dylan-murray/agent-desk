@@ -39,6 +39,34 @@ iPhone ──SSH──▶ agent-desk mobile info | watch | launch     (JSON over
   becomes the pane's while the phone is attached. Leaving the terminal on the phone stops
   `mosh-server`; the pane keeps running.
 
+## Annotating the app
+
+For working on this app, turn on **Developer → Annotate this app**. A pencil button then floats
+over every screen, sheets included. Tap it, tap what should change, and type or dictate what you
+want. Each note keeps:
+
+- a screenshot with the pin and the outline of the view it landed on,
+- the screen, and the tagged view under the pin: its name, what it shows, and the Swift file and
+  line that draws it (from `.annotationTarget(...)` at the call site),
+- the point, the display size and scale, appearance and text size, the device and iOS version.
+
+Notes stay on the phone until **Review → Send to** hands them to a Claude, Codex, Grok, OpenCode
+or Pi session at the top level of a desk. They go the way the desk's own annotation tools send
+browser feedback: `agent-desk mobile feedback` saves each screenshot owner-only in the desk's data
+directory, and the desk's feedback delivery types the notes into the agent's prompt, or holds
+them until the prompt is empty. Sending the same notes again is recognised, not delivered twice.
+
+It works the same in the Simulator on your Mac and on an iPhone, and nothing about it shows until
+the toggle is on. To make a new view easy to point at, tag it:
+
+```swift
+SessionRow(session: session)
+    .annotationTarget("SessionRow", session.name)
+```
+
+and mark a sheet's content with `.annotationLayer()` so pins on the sheet never land on the screen
+behind it.
+
 ## Set up the machine running the desk
 
 1. Make it reachable over SSH. On a Mac, turn on Remote Login in System Settings → General →

@@ -27,6 +27,7 @@ struct PhoneKeyView: View {
                         SectionLabel(text: "Public key")
                         MonoBlock(text: line, identifier: "phone-key")
                             .frame(maxWidth: .infinity, alignment: .leading)
+                            .annotationTarget("PublicKey")
                             .card()
                         HStack(spacing: 10) {
                             Button {

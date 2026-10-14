@@ -14,9 +14,11 @@ struct HostsView: View {
                     Text("Agent Desk").font(.title2.weight(.semibold)).tracking(-0.6)
                 }
                 .padding(.top, 6)
+                .annotationTarget("AppTitle")
 
                 if model.hosts.isEmpty {
                     WelcomeCard { editing = DeskHost(name: "", hostname: "", username: "") }
+                        .annotationTarget("WelcomeCard")
                 } else {
                     VStack(alignment: .leading, spacing: 10) {
                         SectionLabel(text: "Desks", count: model.hosts.count)
@@ -25,6 +27,7 @@ struct HostsView: View {
                                 HostRow(host: host, connection: model.connection(host.id))
                             }
                             .buttonStyle(.plain)
+                            .annotationTarget("HostRow", host.name)
                             .contextMenu {
                                 Button("Edit", systemImage: "pencil") { editing = host }
                                 Button("Remove", systemImage: "trash", role: .destructive) { model.delete(host.id) }
@@ -60,6 +63,23 @@ struct HostsView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("phone-key-link")
+                .annotationTarget("PhoneKeyLink")
+
+                NavigationLink(value: AppModel.Route.developer) {
+                    HStack(spacing: 12) {
+                        Image(systemName: "hammer")
+                            .foregroundStyle(Theme.ink2)
+                            .frame(width: 30, height: 30)
+                            .background(Theme.raised, in: RoundedRectangle(cornerRadius: 8))
+                        Text("Developer").font(.subheadline.weight(.medium))
+                        Spacer()
+                        Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(Theme.muted)
+                    }
+                    .card()
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("developer-link")
+                .annotationTarget("DeveloperLink")
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 16)
@@ -72,6 +92,7 @@ struct HostsView: View {
                 model.save(saved)
                 if model.hosts.count == 1 { model.path = [.host(saved.id)] }
             }
+            .annotationLayer()
         }
     }
 }

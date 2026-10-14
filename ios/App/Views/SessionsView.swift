@@ -26,13 +26,17 @@ struct SessionsView: View {
                 switch connection.state {
                 case .needsTrust(let key):
                     TrustCard(host: connection.host, key: key, trust: { connection.trust(key) })
+                        .annotationTarget("TrustCard")
                 case .keyChanged(let expected, let presented):
                     KeyChangedCard(expected: expected, presented: presented)
+                        .annotationTarget("KeyChangedCard")
                 case .failed(let message):
                     FailureCard(message: message, retryIn: connection.retryIn, retry: connection.retryNow)
+                        .annotationTarget("FailureCard")
                 case .idle, .connecting:
                     if connection.snapshot == nil {
                         ConnectingCard(host: connection.host)
+                            .annotationTarget("ConnectingCard")
                     }
                 case .connected:
                     EmptyView()
@@ -70,6 +74,7 @@ struct SessionsView: View {
                 LaunchSheet(connection: connection, info: info, desk: deskFilter) { id in
                     model.path.append(.terminal(host: hostID, session: id))
                 }
+                .annotationLayer()
             }
         }
         .sheet(isPresented: $editing) {
@@ -77,6 +82,7 @@ struct SessionsView: View {
                 model.save(saved)
                 connection.retryNow()
             }
+            .annotationLayer()
         }
     }
 
@@ -89,9 +95,11 @@ struct SessionsView: View {
 
         if snapshot.desks.count > 1 {
             DeskPicker(desks: snapshot.desks, sessions: snapshot.sessions, selection: $deskFilter)
+                .annotationTarget("DeskPicker")
         }
         if visible.isEmpty {
             EmptyDesk(launch: { launching = true }, canLaunch: connection.info != nil)
+                .annotationTarget("EmptyDesk")
         }
         if !waiting.isEmpty {
             group("Needs you", waiting, highlight: true)
@@ -128,6 +136,7 @@ struct SessionsView: View {
     private func group(_ title: String, _ sessions: [Session], highlight: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             SectionLabel(text: title, count: sessions.count)
+                .annotationTarget("SectionLabel", title)
             ForEach(sessions) { row($0, highlight: highlight) }
         }
     }
@@ -137,6 +146,7 @@ struct SessionsView: View {
             SessionRow(session: session, highlight: highlight)
         }
         .buttonStyle(.plain)
+        .annotationTarget("SessionRow", session.name)
     }
 }
 
