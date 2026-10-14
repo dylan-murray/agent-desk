@@ -26,7 +26,7 @@ back in one inbox.
 
 ## ✨ What you get
 
-- 🖥️ **Terminals** for Claude Code, Codex, Grok, OpenCode, and Pi, up to 16 in resizable layouts
+- 🖥️ **Terminals** for Claude Code, Codex, Grok, OpenCode, Pi, and more, up to 16 in resizable layouts
 - 🗂️ **Desks** that keep separate projects' agents apart, each with its own panes
 - 🧭 **Coordinators** that hand work to agents and track what comes back
 - 🔀 **Model router** support, so coordinators pick each worker's model and harness per task
