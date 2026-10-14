@@ -161,9 +161,19 @@ class DeskTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn(b'[Agent Desk: Terminal not found]', received)
 
+    def printed(self, session, text, seconds=10):
+        """Waits until the pane has printed `text`: a just-launched shell may not have yet."""
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline:
+            if text in base64.b64decode(self.manager.output(session.id, 0)['data']):
+                return
+            time.sleep(.05)
+        self.fail(f'{session.id} never printed {text!r}')
+
     def test_watch_reads_approval_prompts_from_the_terminal_screen(self):
         approval = self.launch('/bin/sh', '-c', APPROVAL)
         quiet = self.launch('/bin/sh', '-c', 'sleep 30')
+        self.printed(approval, b'2. No')
         out = io.StringIO()
         mobile.Watch(self.desk, out).run(once=True)
         snapshot = json.loads(out.getvalue())

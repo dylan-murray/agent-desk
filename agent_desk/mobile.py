@@ -393,6 +393,8 @@ class Watch:
             with self.lock:
                 if message['id'] in self.subscribed:
                     self.approvals[message['id']] = message['approval']
+                    if message.get('caught_up'):
+                        self.subscribed[message['id']] = True
             self.changed.set()
 
     def tell_reader(self, **message):
@@ -411,9 +413,13 @@ class Watch:
                         continue
                     self.tell_reader(op='output', id=identity, data=message['data'], truncated=message.get('truncated', False))
                     if not message['data'] and not self.subscribed[identity]:
-                        # Replayed history is read before a screen is trusted, as in the browser.
-                        self.subscribed[identity] = True
-                        self.changed.set()
+                        # Replayed history is read before a screen is trusted, as in the browser:
+                        # the reader confirms once it has drawn everything sent before this.
+                        if self.reader:
+                            self.tell_reader(op='caught_up', id=identity)
+                        else:
+                            self.subscribed[identity] = True
+                            self.changed.set()
         except (websocket.Closed, ValueError, OSError):
             with self.lock:
                 if self.socket is socket:
