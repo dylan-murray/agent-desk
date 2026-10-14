@@ -32,7 +32,7 @@ def upgrade_error(headers):
 def accept(handler):
     """Switch an HTTP request that passed upgrade_error() to a WebSocket."""
     key = handler.headers['Sec-WebSocket-Key']
-    digest = base64.b64encode(hashlib.sha1((key + GUID).encode()).digest()).decode()
+    digest = base64.b64encode(hashlib.sha1((key + GUID).encode()).digest()).decode()  # nosemgrep: python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1
     # Written directly: BaseHTTPRequestHandler would answer with its default HTTP/1.0 status line.
     handler.wfile.write(('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n'
                          f'Sec-WebSocket-Accept: {digest}\r\n\r\n').encode())

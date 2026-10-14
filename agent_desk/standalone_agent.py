@@ -39,7 +39,7 @@ def main():
     # to restore the terminal and start the user's shell when the agent exits.
     signal.signal(signal.SIGINT,lambda *_:None)
     try:
-        child=subprocess.Popen(argv)
+        child=subprocess.Popen(argv)  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
         code=child.wait()
     except OSError as error:
         print('Could not start agent: '+str(error),flush=True)
@@ -54,7 +54,7 @@ def main():
     signal.signal(signal.SIGTTOU,signal.SIG_DFL)
     shell=os.environ.get('SHELL') or login_shell()
     if not Path(shell).is_file():shell=login_shell()
-    os.execv(shell,[shell,'-il'])
+    os.execv(shell,[shell,'-il'])  # nosemgrep: python.lang.security.audit.dangerous-os-exec-tainted-env-args.dangerous-os-exec-tainted-env-args
 
 
 if __name__=='__main__':main()
