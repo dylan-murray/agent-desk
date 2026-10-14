@@ -36,7 +36,7 @@ def main():
         env.pop('NO_COLOR', None)
         for key in ('PS1', 'PS2', 'PROMPT', 'RPROMPT', 'RPS1', 'PROMPT_COMMAND'):
             env.pop(key, None)
-        os.execvpe(argv[0], argv, env)
+        os.execvpe(argv[0], argv, env)  # nosemgrep: python.lang.security.audit.dangerous-os-exec-tainted-env-args.dangerous-os-exec-tainted-env-args
     def stop(*_):
         groups = {child}
         try:

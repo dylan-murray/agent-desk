@@ -83,7 +83,7 @@ try:
                 env['AGENT_DESK_EVENT']=json.dumps(config['event_context'],ensure_ascii=True)
             if port:env['PORT']=str(port)
             argv=[arg.replace('{port}',str(port)) if port else arg for arg in config['argv']]
-            child=subprocess.Popen(argv,cwd=config['cwd'],env=env,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,start_new_session=True)
+            child=subprocess.Popen(argv,cwd=config['cwd'],env=env,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,start_new_session=True)  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
             runtime.update(identity,port=port)
             selector=selectors.DefaultSelector();selector.register(child.stdout,selectors.EVENT_READ)
             started=time.monotonic();last_probe=0

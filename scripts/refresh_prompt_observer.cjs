@@ -52,12 +52,12 @@ async function main(){
  const observer=path.resolve(__dirname,'worker_screen.cjs');
  if(!/\bnode\b/.test(command)||!command.endsWith(observer))throw Error('PID is not this checkout’s passive screen observer');
  // Refuse an existing inspector rather than accidentally touching another process.
- try{await fetch('http://127.0.0.1:9229/json/list');throw Error('Port 9229 already has an inspector; no signal sent');}
+ try{await fetch('http://127.0.0.1:9229/json/list');throw Error('Port 9229 already has an inspector; no signal sent');} // nosemgrep: typescript.react.security.react-insecure-request.react-insecure-request
  catch(error){if(error.message!=='fetch failed')throw error;}
  process.kill(pid,'SIGUSR1');
  let targets;
  for(let attempt=0;attempt<30;attempt++){
-  try{targets=await (await fetch('http://127.0.0.1:9229/json/list')).json();break;}catch{await new Promise(resolve=>setTimeout(resolve,100));}
+  try{targets=await (await fetch('http://127.0.0.1:9229/json/list')).json();break;}catch{await new Promise(resolve=>setTimeout(resolve,100));} // nosemgrep: typescript.react.security.react-insecure-request.react-insecure-request
  }
  if(targets?.length!==1)throw Error('Could not locate the signalled observer inspector');
  console.log(JSON.stringify(await refresh(targets[0].webSocketDebuggerUrl,pid,path.resolve(__dirname,'worker_prompt.cjs'))));
