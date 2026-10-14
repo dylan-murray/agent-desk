@@ -275,6 +275,21 @@ private struct ReviewPanel: View {
         return choices.first { $0.connection.host.id == destination.host && $0.session.id == destination.session }
     }
 
+    private var destinationFooter: String {
+        guard !choices.isEmpty else {
+            return "Open a desk with a Claude, Codex, Grok, OpenCode or Pi session, or a coordinator, running. Workers take feedback through their coordinator."
+        }
+        guard let session = chosen?.session else { return "Choose the agent to send the notes to." }
+        let route = session.feedbackTarget == session.id ? "" : "Delivered to \(session.feedbackTargetName ?? "its coordinator"), this agent's coordinator. "
+        return route + "The desk types the notes into the agent's prompt, or holds them until the prompt is empty."
+    }
+
+    private func destinationDetail(_ choice: (connection: DeskConnection, session: Session)) -> String {
+        let route = choice.session.feedbackTarget == choice.session.id ? nil : "via \(choice.session.feedbackTargetName ?? "its coordinator")"
+        return [choice.session.project, harnessName(choice.session.harness), route, choice.connection.host.name]
+            .compactMap { $0 }.joined(separator: " · ")
+    }
+
     var body: some View {
         NavigationStack {
             List {
@@ -291,8 +306,11 @@ private struct ReviewPanel: View {
                 Section {
                     Menu {
                         ForEach(choices, id: \.session.id) { choice in
-                            Button("\(choice.session.name) · \(choice.session.project ?? "") · \(choice.connection.host.name)") {
+                            Button {
                                 annotations.choose(.init(host: choice.connection.host.id, session: choice.session.id))
+                            } label: {
+                                Text(choice.session.name)
+                                Text(destinationDetail(choice))
                             }
                         }
                     } label: {
@@ -306,9 +324,7 @@ private struct ReviewPanel: View {
                     .disabled(choices.isEmpty)
                     .accessibilityIdentifier("annotations-destination")
                 } footer: {
-                    Text(choices.isEmpty
-                         ? "Open a desk with a Claude, Codex, Grok, OpenCode or Pi session running at the top level. Workers take feedback through their coordinator."
-                         : "The desk types the notes into that agent's prompt, or holds them until the prompt is empty.")
+                    Text(destinationFooter)
                 }
                 if let outcome = annotations.outcome {
                     Section { Text(outcome).font(.footnote).foregroundStyle(Theme.ink2) }

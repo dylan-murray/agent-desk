@@ -38,7 +38,8 @@ OUTPUT_RECENT = 4
 REFRESH = 2
 HEARTBEAT = 15
 ROOT = Path(__file__).resolve().parents[1]
-# The account profiles that run Claude or Codex, and the CLIs that can coordinate other agents.
+# The CLIs annotations can be typed into, and the account profiles that run Claude or Codex.
+FEEDBACK_HARNESSES = ('claude', 'codex', 'grok', 'opencode', 'pi')
 AGENT_PROFILE = re.compile(r'(claude|codex)(-[a-z0-9-]+)?')
 COORDINATOR_HARNESSES = ('codex', 'claude', 'grok')
 
@@ -450,7 +451,26 @@ def feedback(desk, request):
                 queued=bool(result.get('queued')), duplicate=bool(result.get('duplicate')))
 
 
-def session_record(agent, approval, now):
+def feedback_targets(agents):
+    """Where annotations for each session go, by the browser's rule: a top-level coding agent or
+    coordinator takes them itself, and a worker's go to its coordinator. None when they cannot be sent."""
+    by_id = {a['id']: a for a in agents}
+
+    def direct(a):
+        return (not a.get('remote_node') and not a.get('harness_internal') and a.get('exit_code') is None and not a.get('protected')
+                and (a.get('coordinator_workspace') or (a.get('terminal_id') and (a.get('harness') in FEEDBACK_HARNESSES
+                                                                                 or AGENT_PROFILE.fullmatch(a.get('launch_profile') or '')))))
+    targets = {}
+    for agent in agents:
+        top, seen = agent, set()
+        while top and top.get('parent_id') and top['id'] not in seen:
+            seen.add(top['id'])
+            top = by_id.get(top['parent_id'])
+        targets[agent['id']] = top if top and top['id'] not in seen and direct(top) else None
+    return targets
+
+
+def session_record(agent, approval, now, target=None):
     live = agent.get('exit_code') is None
     status = agent.get('status')
     if live and not agent.get('runtime_status') and agent.get('remote_connected') is not False:
@@ -464,7 +484,8 @@ def session_record(agent, approval, now):
                 status=status, question=approval or agent.get('question'), exit_code=agent.get('exit_code'),
                 last_output=agent.get('last_output'), active_since=agent.get('active_since'), parent_id=agent.get('parent_id'),
                 remote=agent['id'].startswith('remote:'), controller=bool(agent.get('coordinator_events')),
-                protected=bool(agent.get('protected')))
+                protected=bool(agent.get('protected')), feedback_target=target and target['id'],
+                feedback_target_name=target and (target.get('display_name') or target.get('name') or target['id']))
 
 
 class Watch:
@@ -578,7 +599,9 @@ class Watch:
         with self.lock:
             approvals = {i: self.approvals.get(i) for i, caught_up in self.subscribed.items() if caught_up}
             ready = all(self.subscribed.values())
-        sessions = [session_record(a, approvals.get(a['id']), now) for a in listing.get('agents', []) if a.get('terminal_id')]
+        agents = listing.get('agents', [])
+        targets = feedback_targets(agents)
+        sessions = [session_record(a, approvals.get(a['id']), now, targets[a['id']]) for a in agents if a.get('terminal_id')]
         sessions.sort(key=lambda s: (s['exit_code'] is not None, -(s['last_output'] or 0)))
         return dict(type='snapshot', protocol=PROTOCOL, desks=listing.get('desks', []), sessions=sessions, ready=ready)
 

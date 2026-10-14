@@ -103,10 +103,7 @@ extension DeskClient {
 }
 
 extension Session {
-    /// A session the desk can hand annotations to: a coding agent at the top level, which the
-    /// person can reach. Workers take feedback through their coordinator.
-    public var acceptsFeedback: Bool {
-        isRunning && parentId == nil && !isProtected
-            && ["claude", "codex", "grok", "opencode", "pi"].contains(harness ?? "")
-    }
+    /// Whether the desk can deliver annotations for this session: to a coding agent at the top
+    /// level, or for a worker, to its coordinator. The desk decides, by its browser's rule.
+    public var acceptsFeedback: Bool { feedbackTarget != nil }
 }

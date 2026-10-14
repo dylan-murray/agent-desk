@@ -120,9 +120,11 @@ final class Annotations {
 
     // MARK: - Sending
 
-    /// Sends every saved note to the chosen session, through that session's desk.
+    /// Sends every saved note for the chosen session, through that session's desk. A worker's
+    /// notes go to its coordinator.
     func send(through connection: DeskConnection, to session: Session) async {
-        guard !notes.isEmpty, !sending else { return }
+        guard !notes.isEmpty, !sending, let target = session.feedbackTarget else { return }
+        let recipient = session.feedbackTargetName ?? session.name
         sending = true
         outcome = nil
         defer { sending = false }
@@ -133,13 +135,13 @@ final class Annotations {
             for saved in batch {
                 screenshots[saved.id] = try? Data(contentsOf: folder.appending(path: saved.screenshot))
             }
-            let result = try await client.sendFeedback(requestID: Self.requestID(batch.map(\.note), session.id), target: session.id,
+            let result = try await client.sendFeedback(requestID: Self.requestID(batch.map(\.note), target), target: target,
                                                        notes: batch.map(\.note), screenshots: screenshots)
             for saved in batch { delete(saved.id) }
             let count = batch.count == 1 ? "1 note" : "\(batch.count) notes"
             outcome = result.queued
-                ? "\(count) queued for \(session.name). The desk types them in once it is at an empty prompt."
-                : "\(count) sent to \(session.name)."
+                ? "\(count) queued for \(recipient). The desk types them in once it is at an empty prompt."
+                : "\(count) sent to \(recipient)."
             if notes.isEmpty { mode = .idle }
         } catch {
             outcome = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription

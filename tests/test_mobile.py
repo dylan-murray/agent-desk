@@ -258,7 +258,7 @@ class DeskTests(unittest.TestCase):
             with self.subTest(error=error), self.assertRaisesRegex(mobile.DeskError, error):
                 mobile.launch(self.desk, dict(request, cwd=self.temp.name))
 
-    def test_account_agents_are_named_by_their_cli(self):
+    def test_account_agents_are_named_by_their_cli_and_take_annotations(self):
         agent, shell = self.launch('/bin/sh', '-c', 'sleep 30'), self.launch('/bin/sh', '-c', 'sleep 30')
         real = self.desk.request
 
@@ -275,7 +275,9 @@ class DeskTests(unittest.TestCase):
         with patch.object(self.desk, 'request', request_to):
             mobile.Watch(self.desk, out).run(once=True)
         records = {s['id']: s for s in json.loads(out.getvalue())['sessions']}
-        self.assertEqual((records[agent.id]['harness'], records[shell.id]['harness']), ('claude', 'sh'))
+        self.assertEqual((records[agent.id]['harness'], records[agent.id]['feedback_target'], records[agent.id]['feedback_target_name']),
+                         ('claude', agent.id, 'Claude · Personal'))
+        self.assertEqual((records[shell.id]['harness'], records[shell.id]['feedback_target']), ('sh', None))
 
     def test_launch_starts_a_real_pane_and_refuses_bad_requests(self):
         result = mobile.launch(self.desk, dict(choice='shell', cwd=self.temp.name, desk='main'))
@@ -363,6 +365,29 @@ class DeskTests(unittest.TestCase):
         self.assertIn(dict(key='claude', label='Claude', harness='claude'), value['launch_choices'])
         self.assertNotIn('custom', [c['key'] for c in value['launch_choices']])
         self.assertIsInstance(value['projects'], list)
+
+
+class FeedbackTargetTests(unittest.TestCase):
+    """The browser's rule for where annotations go, from the desk's own agent list."""
+
+    def test_agents_take_their_own_and_workers_go_to_their_coordinator(self):
+        agents = [dict(id='claude', terminal_id='t1', harness='zsh', launch_profile='claude-personal'),
+                  dict(id='grok', terminal_id='t2', harness='grok'),
+                  dict(id='shell', terminal_id='t3', harness='zsh'),
+                  dict(id='lead', terminal_id='t4', harness='zsh', launch_profile='codex'),
+                  dict(id='worker', terminal_id='t5', harness='zsh', launch_profile='claude', parent_id='lead'),
+                  dict(id='workspace', coordinator_workspace=True, exit_code=None),
+                  dict(id='its-worker', terminal_id='t6', harness='zsh', launch_profile='codex', parent_id='workspace'),
+                  dict(id='orphan', terminal_id='t7', harness='zsh', launch_profile='claude', parent_id='gone'),
+                  dict(id='exited', terminal_id='t8', harness='claude', exit_code=0),
+                  dict(id='locked', terminal_id='t9', harness='claude', protected=True),
+                  dict(id='remote', terminal_id='t10', harness='claude', remote_node='box'),
+                  dict(id='a', terminal_id='t11', harness='claude', parent_id='b'),
+                  dict(id='b', terminal_id='t12', harness='claude', parent_id='a')]
+        targets = {key: value and value['id'] for key, value in mobile.feedback_targets(agents).items()}
+        self.assertEqual(targets, {'claude': 'claude', 'grok': 'grok', 'shell': None, 'lead': 'lead', 'worker': 'lead',
+                                   'workspace': 'workspace', 'its-worker': 'workspace', 'orphan': None, 'exited': None,
+                                   'locked': None, 'remote': None, 'a': None, 'b': None})
 
 
 class CommandTests(unittest.TestCase):

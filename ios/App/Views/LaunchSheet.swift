@@ -83,6 +83,7 @@ struct LaunchSheet: View {
                     Section {
                         Toggle("Coordinate other agents", isOn: $coordinating)
                             .accessibilityIdentifier("launch-coordinate")
+                            .annotationTarget("LaunchCoordinateToggle")
                     } footer: {
                         if !coordinating {
                             Text("Launch it as a coordinator that starts and directs workers on this desk.")
@@ -93,6 +94,7 @@ struct LaunchSheet: View {
                             TextField("Coordinate the agents working on…", text: $objective, axis: .vertical)
                                 .lineLimit(3...8)
                                 .accessibilityIdentifier("launch-objective")
+                                .annotationTarget("LaunchObjective")
                             Button {
                                 dictating = .objective
                             } label: {

@@ -79,6 +79,9 @@ public struct Session: Codable, Hashable, Identifiable, Sendable {
     public var controller: Bool
     /// Protected at the desk: only the desk itself can read or type into it.
     public var protected: Bool?
+    /// Where the desk delivers annotations for this session: itself, or a worker's coordinator.
+    public var feedbackTarget: String?
+    public var feedbackTargetName: String?
 
     public var isRunning: Bool { exitCode == nil }
     public var needsInput: Bool { isRunning && status == "needs_input" }

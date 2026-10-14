@@ -56,10 +56,12 @@ want. Each note keeps:
 - the point, the display size and scale, appearance and text size, the device and iOS version.
 
 Notes stay on the phone until **Review → Send to** hands them to a Claude, Codex, Grok, OpenCode
-or Pi session at the top level of a desk. They go the way the desk's own annotation tools send
-browser feedback: `agent-desk mobile feedback` saves each screenshot owner-only in the desk's data
-directory, and the desk's feedback delivery types the notes into the agent's prompt, or holds
-them until the prompt is empty. Sending the same notes again is recognised, not delivered twice.
+or Pi session, or a coordinator; a worker's notes go to its coordinator. The desk decides which
+sessions can take them, by the same rule as its browser's annotation picker. They go the way the
+desk's own annotation tools send browser feedback: `agent-desk mobile feedback` saves each
+screenshot owner-only in the desk's data directory, and the desk's feedback delivery types the
+notes into the agent's prompt, or holds them until the prompt is empty. Sending the same notes
+again is recognised, not delivered twice.
 
 It works the same in the Simulator on your Mac and on an iPhone, and nothing about it shows until
 the toggle is on. To make a new view easy to point at, tag it:
@@ -138,12 +140,12 @@ AGENT_DESK_E2E_PORT=4377 AGENT_DESK_E2E_COMMAND=agent-desk swift test --filter D
 
 The app's own tests run in the Simulator: `AgentDeskTests` checks approval-menu reading and
 transcribes recorded speech with the on-device Whisper model (downloading it once), and
-`AgentDeskUITests` drives the app through setup, an approval, typing, launching an agent and a
-coordinator, and the Live Activity against a fixture desk. The UI test needs a desk and an sshd
-to talk to, passed in `TEST_RUNNER_E2E_*` variables: `E2E_SSH_PORT`, `E2E_DESK_PORT`,
-`E2E_USER`, `E2E_COMMAND`, `E2E_AUTHORIZED_KEYS` (a file the sshd reads, which the test writes
-the app's key into), `E2E_FINGERPRINT` (the sshd's host key fingerprint) and, optionally,
-`E2E_SHOTS` for screenshots. Never point tests at the desk you work in.
+`AgentDeskUITests` drives the app through setup, an approval, typing, an agent and a coordinator
+launch and the Live Activity against a fixture desk. The UI test needs a desk and an sshd to
+talk to, passed in `TEST_RUNNER_E2E_*` variables: `E2E_SSH_PORT`, `E2E_DESK_PORT`, `E2E_USER`,
+`E2E_COMMAND`, `E2E_AUTHORIZED_KEYS` (a file the sshd reads, which the test writes the app's key
+into), `E2E_FINGERPRINT` (the sshd's host key fingerprint) and, optionally, `E2E_SHOTS` for
+screenshots. Never point tests at the desk you work in.
 
 ## Limits
 
