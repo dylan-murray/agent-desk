@@ -40,6 +40,10 @@ ROOT = Path(__file__).resolve().parents[1]
 class DeskError(Exception):
     """The desk is not running, refused the request, or answered with an error."""
 
+    def __init__(self, message, status=None):
+        super().__init__(message)
+        self.status = status
+
 
 class Desk:
     """The running desk's loopback API, authenticated the same way as its browser tabs."""
@@ -74,7 +78,7 @@ class Desk:
             # The desk restarted and issued a new token.
             self.token = None
         if response.status >= 400:
-            raise DeskError(value.get('error') or f'HTTP {response.status}')
+            raise DeskError(value.get('error') or f'HTTP {response.status}', response.status)
         return value
 
     def stream(self):
@@ -258,16 +262,37 @@ class Attachment:
         return 0
 
 
-def launch_choices():
-    """The browser's launch menu, read from its own source so the two never disagree."""
+def launch_choices(desk):
+    """The browser's launch menu, read from its own source with the desk's Claude and Codex accounts,
+    so the two never disagree."""
     node = shutil.which('node')
     if not node:
         raise DeskError('Node.js is required to read the launch choices')
-    script = f'console.log(JSON.stringify(require({json.dumps(str(ROOT / "agent_desk/static/terminal-commands.js"))}).launchChoices))'
-    result = subprocess.run([node, '-e', script], capture_output=True, text=True, timeout=10)
+    accounts = [{key: row.get(key) for key in ('id', 'harness', 'name', 'label')} for row in desk_accounts(desk)]
+    script = (f'const m=require({json.dumps(str(ROOT / "agent_desk/static/terminal-commands.js"))});'
+              'm.applyAccounts(JSON.parse(process.argv[1]));console.log(JSON.stringify(m.launchChoices))')
+    result = subprocess.run([node, '-e', script, json.dumps(accounts)], capture_output=True, text=True, timeout=10)
     if result.returncode:
         raise DeskError('Could not read the launch choices: ' + result.stderr.strip())
     return json.loads(result.stdout)
+
+
+def desk_accounts(desk):
+    """The desk's Claude and Codex accounts."""
+    try:
+        return desk.request('/api/accounts/list', {}).get('accounts', [])
+    except DeskError as error:
+        if error.status not in (403, 404):
+            raise
+    # A refusal can be an expired token, which request() has just dropped, so ask again with a new one.
+    # A desk started before accounts existed refuses again: say what to do rather than pass that on.
+    try:
+        return desk.request('/api/accounts/list', {}).get('accounts', [])
+    except DeskError as error:
+        if error.status not in (403, 404):
+            raise
+        raise DeskError(f'Agent Desk on port {desk.port} is older than this agent-desk command. '
+                        'Restart it to use it from the phone.', error.status) from None
 
 
 def launch_command(choice, args):
@@ -282,7 +307,7 @@ def launch_command(choice, args):
 
 
 def info(desk):
-    choices = launch_choices()
+    choices = launch_choices(desk)
     agents = desk.request('/api/agents')
     projects = desk.request('/api/projects')
     return dict(type='info', protocol=PROTOCOL, port=desk.port, desks=agents.get('desks', []),
@@ -295,7 +320,7 @@ def launch(desk, request):
     """Start a pane the way the browser's launch dialog does, from the same choices."""
     if not isinstance(request, dict):
         raise DeskError('Expected a JSON object')
-    choices = launch_choices()
+    choices = launch_choices(desk)
     key = request.get('choice')
     choice = choices.get(key)
     if not choice or choice['harness'] == 'custom':
@@ -306,8 +331,8 @@ def launch(desk, request):
     prompt = request.get('prompt')
     if prompt is not None and (not isinstance(prompt, str) or choice['harness'] == 'shell'):
         raise DeskError('A first prompt needs a coding agent, not a shell')
-    body = dict(cwd=str(Path(cwd).expanduser()), name=choice['label'],
-                launch_profile=key if key in ('codex', 'codex-personal', 'claude', 'claude-personal') else None)
+    # An account's key is its launch profile, which selects its config folder, as in the browser.
+    body = dict(cwd=str(Path(cwd).expanduser()), name=choice['label'], launch_profile=key if choice.get('account') else None)
     if choice['harness'] != 'shell':
         body['argv'] = launch_command(choice, [prompt] if prompt else [])
     if request.get('desk') is not None:

@@ -13,7 +13,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from agent_desk import mobile, server, websocket
+from agent_desk import accounts, mobile, server, websocket
 from agent_desk.desks import Desks
 from agent_desk.terminals import TerminalManager
 
@@ -64,8 +64,10 @@ class DeskTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.manager = TerminalManager()
-        for name, value in (('TERMINALS', server.DeskTerminals(self.manager)), ('DESKS', Desks(Path(self.temp.name) / 'desks.json'))):
-            patcher = patch.object(server, name, value)
+        for target, name, value in ((server, 'TERMINALS', server.DeskTerminals(self.manager)),
+                                    (server, 'DESKS', Desks(Path(self.temp.name) / 'desks.json')),
+                                    (accounts, 'ACCOUNTS_FILE', Path(self.temp.name) / 'accounts.json')):
+            patcher = patch.object(target, name, value)
             patcher.start()
             self.addCleanup(patcher.stop)
         self.desk = mobile.Desk(self.port)
@@ -191,13 +193,36 @@ class DeskTests(unittest.TestCase):
         self.assertTrue(any(s['id'] == session.id for line in lines if line['type'] == 'snapshot' for s in line['sessions']))
         self.assertIn('heartbeat', [line['type'] for line in lines])
 
-    def test_launch_builds_the_same_command_as_the_browser_dialog(self):
-        sent = []
-        with patch.object(self.desk, 'request', lambda path, body=None: sent.append((path, body)) or {'id': 'terminal-new'}):
-            result = mobile.launch(self.desk, dict(choice='claude', cwd=self.temp.name, desk='main', prompt='fix the build'))
+    def launched(self, request):
+        """What `launch` asks the desk to start, without starting it."""
+        sent, real = [], self.desk.request
+
+        def request_to(path, body=None):
+            if path != '/api/terminals/launch':
+                return real(path, body)
+            sent.append(body)
+            return {'id': 'terminal-new'}
+
+        with patch.object(self.desk, 'request', request_to):
+            result = mobile.launch(self.desk, request)
         self.assertEqual(result, dict(type='launched', session={'id': 'terminal-new'}))
-        self.assertEqual(sent, [('/api/terminals/launch', dict(cwd=self.temp.name, name='Claude · Work', launch_profile='claude', desk='main',
-                                                                argv=['/bin/zsh', '-lic', 'claude "$@"', 'agent-desk', 'fix the build']))])
+        return sent
+
+    def test_launch_builds_the_same_command_as_the_browser_dialog(self):
+        sent = self.launched(dict(choice='claude', cwd=self.temp.name, desk='main', prompt='fix the build'))
+        self.assertEqual(sent, [dict(cwd=self.temp.name, name='Claude', launch_profile='claude', desk='main',
+                                     argv=['/bin/zsh', '-lic', 'claude "$@"', 'agent-desk', 'fix the build'])])
+        # Agents without accounts launch directly, with no profile.
+        sent = self.launched(dict(choice='grok', cwd=self.temp.name))
+        self.assertEqual(sent, [dict(cwd=self.temp.name, name='Grok', launch_profile=None, argv=['grok'])])
+
+    def test_added_accounts_launch_from_the_phone_as_from_the_browser(self):
+        accounts.ACCOUNTS_FILE.write_text(json.dumps([dict(id='claude-2', harness='claude', name='Personal', config_dir='~/.claude-personal')]))
+        self.assertIn(dict(key='claude-2', label='Claude · Personal', harness='claude'), mobile.info(self.desk)['launch_choices'])
+        sent = self.launched(dict(choice='claude-2', cwd=self.temp.name))
+        # The account's key is its profile; the desk turns it into the CLI with that config folder.
+        self.assertEqual(sent, [dict(cwd=self.temp.name, name='Claude · Personal', launch_profile='claude-2',
+                                     argv=['/bin/zsh', '-lic', 'claude-2 "$@"', 'agent-desk'])])
 
     def test_launch_starts_a_real_pane_and_refuses_bad_requests(self):
         result = mobile.launch(self.desk, dict(choice='shell', cwd=self.temp.name, desk='main'))
@@ -210,10 +235,23 @@ class DeskTests(unittest.TestCase):
             with self.subTest(error=error), self.assertRaisesRegex(mobile.DeskError, error):
                 mobile.launch(self.desk, request)
 
+    def test_an_older_desk_is_explained_rather_than_refused(self):
+        class OlderDesk:
+            port, calls = 4999, []
+
+            def request(self, path, body=None):
+                self.calls.append(path)
+                raise mobile.DeskError('A valid adapter token is required', 403)
+
+        desk = OlderDesk()
+        with self.assertRaisesRegex(mobile.DeskError, 'Agent Desk on port 4999 is older than this agent-desk command. Restart it'):
+            mobile.info(desk)
+        self.assertEqual(desk.calls, ['/api/accounts/list'] * 2)
+
     def test_info_lists_desks_launch_choices_and_projects(self):
         value = mobile.info(self.desk)
         self.assertEqual((value['type'], value['protocol'], value['port']), ('info', mobile.PROTOCOL, self.port))
-        self.assertIn(dict(key='claude', label='Claude · Work', harness='claude'), value['launch_choices'])
+        self.assertIn(dict(key='claude', label='Claude', harness='claude'), value['launch_choices'])
         self.assertNotIn('custom', [c['key'] for c in value['launch_choices']])
         self.assertIsInstance(value['projects'], list)
 

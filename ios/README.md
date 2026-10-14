@@ -5,6 +5,13 @@ answer approval prompts with one tap, type into live terminals, dictate prompts,
 agents. A Live Activity keeps the desk's state on the Lock Screen and in the Dynamic Island
 while the app is connected.
 
+<p>
+  <img src="../docs/images/ios-sessions.png" width="250" alt="A desk's sessions, the one that needs you first">
+  <img src="../docs/images/ios-approval.png" width="250" alt="Answering an approval prompt with one tap">
+  <img src="../docs/images/ios-trust.png" width="250" alt="Checking a server's key on first connection">
+</p>
+<p><img src="../docs/images/ios-live-activity.png" width="420" alt="The desk's Live Activity on the Lock Screen"></p>
+
 Nothing changes for people who do not use it. The desk still listens only on its loopback
 address; the phone reaches it the way you would from a laptop, over SSH.
 
