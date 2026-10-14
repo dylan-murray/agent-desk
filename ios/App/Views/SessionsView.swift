@@ -165,6 +165,12 @@ struct SessionRow: View {
                         .font(.body.weight(.medium))
                         .foregroundStyle(Theme.ink)
                         .lineLimit(1)
+                    if session.isProtected {
+                        Image(systemName: "lock.fill")
+                            .font(.caption)
+                            .foregroundStyle(Theme.muted)
+                            .accessibilityLabel("Protected")
+                    }
                     Spacer(minLength: 6)
                     if let age = relativeAge(session.lastOutput) {
                         Text(age).font(.caption).foregroundStyle(Theme.muted).monospacedDigit()

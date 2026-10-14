@@ -82,6 +82,12 @@ final class PhoneFlowUITests: XCTestCase {
         shot("08-shell")
         back()
 
+        // A session protected at the desk is listed, but stays there.
+        app.descendants(matching: .any)["session-Docs links"].firstMatch.tap()
+        XCTAssert(app.staticTexts["Protected session"].waitForExistence(timeout: 10))
+        shot("08b-protected")
+        back()
+
         // Launch a new agent into a project.
         app.navigationBars.buttons["Launch an agent"].tap()
         app.buttons["launch-agent"].tap()

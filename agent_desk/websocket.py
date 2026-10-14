@@ -53,21 +53,22 @@ def unmask(data, mask):
     return (int.from_bytes(data, 'big') ^ int.from_bytes(key, 'big')).to_bytes(len(data), 'big')
 
 
-def connect(port, path, timeout=10):
+def connect(port, path, timeout=10, headers=None):
     """Open a client WebSocket to this machine's desk; raises OSError when nothing is listening."""
     sock = socket.create_connection(('127.0.0.1', port), timeout=timeout)
     try:
         key = base64.b64encode(os.urandom(16)).decode()
+        extra = ''.join(f'{name}: {value}\r\n' for name, value in (headers or {}).items())
         sock.sendall((f'GET {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n'
-                      f'Sec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n\r\n').encode())
+                      f'Sec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n{extra}\r\n').encode())
         rfile = sock.makefile('rb')
         status = rfile.readline().split()
-        headers = {}
+        reply = {}
         while (line := rfile.readline().strip()):
             name, _, value = line.decode('latin-1').partition(':')
-            headers[name.strip().lower()] = value.strip()
+            reply[name.strip().lower()] = value.strip()
         expected = base64.b64encode(hashlib.sha1((key + GUID).encode()).digest()).decode()
-        if len(status) < 2 or status[1] != b'101' or headers.get('sec-websocket-accept') != expected:
+        if len(status) < 2 or status[1] != b'101' or reply.get('sec-websocket-accept') != expected:
             raise OSError('The desk refused the WebSocket handshake')
         sock.settimeout(None)
         return WebSocket(rfile, sock.makefile('wb', buffering=0), client=sock)

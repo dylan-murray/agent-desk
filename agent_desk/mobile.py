@@ -24,7 +24,7 @@ import time
 from pathlib import Path
 from urllib.parse import urlencode
 
-from agent_desk import websocket
+from agent_desk import desk_tokens, websocket
 
 # Bumped when a reply changes shape in a way an installed app cannot ignore.
 PROTOCOL = 1
@@ -46,17 +46,47 @@ class DeskError(Exception):
 
 
 class Desk:
-    """The running desk's loopback API, authenticated the same way as its browser tabs."""
+    """The running desk's loopback API, as a local helper: authenticated with the token the desk
+    keeps for helpers in an owner-only file. Protected panes refuse that token."""
 
-    def __init__(self, port):
-        self.port = port
+    def __init__(self, port, data_dir=None):
+        self.port, self.data_dir = port, data_dir
         self.token = None
 
+    def not_running(self):
+        return DeskError(f'Agent Desk is not running on port {self.port}. Start it with: agent-desk --port {self.port}')
+
+    def read_token(self):
+        path = desk_tokens.token_path('terminal', self.port, self.data_dir)
+        try:
+            return path.read_text().strip()
+        except OSError:
+            pass
+        # Without a token file, say whether the desk is down or keeps its files elsewhere.
+        probe = http.client.HTTPConnection('127.0.0.1', self.port, timeout=5)
+        try:
+            probe.connect()
+        except ConnectionRefusedError:
+            raise self.not_running() from None
+        except OSError as error:
+            raise DeskError(f'Could not reach Agent Desk on port {self.port}: {error}') from None
+        finally:
+            probe.close()
+        raise DeskError(f'Agent Desk on port {self.port} has not written its helper token to {path}. Restart it if it '
+                        'predates this command, or run this command with the same AGENT_DESK_DATA_DIR as the desk.')
+
+    @staticmethod
+    def pane_headers():
+        # Run from inside a desk pane, say which one: the desk then keeps this command to that pane
+        # and the workers it started, as it does an agent's own tools.
+        pane = os.environ.get('AGENT_DESK_TERMINAL_ID')
+        return {'X-Agent-Desk-Pane': pane} if pane else {}
+
     def request(self, path, body=None):
-        if self.token is None and path != '/api/terminal-auth':
-            self.token = self.request('/api/terminal-auth')['token']
+        if self.token is None:
+            self.token = self.read_token()
         connection = http.client.HTTPConnection('127.0.0.1', self.port, timeout=30)
-        headers = {} if self.token is None else {'X-Agent-Desk-Terminal': self.token}
+        headers = {'X-Agent-Desk-Terminal': self.token, **self.pane_headers()}
         payload = None if body is None else json.dumps(body).encode()
         if payload is not None:
             headers['Content-Type'] = 'application/json'
@@ -65,7 +95,7 @@ class Desk:
             response = connection.getresponse()
             data = response.read()
         except ConnectionRefusedError:
-            raise DeskError(f'Agent Desk is not running on port {self.port}. Start it with: agent-desk --port {self.port}') from None
+            raise self.not_running() from None
         except OSError as error:
             raise DeskError(f'Could not reach Agent Desk on port {self.port}: {error}') from None
         finally:
@@ -74,8 +104,8 @@ class Desk:
             value = json.loads(data)
         except ValueError:
             raise DeskError(f'Agent Desk on port {self.port} sent an unreadable reply (HTTP {response.status})') from None
-        if response.status == 403 and path != '/api/terminal-auth':
-            # The desk restarted and issued a new token.
+        if response.status == 403:
+            # A restarted desk writes a new token; read it again next time.
             self.token = None
         if response.status >= 400:
             raise DeskError(value.get('error') or f'HTTP {response.status}', response.status)
@@ -83,9 +113,11 @@ class Desk:
 
     def stream(self):
         """An authenticated terminal stream, the WebSocket the browser's panes use."""
-        token = self.request('/api/terminal-auth')['token']
+        token = self.read_token()
         try:
-            socket = websocket.connect(self.port, '/api/terminals/stream')
+            socket = websocket.connect(self.port, '/api/terminals/stream', headers=self.pane_headers())
+        except ConnectionRefusedError:
+            raise self.not_running() from None
         except OSError as error:
             raise DeskError(f'Could not open the terminal stream on port {self.port}: {error}') from None
         socket.send_text(json.dumps(dict(type='auth', token=token)))
@@ -268,31 +300,13 @@ def launch_choices(desk):
     node = shutil.which('node')
     if not node:
         raise DeskError('Node.js is required to read the launch choices')
-    accounts = [{key: row.get(key) for key in ('id', 'harness', 'name', 'label')} for row in desk_accounts(desk)]
+    accounts = [{key: row.get(key) for key in ('id', 'harness', 'name', 'label')} for row in desk.request('/api/accounts/list', {}).get('accounts', [])]
     script = (f'const m=require({json.dumps(str(ROOT / "agent_desk/static/terminal-commands.js"))});'
               'm.applyAccounts(JSON.parse(process.argv[1]));console.log(JSON.stringify(m.launchChoices))')
     result = subprocess.run([node, '-e', script, json.dumps(accounts)], capture_output=True, text=True, timeout=10)
     if result.returncode:
         raise DeskError('Could not read the launch choices: ' + result.stderr.strip())
     return json.loads(result.stdout)
-
-
-def desk_accounts(desk):
-    """The desk's Claude and Codex accounts."""
-    try:
-        return desk.request('/api/accounts/list', {}).get('accounts', [])
-    except DeskError as error:
-        if error.status not in (403, 404):
-            raise
-    # A refusal can be an expired token, which request() has just dropped, so ask again with a new one.
-    # A desk started before accounts existed refuses again: say what to do rather than pass that on.
-    try:
-        return desk.request('/api/accounts/list', {}).get('accounts', [])
-    except DeskError as error:
-        if error.status not in (403, 404):
-            raise
-        raise DeskError(f'Agent Desk on port {desk.port} is older than this agent-desk command. '
-                        'Restart it to use it from the phone.', error.status) from None
 
 
 def launch_command(choice, args):
@@ -352,7 +366,8 @@ def session_record(agent, approval, now):
                 project=agent.get('project') or (Path(agent['cwd']).name if agent.get('cwd') else None),
                 status=status, question=approval or agent.get('question'), exit_code=agent.get('exit_code'),
                 last_output=agent.get('last_output'), active_since=agent.get('active_since'), parent_id=agent.get('parent_id'),
-                remote=agent['id'].startswith('remote:'), controller=bool(agent.get('coordinator_events')))
+                remote=agent['id'].startswith('remote:'), controller=bool(agent.get('coordinator_events')),
+                protected=bool(agent.get('protected')))
 
 
 class Watch:
@@ -406,6 +421,13 @@ class Watch:
             while True:
                 message = json.loads(socket.receive())
                 identity = message.get('id')
+                if message.get('type') == 'error':
+                    with self.lock:
+                        if identity in self.subscribed and not self.subscribed[identity]:
+                            # A pane this command may not read, such as a protected one: nothing to wait for.
+                            self.subscribed[identity] = True
+                            self.changed.set()
+                    continue
                 if message.get('type') != 'output':
                     continue
                 with self.lock:

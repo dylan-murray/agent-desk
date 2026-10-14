@@ -26,7 +26,7 @@ Open http://127.0.0.1:4310. Use `--port 4311` if needed.
 Agent Desk listens on 127.0.0.1 only. Three kinds of caller use the terminal API:
 
 - **The desk page.** Its token is held in memory and given only to the desk's own page. It can do everything.
-- **Local helpers** (`scripts/agent_control.py`, review tools). They read a separate token from the owner-only file `data/.terminal-token-PORT`. `/api/terminal-auth` no longer hands a token to `curl` or scripts.
+- **Local helpers** (`scripts/agent_control.py`, review tools, `agent-desk attach` and `agent-desk mobile`). They read a separate token from the owner-only file `data/.terminal-token-PORT`. `/api/terminal-auth` no longer hands a token to `curl` or scripts. Helpers may also use the terminal stream, limited to the sessions they could reach over HTTP.
 - **An agent's own tools.** Run inside a pane, `agent_control.py` says which pane it is in, and the desk keeps it to that pane and the workers it started. Typing into, renaming or stopping any other session is refused. This keeps a confused agent on its own work; it is not a security boundary, because the pane is whatever the tool says it is and a tool that says nothing is treated as a helper.
 
 The lock button in a pane's header **protects** that session, and is the boundary to rely on: only the desk page can read its output, type into it, rename or stop it. Helpers, agents and coordinators are refused, including feedback delivery, shutting down its desk, and a coordinator adopting, reading or messaging it. Locking a session on a remote machine is enforced by both desks. Use it for anything connected to production. Protected sessions are saved in `data/protected-panes.json` and stay protected across restarts.
@@ -149,7 +149,7 @@ Two commands make this work, and both are clients of a running desk, so they nev
 - `agent-desk attach ID` joins a terminal in the current terminal, as a browser pane does. What you type reaches the pane, the pane's output and exit appear here, and the pane takes this terminal's size while attached. Leaving (closing the terminal, or Mosh's `Ctrl-^ .`) detaches without stopping the pane. The app runs it under `mosh-server`.
 - `agent-desk mobile info`, `watch` and `launch` answer in JSON: the desks, launch choices and projects; one line per change to the session list, with approval prompts read from each terminal's screen as the browser reads them; and a launch from a JSON request on stdin with the same command the launch dialog builds.
 
-Both take `--port`, defaulting to `AGENT_DESK_PORT` or 4310. If you installed Agent Desk with `pip install`, reinstall it to get them, or run `python3 -m agent_desk attach`. A terminal supervisor started before this release does not report pane sizes, so `watch` reads its screens at 80×24 until the supervisor is restarted (see above).
+Both are local helpers (see [Who can reach a session](#who-can-reach-a-session)): they read the desk's helper token from its data directory, so run them with the same `AGENT_DESK_DATA_DIR` as the desk, and a protected session stays at the desk: `attach` refuses it and `watch` lists it without reading its screen. Both take `--port`, defaulting to `AGENT_DESK_PORT` or 4310. If you installed Agent Desk with `pip install`, reinstall it to get them, or run `python3 -m agent_desk attach`. A terminal supervisor started before this release does not report pane sizes, so `watch` reads its screens at 80×24 until the supervisor is restarted (see above).
 
 ## Checks
 

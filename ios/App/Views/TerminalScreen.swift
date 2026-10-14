@@ -17,7 +17,13 @@ struct TerminalScreen: View {
         let connection = model.connection(hostID)
         let session = connection?.session(sessionID)
         VStack(spacing: 0) {
-            if let controller {
+            if session?.isProtected == true {
+                ContentUnavailableView {
+                    Label("Protected session", systemImage: "lock.fill")
+                } description: {
+                    Text("Only the desk itself can read or type into this session. To use it from your phone, turn off its lock in the pane's header on the desk.")
+                }
+            } else if let controller {
                 StatusBanner(phase: controller.phase, retry: controller.retry)
                 ZStack {
                     GeometryReader { space in
@@ -53,20 +59,22 @@ struct TerminalScreen: View {
                     }
                 }
             }
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                Button { dictating = true } label: { Image(systemName: "mic") }
-                    .accessibilityLabel("Dictate")
-                    .disabled(controller?.phase != .live(.connected))
-                Menu {
-                    Button("Larger text", systemImage: "textformat.size.larger") { fontSize = min(fontSize + 1, 20) }
-                    Button("Smaller text", systemImage: "textformat.size.smaller") { fontSize = max(fontSize - 1, 8) }
-                    Divider()
-                    Button("Send Ctrl-C", systemImage: "xmark.octagon") { controller?.send([0x03]) }
-                    Button("Send Esc", systemImage: "escape") { controller?.send([0x1b]) }
-                } label: {
-                    Image(systemName: "ellipsis")
+            if session?.isProtected != true {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Button { dictating = true } label: { Image(systemName: "mic") }
+                        .accessibilityLabel("Dictate")
+                        .disabled(controller?.phase != .live(.connected))
+                    Menu {
+                        Button("Larger text", systemImage: "textformat.size.larger") { fontSize = min(fontSize + 1, 20) }
+                        Button("Smaller text", systemImage: "textformat.size.smaller") { fontSize = max(fontSize - 1, 8) }
+                        Divider()
+                        Button("Send Ctrl-C", systemImage: "xmark.octagon") { controller?.send([0x03]) }
+                        Button("Send Esc", systemImage: "escape") { controller?.send([0x1b]) }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                    }
+                    .accessibilityLabel("Terminal options")
                 }
-                .accessibilityLabel("Terminal options")
             }
         }
         .sheet(isPresented: $dictating) {
@@ -74,7 +82,7 @@ struct TerminalScreen: View {
                 .presentationDetents([.height(260)])
         }
         .task {
-            guard controller == nil, let connection else { return }
+            guard controller == nil, let connection, session?.isProtected != true else { return }
             let controller = TerminalController(sessionID: sessionID, connection: connection)
             self.controller = controller
             await controller.start()

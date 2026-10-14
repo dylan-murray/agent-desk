@@ -32,6 +32,8 @@ iPhone ──SSH──▶ agent-desk mobile info | watch | launch     (JSON over
   `MoshKit` is a Swift implementation of the Mosh protocol written for this app, so the
   project keeps its Apache-2.0 license (Mosh itself is GPLv3). It does not do Mosh's local
   echo prediction.
+- **Protected sessions stay at the desk.** The phone signs in as a local helper, so a session
+  locked in its pane header is listed with a lock but cannot be opened from the phone.
 - **`agent-desk attach <id>`** joins a desk terminal the same way a browser pane does, so the
   phone and the browser see and type into the same session, and the phone's screen size
   becomes the pane's while the phone is attached. Leaving the terminal on the phone stops

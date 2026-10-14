@@ -69,10 +69,13 @@ public struct Session: Codable, Hashable, Identifiable, Sendable {
     public var parentId: String?
     public var remote: Bool
     public var controller: Bool
+    /// Protected at the desk: only the desk itself can read or type into it.
+    public var protected: Bool?
 
     public var isRunning: Bool { exitCode == nil }
     public var needsInput: Bool { isRunning && status == "needs_input" }
     public var isWorking: Bool { isRunning && status == "output" }
+    public var isProtected: Bool { protected == true }
 }
 
 public struct Snapshot: Decodable, Sendable, Equatable {

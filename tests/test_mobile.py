@@ -13,7 +13,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from agent_desk import accounts, mobile, server, websocket
+from agent_desk import accounts, desk_tokens, mobile, pane_guard, server, websocket
 from agent_desk.desks import Desks
 from agent_desk.terminals import TerminalManager
 
@@ -66,11 +66,14 @@ class DeskTests(unittest.TestCase):
         self.manager = TerminalManager()
         for target, name, value in ((server, 'TERMINALS', server.DeskTerminals(self.manager)),
                                     (server, 'DESKS', Desks(Path(self.temp.name) / 'desks.json')),
-                                    (accounts, 'ACCOUNTS_FILE', Path(self.temp.name) / 'accounts.json')):
+                                    (accounts, 'ACCOUNTS_FILE', Path(self.temp.name) / 'accounts.json'),
+                                    (server, 'PROTECTED_PANES', pane_guard.ProtectedPanes(Path(self.temp.name) / 'protected.json'))):
             patcher = patch.object(target, name, value)
             patcher.start()
             self.addCleanup(patcher.stop)
-        self.desk = mobile.Desk(self.port)
+        # These commands are local helpers: they use the token the desk writes for them, never the page's.
+        desk_tokens.write_token('terminal', self.port, server.HELPER_TOKEN, data_dir=self.temp.name)
+        self.desk = mobile.Desk(self.port, data_dir=self.temp.name)
 
     def tearDown(self):
         self.manager.close()
@@ -245,18 +248,24 @@ class DeskTests(unittest.TestCase):
             with self.subTest(error=error), self.assertRaisesRegex(mobile.DeskError, error):
                 mobile.launch(self.desk, request)
 
-    def test_an_older_desk_is_explained_rather_than_refused(self):
-        class OlderDesk:
-            port, calls = 4999, []
+    def test_protected_panes_stay_at_the_desk(self):
+        session = self.launch('/bin/sh', '-c', APPROVAL)
+        self.printed(session, b'2. No')
+        server.PROTECTED_PANES.set(session.id, True)
+        code, received = self.attach(session.id, b'')
+        self.assertEqual(code, 1)
+        self.assertIn(b'[Agent Desk: This session is protected: only the user, at the desk, can read or type into it]', received)
+        out = io.StringIO()
+        mobile.Watch(self.desk, out).run(once=True)
+        snapshot = json.loads(out.getvalue())
+        record = next(s for s in snapshot['sessions'] if s['id'] == session.id)
+        # Listed, so the phone can say why it cannot open it, but its screen is never read.
+        self.assertEqual((snapshot['ready'], record['protected'], record['question']), (True, True, None))
 
-            def request(self, path, body=None):
-                self.calls.append(path)
-                raise mobile.DeskError('A valid adapter token is required', 403)
-
-        desk = OlderDesk()
-        with self.assertRaisesRegex(mobile.DeskError, 'Agent Desk on port 4999 is older than this agent-desk command. Restart it'):
-            mobile.info(desk)
-        self.assertEqual(desk.calls, ['/api/accounts/list'] * 2)
+    def test_a_missing_token_is_explained(self):
+        desk = mobile.Desk(self.port, data_dir=Path(self.temp.name) / 'elsewhere')
+        with self.assertRaisesRegex(mobile.DeskError, f'Agent Desk on port {self.port} has not written its helper token to '):
+            desk.request('/api/agents')
 
     def test_info_lists_desks_launch_choices_and_projects(self):
         value = mobile.info(self.desk)
