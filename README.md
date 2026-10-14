@@ -18,10 +18,9 @@
 
 Agent Desk is a local workspace for coding agents. Run any coding agent side by
 side in real terminals, with built-in support for Claude Code, Codex, Grok,
-OpenCode, and Pi.
+OpenCode, and Pi, and a custom command option for any other agent CLI.
 Hand work to a coordinator that splits it across agents, and review what comes
-back in one inbox. It runs on your machine as your user and has no Python
-dependencies.
+back in one inbox.
 
 <img src="docs/images/agent-desk-demo.webp" alt="Agent Desk demo: three Claude Code and Codex sessions are open side by side. One opens a code review of its change inside its own pane. The review is opened full screen, a comment is left on a line of the diff and sent to that agent, and the pane goes back to the grid. While the agent edits the code, its pane is resized from the corner and dragged to the other side, and the review reloads with the new diff. The sessions are grouped in the sidebar. Then a second desk is created with a new Claude Code terminal on it, and an automation is scheduled for weekdays">
 
