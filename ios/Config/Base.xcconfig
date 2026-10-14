@@ -1,0 +1,7 @@
+// Defaults for everyone. Your own signing team and bundle ID go in ../Signing.xcconfig,
+// which is not committed: copy Signing.xcconfig.example to start.
+AGENT_DESK_BUNDLE_ID = dev.agentdesk.ios
+DEVELOPMENT_TEAM =
+CODE_SIGN_STYLE = Automatic
+
+#include? "../Signing.xcconfig"

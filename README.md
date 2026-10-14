@@ -63,7 +63,7 @@ Agent Desk only listens on 127.0.0.1. It saves its state in `data/`, or wherever
 
 ## 📚 Docs
 
-[Guide](docs/guide.md) · [Contributing](CONTRIBUTING.md) · [All docs](INDEX.md)
+[Guide](docs/guide.md) · [iPhone app](ios/README.md) · [Contributing](CONTRIBUTING.md) · [All docs](INDEX.md)
 
 ## 📄 License
 

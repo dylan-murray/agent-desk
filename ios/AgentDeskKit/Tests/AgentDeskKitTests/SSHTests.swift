@@ -40,7 +40,7 @@ struct SSHTests {
 
     @Test func aKeyTheServerDoesNotTrustIsExplained() async throws {
         let error = await #expect(throws: SSHError.self) {
-            try await server.connect(pinned: server.hostKey, key: NIOSSHPrivateKey(p256Key: .init()))
+            try await server.connect(pinned: server.hostKey, key: SSHKey(p256: .init()))
         }
         #expect(error == .authenticationFailed)
     }

@@ -9,3 +9,7 @@ xcuserdata/
 
 # Per-developer signing team, see Signing.xcconfig.example
 Signing.xcconfig
+
+# XcodeGen writes these from the info: sections of project.yml
+App/Info.plist
+Widgets/Info.plist

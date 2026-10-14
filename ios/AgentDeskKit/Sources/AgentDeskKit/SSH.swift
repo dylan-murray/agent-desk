@@ -4,6 +4,24 @@ import NIOCore
 import NIOPosix
 import NIOSSH
 
+/// A P-256 key this client signs in with: kept in the Secure Enclave on a phone.
+public struct SSHKey: Sendable {
+    let key: NIOSSHPrivateKey
+
+    public init(p256 key: P256.Signing.PrivateKey) {
+        self.key = NIOSSHPrivateKey(p256Key: key)
+    }
+
+    #if canImport(Darwin)
+    public init(secureEnclave key: SecureEnclave.P256.Signing.PrivateKey) {
+        self.key = NIOSSHPrivateKey(secureEnclaveP256Key: key)
+    }
+    #endif
+
+    /// "ecdsa-sha2-nistp256 AAAA…", for authorized_keys.
+    public var openSSHPublicKey: String { String(openSSHPublicKey: key.publicKey) }
+}
+
 /// A server's SSH host key, as OpenSSH writes it in known_hosts.
 public struct HostKey: Codable, Hashable, Sendable {
     /// "ssh-ed25519 AAAA…"
@@ -73,7 +91,7 @@ public final class SSHConnection: Sendable {
     }
 
     /// Connects, checks the host key against the pinned one, and authenticates with `key`.
-    public static func connect(host: String, port: Int, username: String, key: NIOSSHPrivateKey, pinned: HostKey?,
+    public static func connect(host: String, port: Int, username: String, key: SSHKey, pinned: HostKey?,
                                timeout: TimeAmount = .seconds(15)) async throws -> SSHConnection {
         let group = MultiThreadedEventLoopGroup.singleton
         let ready = group.next().makePromise(of: Void.self)
@@ -83,7 +101,7 @@ public final class SSHConnection: Sendable {
             .channelInitializer { channel in
                 channel.eventLoop.makeCompletedFuture {
                     let ssh = NIOSSHHandler(
-                        role: .client(.init(userAuthDelegate: PublicKeyOffer(username: username, key: key),
+                        role: .client(.init(userAuthDelegate: PublicKeyOffer(username: username, key: key.key),
                                             serverAuthDelegate: PinnedHostKey(pinned: pinned))),
                         allocator: channel.allocator, inboundChildChannelInitializer: nil)
                     try channel.pipeline.syncOperations.addHandlers([ssh, ReadyHandler(ready: ready)])

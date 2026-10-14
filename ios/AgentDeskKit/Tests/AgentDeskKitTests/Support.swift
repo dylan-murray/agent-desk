@@ -16,14 +16,14 @@ final class TestSSHServer: @unchecked Sendable {
     private let process = Process()
 
     var username: String { NSUserName() }
-    var key: NIOSSHPrivateKey { NIOSSHPrivateKey(p256Key: clientKey) }
+    var key: SSHKey { SSHKey(p256: clientKey) }
 
     init() throws {
         directory = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("agent-desk-sshd-\(UUID().uuidString.prefix(8))")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try Self.run("/usr/bin/ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", directory.appendingPathComponent("host").path)
         hostKey = HostKey(openSSH: try String(contentsOf: directory.appendingPathComponent("host.pub"), encoding: .utf8))
-        let line = String(openSSHPublicKey: NIOSSHPrivateKey(p256Key: clientKey).publicKey)
+        let line = SSHKey(p256: clientKey).openSSHPublicKey
         try (line + " agent-desk-test\n").write(to: directory.appendingPathComponent("authorized_keys"), atomically: true, encoding: .utf8)
         port = try Self.freePort()
         let config = """
@@ -59,7 +59,7 @@ final class TestSSHServer: @unchecked Sendable {
         return String(output.split(separator: " ")[1])
     }
 
-    func connect(pinned: HostKey?, key: NIOSSHPrivateKey? = nil) async throws -> SSHConnection {
+    func connect(pinned: HostKey?, key: SSHKey? = nil) async throws -> SSHConnection {
         try await SSHConnection.connect(host: "127.0.0.1", port: port, username: username, key: key ?? self.key, pinned: pinned)
     }
 
