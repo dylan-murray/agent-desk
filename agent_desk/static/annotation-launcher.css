@@ -1,0 +1,58 @@
+#annotation-layer{position:fixed;inset:0;width:100vw;height:100dvh;max-width:none;max-height:none;border:0;padding:0;margin:0;overflow:visible;background:transparent;color:#dce6f5;pointer-events:none;box-shadow:none}
+#annotation-layer::backdrop{background:transparent;pointer-events:none;backdrop-filter:none}
+#annotation-launcher{position:fixed;left:max(18px,env(safe-area-inset-left));bottom:max(18px,env(safe-area-inset-bottom));width:46px;height:46px;display:grid;place-items:center;border:1px solid #91b5e55c;border-radius:50%;background:#20232e;color:#b8cdff;box-shadow:0 5px 22px #0006;pointer-events:auto;cursor:pointer!important;z-index:1002;transition:background .15s,border-color .15s}
+#annotation-launcher svg{width:21px;height:21px;pointer-events:none}
+#annotation-launcher:hover{background:#2b3040;border-color:#acc8ff}
+#annotation-launcher[aria-pressed="true"]{background:#adbbef;color:#172139;border-color:#cad8ff}
+#annotation-launcher:disabled{opacity:.55;cursor:default!important}
+#annotation-launcher{touch-action:none}
+#annotation-launcher.dragging{cursor:grabbing!important;transition:none;box-shadow:0 10px 30px #0008}
+#annotation-toolbar{left:18px;bottom:76px;transform:none;width:290px;max-width:calc(100vw - 36px);display:flex;flex-wrap:wrap;gap:10px;padding:14px;border:1px solid #3d4659;border-radius:12px;background:#191c24;box-shadow:0 10px 32px #0007;pointer-events:auto;white-space:normal;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+#annotation-toolbar.hidden{display:none}
+#annotation-toolbar .annotation-dot{display:none}
+#annotation-toolbar .annotation-modes{width:100%;display:flex;gap:4px;padding:3px;background:#10131a;border-radius:7px}
+#annotation-toolbar .annotation-modes button{flex:1;font-size:11px;padding:7px;color:#a6b5cc;border-radius:5px;cursor:pointer!important}
+#annotation-toolbar .annotation-modes button[aria-pressed="true"]{background:#303c54;color:#d5e5ff}
+#annotation-toolbar #annotation-hint{display:block;width:100%;font-size:11px;color:#8f9eb4}
+#annotation-toolbar #clear-pins{margin-right:auto;border:0;padding:5px 0;color:#b0a7b5;font-size:11px;cursor:pointer!important}
+#annotation-toolbar #stop-annotation{border:0;padding:5px 0;color:#c1d4ef;font-size:11px;cursor:pointer!important}
+#annotation-layer .feedback-pin{cursor:pointer!important}
+
+#annotation-toolbar #annotation-send{width:100%;border:1px solid #789dcc55;border-radius:6px;background:#9ccaff10;color:#bdd5f7;padding:8px;font-size:11px;cursor:pointer!important}
+#annotation-toolbar #annotation-send:disabled{opacity:.4;cursor:default!important}
+#annotation-toolbar #annotation-review{width:100%;padding:4px 0;text-align:left;color:#a8b6cc;font-size:11px;cursor:pointer!important}
+#annotation-review b{float:right;font-weight:400;color:#8595af}
+#annotation-send-dialog{width:min(620px,calc(100vw - 32px));max-width:620px;max-height:calc(100dvh - 32px);overflow:auto;background:var(--surface);border-color:var(--border)}
+.annotation-picker-heading{display:flex;align-items:center;justify-content:space-between;margin:20px 0 8px;color:var(--ink-2);font-size:12px}.annotation-picker-heading .text-button{font-size:11px}
+#annotation-agent-search{width:100%;box-sizing:border-box;padding:10px 12px;background:var(--page);color:var(--ink-1);border:1px solid var(--border);border-radius:7px;font:inherit;font-size:13px}
+#annotation-recipient-list{max-height:230px;overflow:auto;margin-top:8px;border:1px solid var(--border);border-radius:8px}
+.annotation-agent{display:flex;align-items:center;gap:12px;padding:12px;cursor:pointer;border-bottom:1px solid var(--border)}.annotation-agent:last-child{border-bottom:0}.annotation-agent:hover{background:#ffffff04}.annotation-agent:has(input:checked){background:#a7bdd810}.annotation-agent:has(input:focus-visible){outline:2px solid var(--accent);outline-offset:-2px}
+.annotation-agent input{width:15px;height:15px;flex:none;margin:0;accent-color:#a7bdd8}.annotation-agent>span{display:grid;gap:4px;min-width:0}.annotation-agent strong{font-size:13px;font-weight:550;color:var(--ink-1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.annotation-agent small{font-size:11px;color:var(--ink-muted);overflow-wrap:anywhere}.annotation-agent.unavailable{cursor:default;opacity:.6}.annotation-picker-empty{margin:0;padding:18px 12px;font-size:12px;color:var(--ink-muted)}
+#annotation-recipient-detail{min-height:16px;margin:9px 0 18px}.annotation-notes-heading{font-size:12px;color:var(--ink-2);font-weight:500;margin:0 0 8px}
+#annotation-send-notes{max-height:22vh;overflow:auto;border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
+#annotation-send-notes label{display:flex;gap:12px;align-items:flex-start;padding:12px 0;color:#d3dce9;font-size:12px}
+#annotation-send-notes input{width:15px;height:15px;flex-shrink:0;margin:2px 0;accent-color:#9ccaff}
+#annotation-send-notes span{overflow-wrap:anywhere;white-space:pre-wrap}
+#annotation-send-notes small{margin-top:5px;color:#8795a9;font-size:10px}
+#annotation-send-dialog .annotation-send-help{font-size:11px;color:#8c9bb1}
+#annotation-send-status{font-size:12px;color:#b3c9e7}
+@media(max-width:600px){#annotation-send-dialog{padding:20px 18px}#annotation-recipient-list{max-height:26vh}.annotation-agent{padding:10px}#annotation-send-notes{max-height:18vh}}
+/* The note is a rectangle beside what it describes, and it stays open between notes. */
+#annotation-note-panel{position:fixed;margin:0;z-index:1003;width:320px;max-width:calc(100vw - 20px);display:flex;flex-direction:column;gap:9px;padding:13px;border:1px solid #3d4659;border-radius:12px;background:#191c24;box-shadow:0 12px 34px #0008;pointer-events:auto;color:#dce6f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+#annotation-note-panel.hidden{display:none}
+.annotation-panel-body{display:flex;flex-direction:column;gap:9px}
+.annotation-panel-head{display:flex;align-items:center;gap:8px}
+.annotation-panel-head .eyebrow{flex:1}
+.annotation-panel-close{width:22px;height:22px;padding:0;border:0;border-radius:5px;background:none;color:#9aa4bb;font-size:16px;line-height:1;cursor:pointer}
+.annotation-panel-close:hover{background:#ffffff14;color:#fff}
+#annotation-note-panel #annotation-target{margin:0;font-size:11px}
+#annotation-note-panel textarea{width:100%;resize:vertical}
+.annotation-panel-actions{display:flex;align-items:center;gap:10px}
+.annotation-panel-state{flex:1;font-size:11px;color:#8fd0b4}
+/* The rectangle being drawn, and the areas already saved. */
+#annotation-region-draft{position:fixed;z-index:1001;border:1.5px dashed #adbbef;border-radius:4px;background:#adbbef1f;pointer-events:none}
+#annotation-region-draft.hidden{display:none}
+.feedback-region{position:fixed;z-index:1001;border:1.5px solid #adbbefcc;border-radius:4px;background:#adbbef1a;pointer-events:none}
+.feedback-region-index{position:absolute;left:-9px;top:-9px;display:grid;place-items:center;width:19px;height:19px;padding:0;border:0;border-radius:50%;background:#adbbef;color:#172139;font:600 11px -apple-system,BlinkMacSystemFont,sans-serif;pointer-events:auto;cursor:pointer!important}
+.feedback-region-index:hover{background:#cad8ff}
+body.annotating.drawing-region{cursor:crosshair}

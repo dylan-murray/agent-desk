@@ -1,0 +1,110 @@
+/* The desk switcher sits above the sessions it scopes, like a workspace switcher. Its menu
+   uses the sidebar's popover surface (the status filter and folder menus) so it reads as
+   part of the same sidebar. */
+.desk-switcher{position:relative;z-index:6;display:flex;gap:6px;flex-shrink:0;margin:0 0 10px}
+.desk-switcher[hidden]{display:none}
+.desk-button{display:flex;align-items:center;gap:9px;width:100%;min-height:44px;margin:0;padding:6px 10px 6px 7px;border:1px solid var(--border);border-radius:10px;background:#ffffff05;box-shadow:none;color:var(--ink-1);text-align:left;cursor:pointer;transition:background .12s ease,border-color .12s ease}
+.desk-button:hover,.desk-button[aria-expanded="true"]{background:#ffffff0a;border-color:var(--border-strong)}
+.desk-button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.desk-current{display:flex;align-items:center;gap:9px;flex:1;min-width:0}
+.desk-mark{display:grid;place-items:center;flex-shrink:0;width:28px;height:28px;border:1px solid color-mix(in srgb,var(--desk-color) 30%,transparent);border-radius:8px;background:color-mix(in srgb,var(--desk-color) 12%,transparent);color:var(--desk-color);font-size:12px;font-weight:650;line-height:1}
+.desk-label{display:flex;flex-direction:column;min-width:0;line-height:1.2}
+.desk-label small{color:var(--ink-muted);font-size:9px;font-weight:600;letter-spacing:1.1px;text-transform:uppercase}
+.desk-name{overflow:hidden;color:var(--ink-1);font-size:13px;font-weight:600;white-space:nowrap;text-overflow:ellipsis}
+.desk-chevron{flex-shrink:0;width:14px;height:14px;fill:none;stroke:var(--ink-2);stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round;transition:transform .15s ease}
+.desk-button[aria-expanded="true"] .desk-chevron{transform:rotate(180deg)}
+/* Shutting a desk down. The power button is part of the switcher row, beside the desk's
+   name, and hovering or focusing it outlines that name in red, so it reads as "this desk"
+   before anything is clicked. The dialog repeats the desk's mark and name and lists the
+   other desks it leaves alone. */
+.desk-shutdown{display:grid;place-items:center;flex-shrink:0;width:44px;margin:0;padding:0;border:1px solid var(--border);border-radius:10px;background:#ffffff05;box-shadow:none;color:var(--ink-muted);cursor:pointer;transition:color .12s ease,background .12s ease,border-color .12s ease}
+.desk-shutdown svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round}
+.desk-shutdown:hover:not(:disabled),.desk-shutdown:focus-visible{border-color:#80525899;background:#e667671a;color:#efb0b7}
+.desk-shutdown:focus-visible{outline:2px solid #e6676799;outline-offset:1px}
+.desk-shutdown:disabled{opacity:.4;cursor:default}
+.desk-switcher:has(.desk-shutdown:hover:not(:disabled),.desk-shutdown:focus-visible) .desk-button{border-color:#80525899;background:#e667670d}
+#shutdown-desk-dialog{max-width:540px}
+.desk-shutdown-heading{display:flex;align-items:flex-start;gap:12px}
+.desk-shutdown-heading .desk-mark{width:36px;height:36px;border-radius:10px;font-size:15px}
+.desk-shutdown-heading h2{font-size:17px;line-height:1.35}
+.desk-shutdown-heading p{margin:3px 0 0}
+.desk-shutdown-list{display:flex;flex-direction:column;gap:1px;max-height:min(320px,45dvh);margin:16px 0 0;padding:4px;overflow:auto;border:1px solid var(--border);border-radius:10px;background:#111113;list-style:none}
+.desk-shutdown-list li{display:flex;align-items:center;gap:10px;min-height:42px;padding:5px 8px;border-radius:7px}
+.desk-shutdown-list .session-avatar{display:grid;place-items:center;flex-shrink:0;width:26px;height:26px;border:1px solid color-mix(in srgb,var(--agent-color) 22%,transparent);border-radius:7px;background:color-mix(in srgb,var(--agent-color) 7%,transparent);color:var(--agent-color);font-size:8px;font-weight:650}
+.desk-shutdown-name{display:flex;flex-direction:column;flex:1;min-width:0;line-height:1.3}
+.desk-shutdown-name strong{overflow:hidden;color:var(--ink-1);font-size:12px;font-weight:600;white-space:nowrap;text-overflow:ellipsis}
+.desk-shutdown-name small{overflow:hidden;color:var(--ink-muted);font-size:10.5px;white-space:nowrap;text-overflow:ellipsis}
+.desk-shutdown-outcome{flex-shrink:0;padding:2px 7px;border:1px solid #56404499;border-radius:5px;color:#efb0b7;font-size:10px;white-space:nowrap}
+.desk-shutdown-list li.kept .desk-shutdown-outcome{border-color:var(--border);color:var(--ink-muted)}
+.desk-shutdown-list li.failed{background:#e6676714}
+.desk-shutdown-list li.failed .desk-shutdown-outcome{border-color:#d7ad7380;color:#ffc964}
+#shutdown-desk-dialog .desk-shutdown-others{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin:12px 2px 0;color:var(--ink-2);font-size:12px}
+.desk-shutdown-other{display:inline-flex;align-items:center;gap:6px;color:var(--ink-1)}
+.desk-shutdown-other .desk-mark{width:18px;height:18px;border-radius:5px;font-size:9px}
+#shutdown-desk-dialog .desk-shutdown-others[hidden],#shutdown-desk-dialog .error-banner:empty,#confirm-shutdown-desk[hidden]{display:none}
+#shutdown-desk-dialog .dialog-actions{margin-top:16px}
+
+/* Sessions on other desks that need you: the same amber as a folder's alert, with a count. */
+.desk-elsewhere{display:flex;align-items:center;gap:3px;flex-shrink:0;height:20px;padding:0 6px 0 4px;border:1px solid #f0b84f85;border-radius:6px;background:#f0b84f2e;color:#ffc964;font-size:10px;font-variant-numeric:tabular-nums;animation:session-needs-you 1.9s ease-in-out infinite}
+.desk-elsewhere[hidden]{display:none}
+.desk-elsewhere>svg{display:block;width:12px;height:12px}
+.desk-elsewhere b{font-weight:650}
+
+.desk-menu{position:absolute;top:calc(100% + 6px);left:0;right:0;display:flex;flex-direction:column;gap:2px;padding:5px;border:1px solid #36363b;border-radius:9px;background:#1b1b1e;box-shadow:0 12px 30px #0006}
+.desk-menu[hidden]{display:none}
+.desk-menu-heading{padding:5px 8px 4px;color:var(--ink-muted);font-size:9px;font-weight:600;letter-spacing:1.1px;text-transform:uppercase}
+.desk-options{display:flex;flex-direction:column;gap:2px;max-height:min(360px,60vh);overflow:auto}
+.desk-option{position:relative;display:flex;align-items:center;border-radius:6px}
+.desk-option>button[data-desk-id]{display:flex;align-items:center;gap:8px;flex:1;min-width:0;min-height:36px;margin:0;padding:4px 8px 4px 5px;border:0;border-radius:6px;background:none;box-shadow:none;color:var(--ink-2);font-size:12px;text-align:left;cursor:pointer}
+.desk-option .desk-mark{width:24px;height:24px;border-radius:7px;font-size:11px}
+.desk-option-name{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.desk-option-count{min-width:16px;color:var(--ink-muted);font-size:10px;font-variant-numeric:tabular-nums;text-align:right}
+.desk-option-waiting{display:flex;align-items:center;gap:2px;color:#ffc964;font-size:10px;font-variant-numeric:tabular-nums}
+.desk-option-waiting>svg{width:11px;height:11px}
+.desk-option-check{display:grid;place-items:center;width:14px;height:14px;flex-shrink:0}
+.desk-option-check svg{width:13px;height:13px;fill:none;stroke:#a8c9f4;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.desk-option:hover,.desk-option:has(:focus-visible){background:#ffffff08}
+.desk-option.current>button[data-desk-id],.desk-option:hover>button[data-desk-id]{color:var(--ink-1)}
+.desk-option.current .desk-option-name{color:#a8c9f4}
+.desk-option>button[data-desk-id]:focus-visible,.desk-new:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+/* Rename and delete cover the count on hover or keyboard focus, so at rest the list reads
+   as a plain list with its counts flush right. */
+.desk-option-actions{position:absolute;top:50%;right:4px;display:flex;gap:1px;padding-left:10px;border-radius:5px;background:linear-gradient(90deg,transparent,#222225 10px);transform:translateY(-50%);opacity:0;pointer-events:none}
+/* Keyboard focus only: the menu focuses the current desk when it opens, and a mouse user
+   should still see its count there. */
+.desk-option:hover .desk-option-actions,.desk-option:has(:focus-visible) .desk-option-actions{opacity:1;pointer-events:auto}
+.desk-option-action{display:grid;place-items:center;flex-shrink:0;width:26px;height:26px;margin:0;padding:0;border:0;border-radius:5px;background:none;box-shadow:none;color:var(--ink-muted);cursor:pointer}
+.desk-option-action:hover,.desk-option-action:focus-visible{background:#ffffff0d;color:var(--ink-1);outline:none}
+.desk-option-action.danger:hover,.desk-option-action.danger:focus-visible{color:#ee9898}
+.desk-option-action svg,.desk-new svg,.desk-new-form>svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round}
+.desk-option.editing{gap:8px;padding:4px 6px 4px 5px;background:#ffffff08}
+.desk-menu-divider{height:1px;margin:3px 4px;background:#ffffff12}
+.desk-new{display:flex;align-items:center;gap:8px;min-height:34px;margin:0;padding:6px 10px;border:0;border-radius:6px;background:none;box-shadow:none;color:var(--ink-2);font-size:12px;text-align:left;cursor:pointer}
+.desk-new:hover{background:#ffffff08;color:var(--ink-1)}
+.desk-new-form{display:flex;align-items:center;gap:8px;margin:0;padding:4px 4px 4px 10px;color:var(--ink-2)}
+.desk-name-input{flex:1;min-width:0;height:28px;padding:0 8px;border:1px solid var(--accent);border-radius:6px;background:#111113;color:var(--ink-1);font-size:12px;outline:none}
+.desk-name-input:disabled{opacity:.6}
+.desk-new-save{height:28px;margin:0;padding:0 10px;border:1px solid #35557b;border-radius:6px;background:var(--accent-soft);box-shadow:none;color:#b4cff0;font-size:11px;cursor:pointer}
+.desk-new-save:hover{background:#3987e533}
+.desk-menu-error{margin:4px 8px 3px;color:#ee9898;font-size:11px;line-height:1.4}
+.desk-menu-error[hidden]{display:none}
+
+#delete-desk-dialog .desk-delete-move{display:flex;align-items:center;gap:10px;margin:4px 0 16px;color:var(--ink-2);font-size:12px}
+#delete-desk-dialog .desk-delete-move[hidden]{display:none}
+/* The same field as the launcher's. */
+#delete-desk-dialog select{flex:1;max-width:240px;min-height:36px;padding:8px 10px;border:1px solid #ffffff14;border-radius:8px;background:#101012;color:#dce0ea;font:12px -apple-system,BlinkMacSystemFont,sans-serif;cursor:pointer}
+#delete-desk-dialog select:focus{outline:2px solid #789ed76b;outline-offset:1px;border-color:#789ed770}
+#delete-desk-dialog .error-banner:empty{display:none}
+
+@media(prefers-reduced-motion:reduce){.desk-elsewhere{animation:none}.desk-chevron,.desk-button,.desk-shutdown{transition:none}}
+/* Narrow: the logo is centred on its own row, so the switcher is a compact full-width row
+   under it, without the eyebrow. */
+@media(max-width:760px){
+  .desk-switcher{flex:0 0 100%;margin:2px 0 4px}
+  .desk-shutdown{width:36px}
+  .desk-button{min-height:36px;padding:3px 9px 3px 4px}
+  .desk-button .desk-mark{width:24px;height:24px;border-radius:7px;font-size:11px}
+  .desk-label small{display:none}
+  .desk-name{font-size:12px}
+  body.skills-open .desk-switcher,body.tools-open .desk-switcher,body.feedback-open .desk-switcher{display:none}
+}

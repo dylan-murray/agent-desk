@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-desk"
+version = "0.1.0"
+description = "A local workspace for coding agents, coordination, and visual feedback"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+license-files = ["LICENSE", "agent_desk/static/vendor/*LICENSE*"]
+authors = [{ name = "Dylan Murray" }]
+keywords = ["coding agents", "claude code", "codex", "terminal", "local-first"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Web Environment",
+    "Intended Audience :: Developers",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Topic :: Software Development",
+]
+dependencies = []
+
+[project.scripts]
+agent-desk = "agent_desk.server:main"
+
+[project.urls]
+Homepage = "https://github.com/dylan-murray/agent-desk"
+Repository = "https://github.com/dylan-murray/agent-desk"
+Issues = "https://github.com/dylan-murray/agent-desk/issues"
+
+[tool.setuptools.packages.find]
+include = ["agent_desk*", "scripts*"]
+
+[tool.setuptools.package-data]
+agent_desk = ["static/*", "static/vendor/*", "bin/*"]
+scripts = ["*.cjs"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 400
+extend-exclude = ["agent_desk/static/vendor"]
+
+[tool.ruff.lint]
+select = ["E", "F"]
+ignore = ["E501", "E701", "E702", "E731"]
+
+[tool.ruff.lint.per-file-ignores]
+"scripts/skill_ui.py" = ["E402"]

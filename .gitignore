@@ -1,0 +1,30 @@
+# Local runtime state and session history
+data/
+*.sqlite3
+*.sqlite3-*
+*.log
+
+# Python and test caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
+node_modules
+playwright-report/
+test-results/
+
+# Local configuration and credentials
+.claude/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+.DS_Store
+
+# Package build artifacts
+build/
+dist/
+*.egg-info/

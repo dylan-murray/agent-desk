@@ -1,0 +1,273 @@
+/* Dark-theme tokens for Agent Desk components. */
+ :root{--page:#0c0c0d;--surface:#161617;--surface-raised:#1d1d1f;--ink-1:#f5f5f4;--ink-2:#c3c2b7;--ink-muted:#8a8880;--border:rgba(255,255,255,.09);--border-strong:rgba(255,255,255,.16);--accent:#3987e5;--accent-soft:rgba(57,135,229,.14);--accent-glow:rgba(57,135,229,.35);--danger:#e66767;--good:#199e70;--bg:var(--page);--panel:var(--surface);--line:#29292b;--text:var(--ink-1);--muted:var(--ink-muted);--amber:#d9a34c;--lavender:#9085e9;--pink:#d55181;--peach:#d9a34c}
+
+body{color:var(--text)}
+.sidebar,.topbar{background:var(--surface);border-color:var(--border)}
+.search{background:var(--surface);border-color:var(--border)}.search input{color:var(--ink-1)}.search input::placeholder,.search>span{color:var(--ink-2)}.section-heading h2{color:var(--ink-muted)}
+.filters{border-color:var(--border)}.filters button{color:var(--ink-2)}.filters button.selected{background:var(--accent-soft);color:#b4cff0;border-color:#35557b}.status-select select{color:var(--ink-2)}.status-select option{background:var(--surface);color:var(--ink-1)}.status-select select:has(option:checked:not([value=""])){background:var(--accent-soft);color:#b4cff0}
+.session-avatar{border-color:#3a3a3a}.session-row[data-harness="claude"] .session-avatar{color:var(--peach)}.session-row[data-harness="grok"] .session-avatar{color:var(--pink)}.session-row[data-harness="opencode"] .session-avatar{color:#f0c674}.session-row[data-harness="pi"] .session-avatar{color:#8fd3c8}.session-text strong{color:var(--ink-1)}.session-folder,.session-text>span{color:var(--ink-2)}.session-status{background:#8a8a8a}
+.sidebar-bottom{border-color:var(--border)}.header-stats{border-color:#383838}.header-stat{color:var(--ink-2)}.header-stat b{color:#ebebeb}.mode-label{background:var(--surface-raised);border-color:var(--border-strong);color:var(--ink-2)}.mode-label.demo-badge{color:var(--peach);border-color:#614839}#sync-status{color:var(--ink-2)}
+
+.terminal{border-color:var(--surface-raised);box-shadow:none}.terminal-bar{border-color:var(--border)}.terminal-symbol{background:#202632;border-color:#354151}.terminal-project,.terminal-context{color:var(--ink-2)}.terminal-directory{color:var(--ink-2);border-color:var(--surface)}.terminal-directory>span,.terminal-directory small{color:var(--ink-2)}.terminal-line{color:#e0e0e0}.terminal-line.dim,.terminal-line time{color:var(--ink-muted)}.status{background:var(--surface-raised);border-color:var(--border-strong);color:#b8b8b8}.status.working{background:#162c24;border-color:#2b4b3b;color:#7fc6a8}.status.needs_input{background:#30291c;border-color:#56462a}.status.completed{background:#1e2532;border-color:#35445d}.status.error{background:#302121;border-color:#583737}
+.terminal-empty-icon{background:#1b2533;border-color:#34445b;box-shadow:none}.terminal-empty h2{color:var(--ink-1)}.terminal-empty p,.terminal-empty>small{color:var(--ink-2)}.terminal-input{background:var(--surface);border-color:var(--border);color:var(--ink-2)}.terminal-input kbd{background:#222222;border-color:var(--border);color:var(--ink-2)}.terminal-cursor{background:var(--lavender)}.terminal-question{background:#2b241f;border-color:#504035}.terminal-question small{color:#c0aca0}
+.eyebrow,.muted,small,.heading-row p{color:var(--ink-2)}.feedback-card{background:var(--surface-raised);border-color:var(--border)}.feedback-card p{color:var(--ink-1)}.feedback-meta{color:var(--ink-2)}dialog{background:var(--surface-raised);border-color:var(--border-strong)}dialog p{color:var(--ink-2)}textarea,pre{background:#111112;border-color:var(--border-strong);color:var(--ink-1)}code{color:var(--lavender)}kbd{color:var(--ink-2)}
+.dev-menu-items{background:var(--surface-raised);border-color:#3a3a3c}.dev-menu-items button{color:#dddddd}.dev-menu-items button:hover{background:#252932}.skill-item{background:var(--surface-raised);border-color:var(--border-strong)}.skill-item strong{color:#a7c7ed}.skill-item small{color:var(--ink-2)}.skill-item:hover{border-color:var(--accent)}#skill-preview{border-color:var(--border-strong)}#skill-preview label{color:var(--ink-2)}
+.annotation-toolbar{background:var(--surface-raised);border-color:#424854}.annotation-toolbar>span:not(.annotation-dot),.annotation-modes button{color:var(--ink-2)}#stop-annotation{border-color:#3b414a}#clear-pins{color:var(--peach);border-color:#3b414a}.feedback-pin:hover,.feedback-pin:focus-visible{background:#71a9ed;outline-color:var(--pink)}#toast{background:var(--surface-raised);border-color:#3e526d;color:var(--ink-1)}
+.agent-grid,.terminal-output{scrollbar-color:#3a3a3c transparent}
+
+body{background:var(--page);background-image:radial-gradient(1000px 520px at 12% -120px,rgba(57,135,229,.12),transparent 70%),radial-gradient(900px 620px at 92% 108%,rgba(144,133,233,.08),transparent 72%);background-attachment:fixed}
+.sidebar{background:rgba(18,18,19,.88)}.topbar{background:rgba(18,18,19,.78)}.terminal{background:#111112}.terminal-bar{background:var(--surface-raised)}
+.session-row[data-harness] .session-avatar{color:var(--ink-2)}
+.session-status.completed{background:var(--accent)}.session-status.error{background:var(--danger)}.status.completed{color:#9ebded}.status.needs_input{color:#d9b56f}.status.error{color:var(--danger)}.header-stat.working b{color:#7fc6a8}.header-stat.needs_input b{color:#d9b56f}
+.terminal-empty-icon{color:#9ebee9}.terminal-input>span:first-child{color:#96b8e6}.terminal-question{color:#d9b56f}.feedback-card h3{color:#9ebee9}.dev-menu-items b{color:#9ebee9}.annotation-modes button[aria-pressed="true"]{background:var(--accent);color:#fff}.annotation-dot{background:var(--accent)}.feedback-pin{background:var(--accent);border-color:#275587;color:#fff}.feedback-pin:hover,.feedback-pin:focus-visible{background:#71a9ed;outline-color:var(--accent)}#highlight{border-color:var(--accent);background:#3987e512}.error-banner{color:var(--danger)!important}
+/* Sidebar and session hierarchy refinements. */
+.sidebar .brand{display:flex;align-items:center;width:100%;border-bottom:1px solid var(--border)}.session-row,.session-row:nth-child(even):not(.selected){background:#19191c;border:1px solid #303035;border-radius:10px;padding:14px 12px;box-shadow:0 2px 5px #0002}.session-row:hover,.session-row:nth-child(even):not(.selected):hover{background:#202126;border-color:#53545f}.session-row.selected .session-folder,.session-row.selected .session-text>span{color:#d0d9ee}.session-row.selected .session-avatar{border-color:#ffffff26}.filters{display:flex;align-items:center;background:none;border:0;padding:0;min-width:0}.filters label{font-size:11px;color:var(--ink-2);flex-shrink:0}.filters select{min-width:0;flex:1;appearance:auto;background:#1d1d20;color:#d6d7df;border:1px solid #3d3e47;border-radius:7px;font:12px -apple-system,BlinkMacSystemFont,sans-serif;cursor:pointer}.filters select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}#filtered-count{font-size:11px;min-width:22px;text-align:center;color:#afafb9}.terminal-bar>div:first-child{display:flex;align-items:center}.terminal-symbol{display:inline-flex;align-items:center;justify-content:center;width:29px;height:29px;padding:0;flex-shrink:0;line-height:0;border-radius:7px}.terminal-symbol svg{display:block;width:18px;height:18px}.terminal-context{padding:13px 21px 12px}.session-metadata{display:flex;align-items:center;gap:11px}.metadata-harness{text-transform:capitalize;font-size:11px;color:#d1d1d6;background:#232327;border:1px solid #37373e;padding:3px 8px;border-radius:5px}.metadata-pid{font-size:10px;color:#9999a2}.metadata-pid b{font:11px ui-monospace,Menlo,monospace;color:#c2c2ca;margin-left:4px}.metadata-updated{font-size:10px;color:#a2a2ac}.skill-sources{display:flex;gap:5px;flex-wrap:wrap}.skill-source{border:1px solid #3b4559;padding:2px 6px;border-radius:5px}
+@media(max-width:760px){.sidebar .brand{justify-content:center}.filters{margin:9px 0 11px;gap:10px}.filters select{padding:6px 8px;font-size:11px}.agent-grid{padding:2px 2px 6px}.terminal-context{padding:10px 13px}.terminal-symbol{width:27px;height:27px}.terminal-symbol svg{width:17px;height:17px}}
+/* Quiet session list with a selection outline; no filled cards. */
+.session-row,.session-row:nth-child(even):not(.selected){background:transparent;border:1px solid transparent;border-bottom-color:#ffffff0a;border-radius:0;box-shadow:none;padding:14px 9px;transition:background .15s,border-color .15s}.session-row:hover,.session-row:nth-child(even):not(.selected):hover{background:#ffffff03;border-color:transparent;border-bottom-color:#ffffff13}.session-row.selected,.session-row.selected:hover{background:transparent;border:1px solid #6497d6;border-radius:7px;box-shadow:none;margin:4px 0}.session-row.selected strong{color:var(--ink-1)}.session-row.selected .session-folder,.session-row.selected .session-text>span{color:var(--ink-2)}.session-avatar,.session-row.selected .session-avatar{width:25px;height:28px;border:0;background:transparent;color:#a6b1c2;font-size:10px}.session-avatar .session-status{outline-color:#141416;width:6px;height:6px}.session-text strong{font-weight:500;font-size:13px}.session-folder{font-size:11px}.session-text>span{font-size:10px}
+#skills-page{display:flex;flex-direction:column;min-height:0;flex:1;padding:26px 28px}.skills-page-header{display:flex;align-items:center;justify-content:space-between;gap:20px;flex-shrink:0;margin-bottom:24px}.skills-page-header h1{font-size:27px;margin:9px 0 4px}.skills-page-header p{margin:0;color:var(--ink-2);font-size:12px}.skill-search{width:260px;max-width:100%}.skills-layout{display:grid;grid-template-columns:minmax(230px,34%) minmax(0,1fr);gap:26px;flex:1;min-height:0}#skill-list{display:flex;flex-direction:column;gap:0;overflow:auto;min-height:0;border-top:1px solid #333337;padding-right:12px}#skill-list .skill-item{border:0;border-bottom:1px solid #303034;border-radius:0;background:none;padding:16px 10px;text-align:left;box-shadow:none}#skill-list .skill-item:hover{background:#ffffff04}#skill-list .skill-item.selected{background:#192330;box-shadow:inset 2px 0 #6fa5e9}#skill-list .skill-item strong{color:var(--ink-1);font-size:13px;font-weight:500}#skill-list .skill-item small{margin-top:6px;color:var(--ink-2);font-size:11px}.skill-sources{margin-top:10px}.skill-source{font-size:9px;border-color:#3b414c;background:none;color:#aebed4}.skill-detail{overflow:auto;min-height:0;border:1px solid #303039;border-radius:10px;background:#171719;padding:27px}#skill-preview{margin:0;padding:27px;border-top:1px solid #303039}.skill-detail-heading{border-bottom:1px solid #34343a;padding-bottom:20px;margin-bottom:22px}.skill-detail-heading h2{font-size:22px;margin:0 0 12px;overflow-wrap:anywhere}.skill-detail-heading p{font-size:13px;line-height:1.7;color:var(--ink-2);margin:8px 0}#skill-availability{font-size:11px;color:#9ebdeb}#skill-task-panel>label{font-size:13px;color:var(--ink-1)}#skill-task{margin:12px 0 16px;line-height:1.7;min-height:145px}.skill-task-actions{display:flex;align-items:center;gap:16px;flex-wrap:wrap}#skill-session-context{font-size:11px;color:#aaaab3}#skill-task-panel>.muted{font-size:11px;line-height:1.7;max-width:450px}.skill-instructions{margin-top:28px;border-top:1px solid #34343a;padding-top:18px}.skill-instructions summary{font-size:12px;color:#c1c9d6;cursor:pointer}#skill-content{max-height:350px;font-size:11px;line-height:1.7}
+@media(max-width:1050px){.skills-layout{gap:16px;grid-template-columns:minmax(190px,35%) minmax(0,1fr)}#skills-page{padding:22px 18px}#skill-preview{padding:20px}.skill-search{width:210px}}
+.skills-header-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}#skills-find-dialog{width:min(680px,calc(100vw - 28px));max-height:85dvh;overflow:auto}#skills-find-dialog form{display:flex;flex-direction:column;gap:10px}#skills-find-dialog h2{margin:0}#skills-find-dialog label{font-size:12px;color:var(--ink-2)}.skills-find-row{display:flex;gap:8px}.skills-find-row input{flex:1;min-width:0}.skills-find-row .button{flex-shrink:0}#skills-find-status{font-size:12px;color:var(--ink-2);min-height:18px}#skills-find-results{max-height:280px;overflow:auto;border-top:1px solid var(--border-strong);border-bottom:1px solid var(--border-strong)}.skills-find-result{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 2px;border-bottom:1px solid var(--border-strong)}.skills-find-result:last-child{border-bottom:0}.skills-find-result>div{min-width:0}.skills-find-result strong,.skills-find-result small{display:block}.skills-find-result strong{font-size:13px}.skills-find-result small{font-size:11px;color:var(--ink-2);overflow-wrap:anywhere;margin-top:3px}#skills-find-error{min-height:18px}
+#skills-find-dialog .skills-find-row input{border:1px solid var(--border-strong);border-radius:7px;background:var(--surface-raised);color:var(--ink-1);padding:9px 11px;font:12px ui-monospace,SFMono-Regular,Menlo,monospace}#skills-find-dialog .skills-find-row input:focus{outline:2px solid var(--accent);outline-offset:1px}
+@media(max-width:560px){.skills-find-row{flex-wrap:wrap}.skills-find-row input{flex-basis:100%}.skills-find-row .button{width:100%}}
+@media(max-width:760px){body.skills-open #sidebar-sessions,body.skills-open .sidebar-bottom{display:none}.sidebar .brand{padding-bottom:12px}.agent-grid{gap:4px}.session-row,.session-row:nth-child(even):not(.selected){width:235px;min-width:235px;border-bottom:0;padding:10px 8px}.session-row.selected{margin:0}.session-row{border-right:1px solid #ffffff12}#skills-page{overflow:auto;padding:18px 12px}.skills-page-header{display:block;margin-bottom:18px}.skills-page-header h1{font-size:24px}.skill-search{width:100%;margin-top:16px}.skills-layout{display:flex;flex-direction:column;gap:18px;flex:none;min-height:auto}#skill-list{max-height:230px;flex:none;padding-right:0}#skill-list .skill-item{padding:12px}.skill-detail{overflow:visible;flex:none}#skill-preview{padding:20px}.skill-detail-heading h2{font-size:20px}.skill-task-actions{gap:10px}}
+/* Stable identity color is separate from truthful activity state. */
+.session-avatar,.session-row.selected .session-avatar{color:var(--agent-color,#9bb9df)!important}.session-row .session-avatar{border-left:2px solid var(--agent-color,#9bb9df);padding-left:4px}.session-row.selected,.session-row.selected:hover{border:2px solid var(--agent-color,#6497d6);padding:13px 8px;background:#ffffff05;box-shadow:none}.session-row.selected strong::after{font-size:8px;letter-spacing:.6px;color:var(--agent-color);margin-left:9px;font-weight:500}.session-status.working{animation:agent-working 1.8s ease-in-out infinite;background:#71cda6}.session-status.needs_input{background:#e8b864;box-shadow:0 0 0 2px #e8b86424}.session-status.unknown,.session-status.idle{animation:none}
+@keyframes agent-working{0%,100%{opacity:1;box-shadow:0 0 0 0 #71cda63a}50%{opacity:.7;box-shadow:0 0 0 4px #71cda600}}
+@media(prefers-reduced-motion:reduce){.session-status.working{animation:none}}
+#tools-page{display:flex;flex-direction:column;flex:1;min-height:0}.tool-heading{display:flex;justify-content:space-between;align-items:center;gap:15px;flex-shrink:0}.tool-heading h1{font-size:22px;margin:8px 0}.tool-heading>div{min-width:0}.tool-heading h1{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}#tool-tabs{display:flex;gap:8px;overflow:auto;flex-shrink:0;margin-top:12px;padding-bottom:3px}#tool-context{font-size:11px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;flex-shrink:0}#tool-frame-container{flex:1;min-height:0;overflow:hidden;background:#111}#tool-frame{border:0;width:100%;height:100%;display:block;background:#111}#tool-help{font-size:10px;margin:9px 0 0;flex-shrink:0}#tool-count{margin-left:3px;color:#a8bdd9;font-size:10px}
+@media(max-width:1100px){#sync-status{display:none}.topbar{gap:10px}.top-actions{gap:5px}.top-actions .button{padding:7px 9px}}
+@media(max-width:760px){.session-row.selected,.session-row.selected:hover{padding:9px 7px}.session-row.selected strong::after{font-size:7px;margin-left:6px}body.tools-open #sidebar-sessions,body.tools-open .sidebar-bottom{display:none}.topbar{flex-wrap:wrap}.top-actions{gap:4px}.top-actions .button{font-size:10px;padding:6px 7px}.tool-heading h1{font-size:17px}.tool-heading .button{font-size:10px;padding:7px}#tool-help{font-size:9px}.header-stats{gap:6px}.header-stat{font-size:9px}}
+/* Compact shell: the skill owns the full workspace below the shared top bar. */
+.tool-controls{display:none;align-items:center;gap:8px;min-width:0;flex:1}.tools-open .tool-controls{display:flex}.tool-controls select{min-width:0;width:210px;max-width:100%;background:transparent;border:0;color:var(--ink-2);font:12px -apple-system,BlinkMacSystemFont,sans-serif;padding:6px 0;text-overflow:ellipsis}.tool-controls option{background:var(--surface)}#tools-page{padding:0;overflow:hidden}#tool-frame-container{border:0;border-radius:0}#tool-empty{padding:30px}
+.sidebar{width:300px;padding:16px 10px 10px}.sidebar .brand{justify-content:center;min-height:38px;padding:0 8px 14px;margin:0 0 16px;gap:9px}main{margin-left:300px}#sidebar-sessions{margin-top:0}.section-heading h2{margin:0 7px 9px}.search{padding:6px 9px}.filters{margin:9px 0 10px;gap:8px}.filters select{padding:6px 8px;font-size:11px}.sidebar-bottom{padding:10px 2px 0;margin-top:6px}.agent-grid{gap:2px;padding:1px 1px 5px}
+.session-row,.session-row:nth-child(even):not(.selected),.session-row.selected,.session-row.selected:hover{align-items:center;padding:10px 8px;gap:15px;margin:0;border:1px solid transparent;border-radius:6px;min-height:73px;box-shadow:none}.session-row.selected,.session-row.selected:hover{background:linear-gradient(105deg,color-mix(in srgb,var(--agent-color) 19%,transparent),color-mix(in srgb,var(--agent-color) 4%,transparent));border-color:color-mix(in srgb,var(--agent-color) 24%,transparent);box-shadow:inset 2px 0 color-mix(in srgb,var(--agent-color) 75%,transparent)}.session-row.selected strong::after{content:none}.session-row .session-avatar,.session-row.selected .session-avatar{display:grid;place-items:center;width:30px;height:30px;padding:0;margin:0;border:1px solid color-mix(in srgb,var(--agent-color) 20%,transparent);border-radius:8px;background:color-mix(in srgb,var(--agent-color) 7%,transparent);line-height:1}.session-avatar .session-status{right:-2px;bottom:-2px;outline:2px solid var(--surface)}.session-folder{margin:2px 0}.topbar{padding:10px 18px;gap:14px}
+.session-row{position:relative}.session-row:not(:last-child)::after{content:'';position:absolute;left:8px;right:8px;bottom:-2px;height:1px;background:#ffffff12;pointer-events:none}
+@media(min-width:761px) and (max-width:1200px){.sidebar{width:275px}main{margin-left:275px}}
+@media(max-width:1100px){.tool-controls select{width:160px}}
+@media(max-width:760px){.sidebar{width:100%;padding:10px 10px 6px}.sidebar .brand{min-height:30px;margin:0;padding:0 0 8px;border:0}main{margin-left:0}.session-row,.session-row:nth-child(even):not(.selected),.session-row.selected,.session-row.selected:hover{padding:8px;min-height:73px;width:225px;min-width:225px}.agent-grid{height:79px}.topbar{padding:8px 10px;gap:8px}.tools-open .tool-controls{order:2;flex-basis:100%;justify-content:space-between}.tools-open .tool-controls select{flex:1;width:auto}#tools-page{padding:0}}
+
+@media(max-width:760px){.session-row:not(:last-child)::after{left:auto;right:-2px;top:8px;bottom:8px;width:1px;height:auto}}
+
+/* Tool action floats over its workspace, leaving the shared header compact. */
+#tool-frame-container{position:relative}#tool-external{position:absolute;right:22px;bottom:22px;z-index:2;padding:12px 17px;font-size:12px;font-weight:500;background:#24262bf2;border:1px solid #ffffff2b;border-radius:9px;box-shadow:0 5px 24px #0005;backdrop-filter:blur(12px)}#tool-external:hover{background:#343842;border-color:#8aa8d0}
+@media(max-width:760px){#tool-external{right:12px;bottom:12px;padding:11px 14px}}
+
+/* Supplied Sora outline lockup: keep the original proportions and tracking. */
+.brand > .brand-lockup{display:block;width:158px;height:36px;max-width:100%;flex-shrink:0}
+
+/* Soft navigation accents share the blue/lavender brand palette. */
+.top-actions #open-sessions{--nav-accent:#8fd0b4}
+#open-special-agents{--nav-accent:#b7a4e8}
+.top-actions #open-inbox{--nav-accent:#9ccaff}
+.top-actions #open-workflows{--nav-accent:#9fc3d9}
+.top-actions #open-tools{--nav-accent:#a9b4ef}
+.top-actions #open-skills{--nav-accent:#b9abe3}
+
+
+
+
+/* ---- Controls. Every button, in one place. Edit here. ---- */
+.text-button{background:none;border:0;padding:3px 0;font-size:11px}
+.button{border:1px solid #3e3e3e;white-space:nowrap;padding:9px 13px;border-radius:8px;font-size:12px;background:var(--surface-raised);border-color:var(--border-strong);color:var(--ink-1);box-shadow:none}
+.dialog-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:16px}
+.text-button,#sync-status{color:#adadad}
+.button.primary{font-weight:600;box-shadow:none;background:var(--surface-raised);border-color:#2b3e59;color:#b4c7e3}
+.button:disabled{opacity:.4;cursor:default}
+.terminal-empty .button{font-size:12px;padding:9px 15px;background:var(--surface-raised);border-color:#354151;color:var(--ink-2)}
+.terminal-empty .button span{margin-left:12px}
+.sidebar-bottom .text-button,.text-button{color:#9bb9df}
+.button:hover{background:#343434;border-color:#626262}
+.button.danger{background:#33282a;border-color:#564044;color:#efb0b7}
+.button.danger:hover{background:#422c30;border-color:#805258}
+.button.primary:hover{background:#222b39;border-color:#4673a6}
+.terminal-empty .button span,.terminal-symbol,.prompt{color:#96b8e6}
+.top-actions .button.active{border-color:#5079ad;background:#1d2838;color:#d1e3ff}
+#tool-tabs .button.active{border-color:#6396cf;background:#1d2e45;color:#d2e5fc}
+.sidebar-bottom .text-button{font-size:10px}
+.top-actions .sound-toggle{display:grid;place-items:center;width:34px;height:34px;padding:7px;flex-shrink:0;color:#979dac;border-color:transparent;background:transparent}
+.sound-toggle svg{width:18px;height:18px}
+.sound-toggle[aria-pressed=false] .sound-waves,.sound-toggle[aria-pressed=true] .sound-muted{display:none}
+#app-fullscreen[aria-pressed=false] .fs-collapse,#app-fullscreen[aria-pressed=true] .fs-expand{display:none}
+.top-actions #app-fullscreen[aria-pressed=true]{color:#9ccaff;background:#9ccaff0d}
+.top-actions .sound-toggle[aria-pressed=true]{color:#9ccaff;background:#9ccaff0d}
+.top-actions .sound-toggle:hover{color:#c7dcf8;background:#9ccaff16}
+.top-actions .sound-toggle:focus-visible{outline:2px solid #9ccaff;outline-offset:2px}
+
+/* Buttons: one 30px rhythm, icons at 15px, and three levels of emphasis.
+   Navigation is a ghost, Coordinator is outlined, New terminal is the one filled action. */
+.button{height:30px;min-height:30px;padding:0 12px;border-radius:7px;font-size:12px;font-weight:500;display:inline-flex;align-items:center;gap:7px;line-height:1;white-space:nowrap;background:var(--surface-raised);border:1px solid var(--border-strong);color:var(--ink-1);box-shadow:inset 0 1px 0 #ffffff09;transition:background .12s,border-color .12s,color .12s,opacity .12s}
+.button:hover{background:#2a2a2d;border-color:#5a5a5e;color:#fff}
+.button:active{background:#1b1b1d}
+.button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.button:disabled{opacity:.45;cursor:default}
+.btn-icon{width:15px;height:15px;flex-shrink:0;opacity:.72;transition:opacity .12s}
+.button:hover .btn-icon{opacity:1}
+
+.top-actions{gap:3px;align-items:center}
+.top-actions .button{position:relative;background:transparent;border-color:transparent;box-shadow:none;color:var(--ink-2)}
+.top-actions .button:hover{background:#ffffff0f;border-color:#ffffff14;color:var(--ink-1)}
+.top-actions .button:active{background:#ffffff0a;border-color:#ffffff12}
+/* The current destination is the one chrome in the group, tinted with its own hue. */
+.top-actions .button.active{background:color-mix(in srgb,var(--nav-accent,var(--accent)) 14%,transparent);border-color:color-mix(in srgb,var(--nav-accent,var(--accent)) 30%,transparent);color:var(--ink-1);box-shadow:inset 0 1px 0 #ffffff12}
+.top-actions .button.active:hover{background:color-mix(in srgb,var(--nav-accent,var(--accent)) 19%,transparent)}
+.top-actions .button.active .btn-icon{opacity:1}
+#review-count,#tool-count{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:16px;padding:0 5px;margin-left:2px;border-radius:999px;background:#ffffff14;color:var(--ink-2);font-size:10px;font-weight:600;line-height:1}
+#review-count:not(.hidden){background:var(--accent-soft);color:#9ec8f7}
+
+/* --- Header control order --------------------------------------------------------
+   Header controls keep the same order and position on every page, and the connection
+   status stays visible on every page.
+   One declared order for the header (headerDestinations in app.js mirrors the
+   .top-actions order in index.html). A control that does not apply to the current
+   page is reserved in place, in the same visibility:hidden idiom as the reserved
+   attention badge, so .top-actions keeps one width and nothing can slide sideways
+   on a page switch. No page may hide #stats, #mode-title, #sync-status or
+   .top-identity: hiding the connection status drops the green dot and shifts the
+   whole cluster sideways. */
+.top-actions .reserved{visibility:hidden;pointer-events:none}
+/* The breadcrumb is the last page-dependent width in the bar: "Run & Schedule" is the
+   longest label and, at narrow widths, a different label width wraps the controls at a
+   different point on each page. Reserving one width for the identity keeps the wrap point
+   identical there. On desktop the reservation would leave 56-66px of dead space after the
+   label, and the counts follow the label directly, so the reservation only applies where the
+   bar can wrap: measured on the longest page, the bar is one row down to a 1472px viewport.
+   The full-screen control added 34px to the utilities, so the reservation now starts at 1560px:
+   above that there is slack, below it the actions cluster would shrink by a couple of pixels on
+   the pages with a longer name ("Run & Schedule") and the bar would shift with the page. */
+#breadcrumb{white-space:nowrap}
+@media(max-width:1560px){.top-identity{min-width:144px}}
+/* The counts are already in the sidebar, so the bar drops them first when it narrows: below
+   1500px, where the bar would otherwise wrap the connection status onto its own row. */
+@media(max-width:1500px){#stats{display:none}}
+/* The Inbox badge keeps its slot at zero; .hidden carries !important, so this does too.
+   An invisible slot would leave a blank 18px tail inside the Inbox chip and look out of
+   line beside Tools, whose zero count is shown. A zero reads as the same quiet neutral
+   badge Tools uses; the accent ground is only for real items. */
+.top-actions #review-count.hidden{display:inline-flex!important;visibility:visible}
+/* --- end header control order -------------------------------------------------- */
+
+/* --- Header · segmented navigation -------------------------------------------------
+   The six destinations
+   become one segmented control with a single neutral thumb that slides to the current
+   page; only the current page's icon takes its colour. A pulsing dot replaces the Live
+   badge (Demo keeps its badge), and the counts follow the page name as quiet text.
+   Nothing here changes the order or the slots the header-order block guarantees. */
+@media(min-width:761px){.topbar{min-height:58px;padding-top:9px;padding-bottom:9px}}
+.top-identity{gap:9px}
+#breadcrumb{font-size:14px;font-weight:600;letter-spacing:-.01em}
+#mode-title.mode-label:not(.demo-badge){order:-1;flex-shrink:0;width:7px;height:7px;padding:0;border:0;border-radius:50%;background:#7fc6a8;font-size:0;animation:header-live 2.4s infinite}
+@keyframes header-live{0%{box-shadow:0 0 0 0 #7fc6a866}70%{box-shadow:0 0 0 7px #7fc6a800}100%{box-shadow:0 0 0 0 #7fc6a800}}
+#stats{margin-left:4px;padding:0;border:0;gap:12px}
+#stats .header-stat{font-size:11.5px;color:#9ea3ad}
+.top-actions{margin-left:auto}
+.header-nav{position:relative;overflow:hidden;display:flex;align-items:center;flex-wrap:wrap;padding:3px;border:1px solid var(--border);border-radius:11px;background:#0f0f11;box-shadow:inset 0 1px 0 #ffffff08}
+.header-nav-thumb{position:absolute;top:0;left:0;border-radius:8px;background:#ffffff12;box-shadow:inset 0 0 0 1px var(--border-strong),0 1px 2px #0008;pointer-events:none}
+.header-nav.ready .header-nav-thumb{transition:transform .32s cubic-bezier(.3,.8,.3,1),width .32s cubic-bezier(.3,.8,.3,1),height .32s}
+.top-actions .header-nav .button{z-index:1;height:30px;padding:0 13px;border:0;border-radius:8px;background:transparent;box-shadow:none;color:#9ea3ad;transition:color .2s}
+.top-actions .header-nav .button:hover,.top-actions .header-nav .button:active{background:transparent;border:0;color:var(--ink-1)}
+.top-actions .header-nav .button.active,.top-actions .header-nav .button.active:hover{background:transparent;border:0;box-shadow:none;color:var(--ink-1)}
+.top-actions .header-nav .button .btn-icon{color:currentColor;opacity:.8}
+.top-actions .header-nav .button.active .btn-icon{color:var(--nav-accent);opacity:1}
+.top-actions .header-nav .button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.top-actions .header-nav #review-count,.top-actions .header-nav #tool-count{height:15px;min-width:15px;font-size:9.5px}
+@media(max-width:1200px){.header-nav{flex-wrap:nowrap}.top-actions .header-nav .button{gap:0;padding:0 9px;font-size:0}.top-actions .header-nav .button .btn-icon{margin:0}.top-actions .header-nav #review-count,.top-actions .header-nav #tool-count{margin-left:4px}}
+@media(max-width:760px){.header-nav{padding:2px}.top-actions .header-nav .button{height:28px;padding:0 7px}.top-actions{flex-wrap:nowrap}}
+@media(prefers-reduced-motion:reduce){#mode-title.mode-label{animation:none}.header-nav.ready .header-nav-thumb{transition:none}}
+/* Full screen and sound sit in the nav's well after a hairline, so the
+   header's corner is one control, and an on toggle looks like the selected tab. */
+.header-nav-sep{flex:none;width:1px;height:16px;margin:0 5px;background:#ffffff14}
+.top-actions .header-nav .sound-toggle{width:30px;padding:0;margin:0;color:#9ea3ad}
+.top-actions .header-nav .sound-toggle::before{content:none}
+.top-actions .header-nav #completion-sound{margin-left:6px}
+.top-actions .header-nav .sound-toggle svg{width:16px;height:16px}
+.top-actions .header-nav :is(#completion-sound,#app-fullscreen)[aria-pressed=true]{background:#ffffff12;box-shadow:inset 0 0 0 1px var(--border-strong),0 1px 2px #0008;color:var(--ink-1)}
+.top-actions .header-nav .sound-toggle[aria-pressed=true] svg{color:#9ccaff}
+@media(max-width:760px){.top-actions .header-nav .sound-toggle{width:28px}.top-actions .header-nav #completion-sound{margin-left:4px}.header-nav-sep{margin:0 3px}}
+/* The connection rides on the Live dot beside the page name: green while live, red with a
+   short note when lost, so the corner keeps one width. The text stays for screen readers. */
+#sync-status{margin:0;max-width:none;white-space:nowrap;font-size:12px;font-weight:500}
+#sync-status:not(.error-banner){position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+#sync-status.error-banner{color:#e8a19c!important}
+.top-identity:has(#sync-status.error-banner) #mode-title.mode-label:not(.demo-badge){background:#e5534b;box-shadow:0 0 0 3px #e5534b24;animation:none}
+/* --- end segmented navigation -------------------------------------------------------- */
+
+#agent-map-toggle{background:transparent;border-color:transparent;box-shadow:none;color:var(--ink-2)}
+#agent-map-toggle:hover{background:#ffffff0f;color:var(--ink-1)}
+#agent-map-toggle[aria-pressed=true]{background:#ffffff14;border-color:transparent;color:var(--ink-1)}
+#new-controller{background:#ffffff0a;border-color:transparent;color:var(--ink-2)}
+#new-controller:hover{background:#ffffff14;border-color:transparent;color:var(--ink-1)}
+/* New terminal: a faint wash of the logo's gradient on the toolbar's dark button, with the full
+   gradient kept to the plus chip so it echoes the logo tile. */
+#new-terminal{gap:8px;padding:0 13px 0 5px;background:linear-gradient(135deg,#9ccaff1f,#9b8be81f),#141519;border-color:#a9b4ef3d;color:#dfe5f5;font-weight:500;
+  box-shadow:inset 0 1px 0 #ffffff0d;transition:background .18s,border-color .18s,color .18s}
+#new-terminal:hover{background:linear-gradient(135deg,#9ccaff2e,#9b8be82e),#141519;border-color:#a9b4ef66;color:#fff}
+#new-terminal:active{background:linear-gradient(135deg,#9ccaff17,#9b8be817),#121317}
+#new-terminal:focus-visible{outline:2px solid #9ccaff;outline-offset:2px}
+#new-terminal .btn-icon{box-sizing:content-box;width:12px;height:12px;padding:3px;border-radius:6px;background:linear-gradient(135deg,#9ccaff,#9b8be8);color:#0e1122;stroke-width:2.4;opacity:1;transition:transform .25s cubic-bezier(.3,.8,.3,1)}
+#new-terminal:hover .btn-icon{transform:rotate(90deg)}
+@media(prefers-reduced-motion:reduce){#new-terminal,#new-terminal .btn-icon{transition:none}#new-terminal:hover .btn-icon{transform:none}}
+#new-controller .btn-icon{opacity:.9}
+/* Agent map and New coordinator share a well built like the
+   header nav's, and Agent map on looks like the selected tab. New stays on its own. */
+.workspace-toolbar .toolbar-well{display:flex;align-items:center;margin-left:auto;padding:2px;border:1px solid var(--border);border-radius:10px;background:#0f0f11;box-shadow:inset 0 1px 0 #ffffff08}
+.workspace-toolbar .toolbar-well :is(#agent-map-toggle,#new-controller){height:26px;min-height:0;margin:0;padding:0 12px;border:0;border-radius:8px;background:transparent;box-shadow:none;color:#9ea3ad}
+.workspace-toolbar .toolbar-well :is(#agent-map-toggle,#new-controller):hover{background:transparent;color:var(--ink-1)}
+.workspace-toolbar .toolbar-well #agent-map-toggle[aria-pressed=true]{background:#ffffff12;box-shadow:inset 0 0 0 1px var(--border-strong),0 1px 2px #0008;color:var(--ink-1)}
+.workspace-toolbar #new-terminal{height:32px}
+.dialog-actions .button,.launch-footer .button{height:32px;min-height:32px;padding:0 14px}
+/* Each destination keeps its hue on the icon only, so the chrome stays uniform. */
+.top-actions .button .btn-icon{color:var(--nav-accent,currentColor);opacity:.85}
+.top-actions .button:hover .btn-icon,.top-actions .button.active .btn-icon{opacity:1}
+
+/* --- Skills · which agents can use each skill ---------------------------------------------
+   "I want all of the skills in the skills tab of agent desk to be harness agnostic." Each skill
+   shows the agents that can actually load it, read from the folders each harness scans. */
+.skill-source.on{border-color:#3d6b58;color:#a9dcc4}
+.skill-source.off{border-style:dashed;border-color:#5a4a3a;color:#c9a877}
+.skill-source.tag{border-color:#3b414c;color:#9aa2b2}
+.skill-source.warn{border-color:#6b5431;color:#e0c07f}
+.skills-header-actions{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-top:16px}
+#skills-sync{margin-top:0}
+/* The Readouts tool: one quiet block under the skill sync, using the same agent chips. */
+.skill-harnesses{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.skill-harness{padding:3px 8px;border:1px solid var(--border);border-radius:999px;font-size:11px;white-space:nowrap}
+.skill-harness.on{border-color:#3d6b5899;background:#7fc6a80f;color:#a9dcc4}
+.skill-harness.off{border-style:dashed;border-color:#8d663699;color:#d9b56f}
+.skill-explicit{margin:10px 0 0;font-size:12px;color:var(--ink-2)}
+.skill-portability{margin-top:12px;padding:9px 11px;border:1px solid #6b543166;border-radius:8px;background:#30261940;font-size:12px;color:#e8cf9f}
+.skill-portability strong{font-weight:600}
+.skill-portability ul{margin:6px 0 0;padding-left:18px;color:#d8c29a}
+.skill-portability li+li{margin-top:3px}
+/* --- end skills --------------------------------------------------------------------------- */
+
+#skill-builder{width:min(680px,calc(100vw - 24px));max-height:calc(100dvh - 24px);overflow:auto;box-sizing:border-box}
+#skill-builder label{display:block;margin:16px 0 6px}
+#skill-builder input,#skill-builder textarea{box-sizing:border-box;width:100%;padding:10px;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:7px}
+#skill-build-preview{white-space:pre-wrap;overflow-wrap:anywhere;padding:14px;border:1px solid var(--border);border-radius:8px}
+#skill-builder .dialog-actions{flex-wrap:wrap;gap:10px}
+.annotation-delivery{overflow-wrap:anywhere;border-top:1px solid var(--border);padding-top:10px;font-size:12px}
+
+/* Native hidden must win over button/flex layout rules. */
+[hidden]{display:none!important}
+
+#skill-builder .dialog-actions{position:sticky;bottom:-28px;background:var(--surface);padding:12px 0 16px;border-top:1px solid var(--border);z-index:1}
+#portable-conversation-fields{margin:0 28px 20px;display:grid;gap:8px}
+#portable-conversation-fields input,#portable-conversation-fields select,#portable-conversation-fields textarea{width:100%;min-width:0;box-sizing:border-box}
+/* A skill with a UI: launched from its detail beside a new agent session. */
+.skill-source.tool{border-color:#3f5f86;color:#a8c9f4}
+.skill-tool-panel{margin:4px 0 22px;padding:16px 18px;border:1px solid #2f4460;border-radius:10px;background:#a8c9f408}
+.skill-tool-heading{display:flex;align-items:center;gap:9px}.skill-tool-heading h3{margin:0;font-size:14px;font-weight:550;color:var(--ink-1)}
+.skill-tool-badge{padding:2px 7px;border:1px solid #3f5f86;border-radius:5px;color:#a8c9f4;font-size:9px;letter-spacing:.6px;text-transform:uppercase}
+#skill-tool-description{margin:8px 0 14px;font-size:12px;line-height:1.6;color:var(--ink-2)}
+.skill-tool-fields{display:grid;grid-template-columns:minmax(0,1fr) 190px;gap:12px}.skill-tool-fields label{display:block;margin-bottom:6px;font-size:11px;color:var(--ink-2)}
+.skill-tool-fields input,.skill-tool-fields select{width:100%;height:34px;padding:0 10px;border:1px solid #ffffff1c;border-radius:7px;background:#111113;color:var(--ink-1);font-size:12px}
+#skill-tool-target{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px}
+.skill-tool-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:14px}.skill-tool-actions span{font-size:11px;color:var(--ink-muted)}
+#skill-tool-error:empty{display:none}#skill-tool-error{margin:12px 0 0}
+@media(max-width:760px){.skill-tool-fields{grid-template-columns:1fr}.skill-tool-panel{padding:14px}}
+#tool-builder-form label{display:block;margin:14px 0 6px;font-size:12px}#tool-builder-form input,#tool-builder-form textarea,#tool-builder-form select{display:block;width:100%}
+#tool-builder-form input,#tool-builder-form select{height:34px;padding:0 10px;border:1px solid #ffffff1c;border-radius:7px;background:#111113;color:var(--ink-1)}
+#tool-build-error:empty{display:none}
+#tool-builder-form input{font-size:13px}
+.skill-tool-fields>[hidden]{display:none}.skill-tool-fields:has(>[hidden]){grid-template-columns:190px}

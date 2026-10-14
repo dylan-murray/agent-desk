@@ -1,0 +1,21 @@
+/* One focus treatment for every text field, matching the shape of the box everywhere in the UI.
+   The browser's outline is drawn outside the field and ignores its corners; a search field's outline hugged
+   the bare input inside its rounded box. Instead the field's own border lights up with a soft ring drawn as a
+   box-shadow, which follows the field's radius, and a field inside a wrapper (search with its icon) lights the
+   wrapper. This is the one focus policy for fields, so it outranks the per-field rules on purpose.
+   Fields designed without a box keep their own treatment: the terminal's hidden input, the coordinator's
+   underline composer, and the inline rename inputs. */
+:root{--field-focus:#4c8cdb;--field-ring:0 0 0 3px #4c8cdb2e}
+:is(input:not([type=checkbox],[type=radio],[type=range],[type=color],[type=file]),textarea,select):focus{outline:none!important}
+:is(input:not([type=checkbox],[type=radio],[type=range],[type=color],[type=file]),textarea,select):not(.xterm-helper-textarea,[data-coord-id=coord-input],.desk-name-input,.pane-name-input,.search input):focus{border-color:var(--field-focus)!important;box-shadow:var(--field-ring)!important}
+.search:focus-within{border-color:var(--field-focus)!important;box-shadow:var(--field-ring)}
+.search input:focus{box-shadow:none!important}
+
+/* One dropdown treatment, so the arrow sits inside the box. The browser's own arrow sits against the edge with
+   no room of its own (most visibly on the SSH dialog). Every single-choice
+   select draws one chevron inside its padding instead; the background-* longhands are !important so a component's
+   `background` shorthand can't erase it. */
+select:not([multiple]):not([size]){-webkit-appearance:none;appearance:none;padding-right:30px!important;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%239aa0ab' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E")!important;
+  background-repeat:no-repeat!important;background-position:right 10px center!important;background-size:12px!important;text-overflow:ellipsis;min-height:24px}
+select:not([multiple]):not([size])::-ms-expand{display:none}

@@ -1,0 +1,58 @@
+/* Routing toggle shared by the coordinator dialog and the terminal-controller launcher. */
+.router-toggle-field{margin-top:16px;padding:12px 14px;border:1px solid #789ed72b;border-radius:9px;background:#789ed709}
+#controller-options .router-toggle-field{margin-top:12px;padding:12px 0 0;border:0;border-top:1px solid #789ed722;border-radius:0;background:none}
+.router-toggle,[data-coord-id="coord-create-form"] label.router-toggle,#controller-options label.router-toggle{display:flex;align-items:center;gap:9px;margin:0;font:500 12px/1.5 system-ui;color:#c3cbdb;cursor:pointer}
+.router-toggle input,[data-coord-id="coord-create-form"] .router-toggle input,#launch-terminal-form .router-toggle input{appearance:auto;display:inline-block;flex:none;width:14px;height:14px;min-height:0;margin:0;padding:0;border:0;border-radius:3px;background:none;box-shadow:none;accent-color:#8babe0}
+.router-toggle input:focus,[data-coord-id="coord-create-form"] .router-toggle input:focus,#launch-terminal-form .router-toggle input:focus{outline:none}
+.router-toggle input:focus-visible,[data-coord-id="coord-create-form"] .router-toggle input:focus-visible,#launch-terminal-form .router-toggle input:focus-visible{outline:2px solid #9ccaff;outline-offset:2px}
+.router-toggle:has(input:disabled){color:#8a94a6;cursor:not-allowed}
+.router-toggle-detail{display:flex;align-items:center;gap:10px;margin-top:6px;padding-left:23px}
+.router-status,[data-coord-id="coord-create-form"] p.router-status,#controller-options p.router-status{flex:1;min-width:0;margin:0;font:11px/1.5 system-ui;color:#8290a5;overflow-wrap:anywhere}
+.router-status[data-state="ready"]{color:#a9bbd3}
+.router-status span{white-space:nowrap}
+.router-settings-button,.button.router-settings-button{flex:none;height:auto;min-height:26px;padding:3px 9px;border:1px solid #354154;border-radius:5px;background:transparent;color:#afc1da;font:11px/1.4 system-ui;white-space:nowrap}
+.router-settings-button:hover{background:#233147;border-color:#637d9f;color:#e1edff}
+.router-settings-button[hidden]{display:none}
+
+/* Settings dialog, matching the coordinator create dialog. */
+#model-router-dialog{width:min(540px,calc(100vw - 32px));max-height:calc(100dvh - 32px);overflow:auto;background:#14171d;border:1px solid #394252;border-radius:12px;padding:26px;color:#dce5f3}
+#model-router-dialog::backdrop{background:#0009}
+#model-router-form{display:flex;flex-direction:column}
+#model-router-form h2{margin:4px 0 0;font:600 18px/1.4 system-ui;letter-spacing:-.3px}
+#model-router-form>p.muted{font:12px/1.6 system-ui;color:#8e9db3;margin:10px 0 0}
+#model-router-form code{padding:1px 5px;border-radius:4px;background:#ffffff0d;color:#c9d6e8;font:11.5px ui-monospace,SFMono-Regular,Menlo,monospace}
+#model-router-form>label,#model-router-form legend{display:block;margin-top:17px;padding:0;font:500 12px/1.5 system-ui;color:#b6c3d6}
+#model-router-form .label-note{margin-left:6px;font-weight:400;color:#7d8aa0}
+#model-router-form input:not([type=radio]),#model-router-form textarea{box-sizing:border-box;width:100%;min-height:42px;margin-top:6px;padding:10px 12px;background:#0d1118;border:1px solid #3d4a5e;border-radius:7px;color:#e0e9f8;font:13px/1.5 system-ui;box-shadow:inset 0 1px 2px #0003}
+#model-router-form textarea{resize:vertical;font:12.5px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace}
+#model-router-form input::placeholder{color:#8290a5}
+#model-router-form input:not([type=radio]):focus,#model-router-form textarea:focus{outline:2px solid #9ccaff70;outline-offset:2px;border-color:#9ccaff}
+.router-key-row{display:flex;gap:8px;align-items:stretch}
+.router-key-row input{flex:1;min-width:0}
+.router-key-row .button{margin-top:6px;height:auto;min-height:42px;padding:0 14px;white-space:nowrap}
+.router-preference{margin:17px 0 0;padding:0;border:0;min-width:0}
+#model-router-form .router-preference legend{margin:0;float:left;width:100%}
+.router-preference .router-segments{clear:both}
+.router-segments{display:inline-flex;margin-top:6px;border:1px solid #3d4a5e;border-radius:7px;overflow:hidden;background:#0d1118}
+.router-segments label{position:relative;margin:0}
+.router-segments label+label{border-left:1px solid #3d4a5e}
+.router-segments input{position:absolute;opacity:0;inset:0;margin:0;cursor:pointer}
+.router-segments span{display:block;padding:8px 16px;font:12px/1.4 system-ui;color:#a9b8cd;cursor:pointer}
+.router-segments input:checked+span{background:#9ccaff1c;color:#e3efff}
+.router-segments input:focus-visible+span{outline:2px solid #9ccaff;outline-offset:-2px}
+.router-harnesses{display:flex;flex-direction:column;gap:6px;margin:8px 0 0;padding:0;list-style:none}
+.router-harnesses:empty{display:none}
+.router-harnesses li{display:flex;align-items:center;flex-wrap:wrap;gap:6px 8px;min-height:34px;padding:4px 6px 4px 10px;border:1px solid #2c394c;border-radius:6px;background:#151d28;color:#96a8c2;font:12px/1.4 system-ui;overflow-wrap:anywhere}
+.router-harnesses li select{margin-left:auto;min-height:26px;padding:3px 26px 3px 9px;border:1px solid #354154;border-radius:5px;background:#0d1118 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%2392a9c8' stroke-width='1.4'/%3E%3C/svg%3E") no-repeat right 9px center;color:#c9d6e8;font:11px/1.4 system-ui;appearance:none;cursor:pointer}
+.router-harnesses li select:focus-visible{outline:2px solid #9ccaff;outline-offset:2px}
+.router-harnesses li code{padding:0;background:none;font-size:12px}
+.router-harnesses li[data-harness="none"]{border-color:#6b4536;color:#e3ae7d}
+.router-result{display:grid;gap:3px;margin-top:10px;padding:10px 12px;border:1px solid #2e5a46;border-radius:7px;background:#1a2a2266;overflow-wrap:anywhere}
+.router-result[hidden]{display:none}
+.router-result strong{color:#cfe8db;font:600 13px/1.5 system-ui}
+.router-result span{color:#a9bfb3;font:12px/1.5 system-ui}
+.router-result small{color:#7f9488;font:11px/1.5 system-ui}
+#model-router-form .error-banner{margin:10px 0 0;font:12px/1.5 system-ui}
+#model-router-form .error-banner:empty{display:none}
+#model-router-form .dialog-actions{margin-top:22px;padding-top:18px;border-top:1px solid #2b3544}
+@media(max-width:600px){#model-router-dialog{padding:20px}.router-segments{display:flex}.router-segments label{flex:1;text-align:center}#model-router-form .dialog-actions{flex-wrap:wrap}.router-toggle-detail{flex-wrap:wrap}}

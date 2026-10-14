@@ -1,0 +1,455 @@
+#agents-page{display:flex;flex-direction:column;gap:10px;min-height:0;padding:14px 16px}.workspace-toolbar{display:flex;align-items:center;gap:16px;flex-shrink:0;font-size:11px;color:var(--ink-2)}.workspace-toolbar .button{margin-left:auto}.pane-hint{color:var(--ink-muted);font-size:10px}.terminal-workspace{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));grid-auto-rows:var(--pane-row,60px);gap:10px;flex:1;min-height:0;align-content:start}.terminal-pane{display:flex;flex-direction:column;min-height:0;min-width:0;border-radius:9px;overflow:hidden;border:1px solid #303035}.terminal-pane.focused{border-color:color-mix(in srgb,var(--agent-color) 55%,#303035)}.terminal-pane .terminal-bar{display:flex;justify-content:space-between;padding:10px 12px;gap:10px;min-height:42px;flex-shrink:0}.pane-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;min-width:0}.pane-actions{display:flex;align-items:center;gap:6px;flex-shrink:0}.pane-actions .pane-state:empty{display:none}.pane-actions>.pane-tool,.pane-actions>.pane-state{margin-right:6px}
+.pane-actions .pane-state{font-size:9px;color:var(--ink-2)}
+.pane-state[data-state=needs_input]{color:var(--amber)}
+.pane-state[data-state=error]{color:var(--danger)}
+.pane-directory{display:flex;align-items:center;gap:14px}.pane-path{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* A terminal's status line, under the terminal like tmux's: the folder on the left, cpu and mem on the right,
+   each a segment split by a hairline. */
+.terminal-pane>.pane-status{align-items:stretch;gap:0;height:22px;padding:0;border-top:1px solid #ffffff0b;border-bottom:0;background:#0f0f11;font:10px/22px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--ink-2);flex-shrink:0}
+.pane-status .pane-path{padding:0 12px;color:#9b9ba6}
+.pane-usage{display:flex;align-items:stretch;flex-shrink:0;margin-left:auto;font-variant-numeric:tabular-nums;white-space:nowrap}
+.pane-usage:empty{display:none}
+.usage-time,.usage-cpu,.usage-group{display:flex;align-items:center;gap:6px;padding:0 12px;border-left:1px solid #ffffff0b}
+.usage-span{color:var(--ink-1)}.usage-time[data-state="idle"] .usage-span{color:var(--ink-2)}
+.usage-time[data-state="working"] .usage-label::before{content:"";display:inline-block;width:5px;height:5px;margin:0 6px 1px 0;border-radius:50%;background:#7fc6a8;box-shadow:0 0 0 0 #7fc6a866;animation:usage-pulse 1.8s ease-out infinite}
+@keyframes usage-pulse{0%{box-shadow:0 0 0 0 #7fc6a866}70%{box-shadow:0 0 0 5px #7fc6a800}100%{box-shadow:0 0 0 0 #7fc6a800}}
+@media(prefers-reduced-motion:reduce){.usage-time[data-state="working"] .usage-label::before{animation:none}}
+.usage-label{color:#62676f}
+.usage-value,.usage-mem{color:var(--ink-1)}
+.usage-cpu[data-load="idle"] .usage-value{color:var(--ink-2)}.usage-cpu[data-load="busy"] .usage-value{color:#8fc0f0}.usage-cpu[data-load="warn"] .usage-value{color:#d9b56f}.usage-cpu[data-load="bad"] .usage-value{color:#ee9898}
+/* Stop, full screen and close are the same icon button; stop and full screen appear on hover or focus. */
+.pane-icon{display:grid;place-items:center;width:22px;height:22px;padding:0;border:0;border-radius:5px;background:none;color:#8b8e99}
+.pane-icon svg{display:block;width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.pane-icon:hover{background:#ffffff12;color:var(--ink-1)}
+.pane-icon:focus-visible{outline:1px solid currentColor;outline-offset:-3px}
+.pane-stop{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 8px 0 6px;border:1px solid #e8676738;border-radius:5px;background:#e867670a;color:#d99a9a;font-size:10px;font-weight:500;line-height:1}
+.pane-stop svg{display:block;width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:1.4}
+.pane-stop .stop-glyph{fill:currentColor;stroke:none}
+.pane-stop:hover{background:#e8676724;border-color:#e8676775;color:#f4b4b4}
+.pane-stop:focus-visible{outline:1px solid currentColor;outline-offset:1px}
+.terminal-bar .pane-expand,.terminal-bar .pane-stop,.terminal-bar .pane-protect{opacity:0;transition:opacity .15s}
+.terminal-pane:hover .pane-expand,.terminal-pane:hover .pane-stop,.terminal-pane.focused .pane-expand,.terminal-pane.focused .pane-stop,.pane-actions:focus-within .pane-expand,.pane-actions:focus-within .pane-stop,.terminal-pane:hover .pane-protect,.terminal-pane.focused .pane-protect,.pane-actions:focus-within .pane-protect{opacity:1}
+.terminal-bar .pane-protect[aria-pressed=true]{opacity:1;color:#e3b341}
+.pane-protect[aria-pressed=true] .lock-open,.pane-protect[aria-pressed=false] .lock-shut{display:none}
+@media(prefers-reduced-motion:reduce){.terminal-bar .pane-expand,.terminal-bar .pane-stop,.terminal-bar .pane-protect{transition:none}}
+/* Full screen: one pane covers the workspace and the rest stay mounted but out of the way. */
+.terminal-workspace.has-fullscreen{position:relative}
+.terminal-workspace.has-fullscreen>.terminal-pane:not(.pane-fullscreen){visibility:hidden;pointer-events:none}
+.terminal-pane.pane-fullscreen{position:fixed;inset:0;z-index:60;border-radius:0;margin:0}.pane-directory{font:10px/1.4 ui-monospace,monospace;color:#9b9ba6;padding:7px 12px;border-bottom:1px solid #ffffff09;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:0}.pane-body{flex:1;min-height:0;overflow:auto;padding:14px}.pane-body.pty-body{padding:0;overflow:hidden;background:#0c0c0d}.pane-body .xterm{height:100%}.pane-body .terminal-empty{min-height:0;height:100%;padding:12px;justify-content:center}.pane-body .terminal-empty h2{font-size:19px}.pane-body .terminal-empty p{font-size:12px;max-width:370px}.pane-body .terminal-empty small{max-width:380px;line-height:1.6}.pane-connection:empty{display:none}.pane-connection{font-size:10px;padding:5px 10px;color:#d8bd90;background:#242018;flex-shrink:0}.workspace-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;border:1px dashed #36363d;border-radius:10px;color:var(--ink-2)}.workspace-empty h2{font-size:20px;color:var(--ink-1)}
+.session-entry{position:relative;flex-shrink:0}.session-entry>.session-row{padding-right:30px!important}.session-add{position:absolute;right:5px;top:50%;transform:translateY(-50%);border:0;background:none;color:#979ba8;font-size:16px;padding:5px;opacity:.65;border-radius:4px}.session-add:hover,.session-add:focus-visible{opacity:1;color:#e6ecf9;background:#ffffff12}.session-entry:not(:last-child)::after{content:'';position:absolute;left:8px;right:8px;bottom:-2px;height:1px;background:#ffffff12;pointer-events:none}.session-entry .session-row::after{display:none}
+#launch-terminal-form>label,#terminal-custom-field label{display:block;font-size:12px;margin:15px 0 6px}#launch-terminal-form input,#launch-terminal-form select{display:block;width:100%;padding:9px 10px;color:var(--ink-1);background:#111112;border:1px solid #44444a;border-radius:6px;font:12px -apple-system,BlinkMacSystemFont,sans-serif}#launch-terminal-form label .muted{font-size:10px}#terminal-args{width:100%;font:12px/1.6 ui-monospace,monospace;padding:9px 10px}#terminal-launch-error:empty{display:none}
+@media(max-width:1050px){.pane-title{font-size:10px}.pane-actions{gap:7px}.pane-hint{display:none}.terminal-pane .terminal-bar{padding:9px}.pane-body .terminal-empty h2{font-size:16px}.pane-body .terminal-empty-icon{display:none}.pane-body .terminal-empty p{font-size:11px}}
+@media(max-width:760px){#agents-page{padding:10px;overflow:auto;flex:1}.session-entry{width:225px;min-width:225px}.session-entry:not(:last-child)::after{left:auto;right:-2px;top:8px;bottom:8px;width:1px;height:auto}.terminal-workspace{grid-template-columns:minmax(0,1fr);grid-auto-rows:320px;flex:none}.terminal-workspace.pane-overflow{overflow:visible;padding-right:0;margin-right:0}.terminal-workspace>.terminal-pane{grid-area:auto!important}.terminal-workspace[data-count="0"],.terminal-workspace[data-count="1"]{flex:1;min-height:260px;grid-auto-rows:minmax(260px,1fr)}.pane-edges,.layout-picker{display:none!important}.workspace-toolbar{gap:8px}.pane-body .terminal-empty{padding:8px}}
+/* xterm also uses the class "terminal"; don't apply dashboard panel chrome to it. */
+.pty-body>.terminal.xterm{display:block;flex:none;border:0;border-radius:0;box-shadow:none;overflow:visible;background:transparent}
+/* FitAddon measures the parent's padded height but subtracts only the terminal's own padding,
+   so padding on .pane-body clipped part of the last row. Keep the inset on the terminal. */
+.pty-body>.terminal.xterm{padding:6px 8px}
+/* xterm.css paints the viewport #000; a pane height that is not a whole number of rows showed it as a line under the last row. */
+.pty-body .xterm .xterm-viewport{background-color:#0c0c0d}
+
+/* Let macOS use its native text antialiasing instead of inheriting the shell's thin grayscale setting. */
+.pty-body,.pty-body .xterm{-webkit-font-smoothing:auto;-moz-osx-font-smoothing:auto}
+#terminal-resume-options label{display:block;font-size:12px;margin:15px 0 6px}.resume-actions{display:flex;flex-direction:column;align-items:center;gap:10px}
+.pty-restoring .xterm{visibility:hidden}
+/* One quiet filter trigger; the options only appear when requested. */
+.session-toolbar{display:flex;align-items:stretch;gap:6px;margin-bottom:10px}.session-toolbar .search{flex:1;min-width:0}
+#status-menu{position:relative;z-index:4;flex-shrink:0}
+@media(max-width:760px){#sidebar-sessions:has(#status-menu[open]){overflow:visible}.sidebar:has(#status-menu[open]){z-index:20}}
+#status-menu summary{position:relative;display:grid;place-items:center;width:34px;height:100%;min-height:32px;list-style:none;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--ink-2);cursor:pointer}
+#status-menu summary::-webkit-details-marker{display:none}
+#status-menu summary svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round}
+#status-menu summary:hover,#status-menu[open] summary{color:var(--ink-1);border-color:#4a4f5c}#status-menu:has(.filter-badge:not([hidden])) summary{color:#a8c9f4;border-color:#a8c9f455;background:#a8c9f40d}
+.filter-badge{position:absolute;top:-6px;right:-6px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:#3f7fd6;color:#fff;font-size:9px;font-weight:600;line-height:16px;text-align:center}.filter-badge[hidden]{display:none}
+.sidebar .session-menu #filters button{width:100%;justify-content:space-between;text-align:left}.sidebar .session-menu{position:absolute;top:100%;right:0;display:flex;flex-direction:column;min-width:210px;margin:5px 0 0;padding:5px;border:1px solid #36363b;border-radius:9px;background:#1b1b1e;box-shadow:0 12px 30px #0006}.sidebar #filters{position:static;display:flex;flex-direction:column;align-items:stretch;gap:2px;min-width:0;margin:0;padding:0;border:0;border-radius:0;background:none;box-shadow:none}
+.sidebar #filters button{display:flex;align-items:center;justify-content:space-between;gap:20px;min-height:31px;padding:6px 10px;border:0;border-radius:5px;background:none;color:var(--ink-2);font-size:11px;cursor:pointer;text-align:left}
+.sidebar #filters button span{color:var(--ink-muted);font-size:10px;font-variant-numeric:tabular-nums}
+.sidebar #filters button:hover{background:#ffffff08;color:var(--ink-1)}
+.sidebar #filters button.selected{background:#ffffff08;color:#a8c9f4}
+.sidebar #filters button:focus-visible,#status-menu summary:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.session-result-count{font-size:10px;color:var(--ink-muted);font-variant-numeric:tabular-nums}
+.session-entry.managed-session>.session-row{padding-right:36px!important}
+.session-entry>.session-add,.session-entry>.session-remove{position:absolute;right:5px;top:50%;transform:translateY(-50%);display:grid;place-items:center;width:28px;height:28px;min-width:0;min-height:0;margin:0;padding:7px;border:0;border-radius:0;background:transparent;box-shadow:none;color:#858994;opacity:1;cursor:pointer}
+.session-entry.managed-session>.session-add{top:calc(50% - 15px)}
+.session-entry.managed-session>.session-remove{top:calc(50% + 15px)}
+.session-entry>.session-add svg,.session-entry>.session-remove svg{display:block;width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round}
+.session-entry>.session-add:hover,.session-entry>.session-add:focus-visible{background:transparent;box-shadow:none;color:#d1e4ff}
+.session-entry>.session-remove:hover,.session-entry>.session-remove:focus-visible{background:transparent;box-shadow:none;color:#ee9898}
+.session-entry>.session-add:focus-visible,.session-entry>.session-remove:focus-visible{outline:1px solid currentColor;outline-offset:-4px}
+#terminal-custom-field select{width:100%}.command-help{font-size:11px;line-height:1.5;margin:8px 0}
+#launch-terminal-dialog{overflow-y:auto}
+.session-text .session-task{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;color:#a9afbd;max-width:100%;margin-top:3px}
+.session-status.output,.session-status.working{background:#64ce98!important;animation:terminal-output-pulse 1.8s ease-in-out infinite}
+.session-status.quiet,.session-status.idle{background:#8b95a5!important;animation:none}
+.session-status.needs_input{background:#e7b668!important;animation:none}
+.session-status.completed{background:#7197ba!important;animation:none}
+.session-status.error{background:#e77777!important;animation:none}
+.session-status.unknown{background:#666a73!important;animation:none}
+@keyframes terminal-output-pulse{0%,100%{opacity:1;box-shadow:0 0 0 0 #64ce9835}50%{opacity:.45;box-shadow:0 0 0 4px #64ce9800}}
+@media(prefers-reduced-motion:reduce){.session-status.output,.session-status.working{animation:none}}
+@media(max-width:760px){.agent-grid{height:124px}.session-filter-bar{margin:3px 5px 5px}}
+/* Keep repository and session identity together, with independent truncation. */
+.session-text>.session-heading{display:flex;align-items:baseline;gap:7px;min-width:0;max-width:100%;margin-bottom:3px}
+.session-heading>strong{flex:0 1 auto;max-width:42%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
+.session-heading-divider{color:#60636d;font-size:11px;flex-shrink:0}
+.session-heading>.session-name{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
+#terminal-new-directory label,.project-search-options label{display:block;font-size:12px;margin:12px 0 6px}
+.project-search-options{margin:4px 0 12px;font-size:11px;color:var(--ink-muted)}
+.project-search-options summary{cursor:pointer}.project-search-row{display:flex;gap:8px;align-items:center}.project-search-row input{min-width:0;flex:1}.project-search-row .button{flex-shrink:0}
+#terminal-project-status{margin:7px 0}
+.session-heading>.session-name{color:#f0f1f5;font-weight:620;letter-spacing:-.15px}
+.session-heading>strong{color:#999da9;font-weight:450}
+#launch-terminal-dialog,#web-page-dialog{width:min(660px,calc(100vw - 32px));max-width:660px;padding:0;border:1px solid #ffffff18;border-radius:16px;background:#161618;box-shadow:0 28px 100px #0009;max-height:90vh}
+#launch-terminal-dialog::backdrop,#web-page-dialog::backdrop{background:#060609b0;backdrop-filter:blur(5px)}
+.launch-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;padding:27px 28px 22px;border-bottom:1px solid #ffffff09}
+.launch-heading .eyebrow{font-size:9px;color:#828796;letter-spacing:1.8px}
+.launch-heading h2{font-size:24px;font-weight:580;letter-spacing:-.7px;margin:8px 0}
+.launch-heading p{font-size:12px;color:#9398a5;margin:0;line-height:1.5}
+.launch-dismiss{display:grid;place-items:center;width:28px;height:28px;padding:0;background:none;border:0;color:#9297a4;font-size:23px;cursor:pointer}
+.launch-dismiss:hover{color:#fff}
+.launch-content{padding:22px 28px 10px}
+#launch-terminal-form .launch-section label,#web-page-form .launch-section label{display:block;font-size:11px;font-weight:500;color:#c2c6d0;margin:0 0 8px}
+#launch-terminal-form .launch-section,#web-page-form .launch-section{margin-bottom:22px}
+#launch-terminal-form input,#launch-terminal-form select{min-height:39px;padding:10px 12px;background:#101012;border-color:#ffffff14;border-radius:8px;font-size:12px;color:#dce0ea}
+#launch-terminal-form input:focus,#launch-terminal-form select:focus,#terminal-args:focus{outline:2px solid #789ed76b;outline-offset:1px;border-color:#789ed770}
+#launch-terminal-form #terminal-project{font-weight:500}
+#terminal-project optgroup{color:#8faee1;font-weight:600;background:#1b1b1e}
+#terminal-project option{color:#dedee6;font-weight:400;background:#141416}
+.launch-directory{margin-top:14px}
+#launch-terminal-form .launch-directory label{color:#7e8492;font-size:10px;margin-bottom:6px}
+#launch-terminal-form #terminal-cwd{font:11px ui-monospace,monospace;min-height:34px;color:#a5acbb;background:transparent;padding:8px 10px}
+#launch-terminal-form #terminal-project-status{font-size:10px;color:#777f8e;margin:7px 0 0}
+.launch-agent{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+#launch-terminal-form #terminal-resume-options label{margin:0 0 8px}
+#launch-terminal-form #terminal-session-id-field label{margin-top:12px}
+#launch-terminal-form #terminal-new-directory{margin-top:14px}
+#terminal-resume-help{font-size:10px;color:#81899a;line-height:1.5;margin:8px 0 0}
+.launch-advanced{border-top:1px solid #ffffff0c;padding:15px 0 4px}
+.launch-advanced>summary{display:flex;align-items:center;gap:9px;cursor:pointer;list-style:none;font-size:11px;color:#b1b7c4}
+.launch-advanced>summary::-webkit-details-marker{display:none}
+.launch-advanced>summary::before{content:'›';font-size:17px;line-height:1;color:#858b99}
+.launch-advanced[open]>summary::before{transform:rotate(90deg)}
+.launch-advanced>summary span{margin-left:auto;font-size:10px;color:#727986}
+.launch-advanced-content{padding:3px 0 8px}
+.launch-advanced-content>label{display:block;font-size:11px;margin:15px 0 7px}
+.launch-footer{margin:0;padding:18px 28px;background:#ffffff02;border-top:1px solid #ffffff09;display:flex;justify-content:flex-end;gap:10px}
+.launch-footer .button{padding:10px 16px;border-radius:8px;font-size:12px;background:transparent;border-color:#ffffff12}
+.launch-footer .button.primary{background:#3a79c9;border-color:#4c8cdb;color:#f6f9ff}
+.launch-footer .button.primary:hover{background:#4386db}
+@media(max-width:600px){.launch-heading{padding:22px 20px 18px}.launch-content{padding:18px 20px 10px}.launch-footer{padding:15px 20px}.launch-agent{grid-template-columns:1fr;gap:14px}.launch-advanced>summary span{display:none}.launch-heading h2{font-size:22px}}
+.workspace-toolbar #new-terminal{margin-left:0}
+#launch-terminal-form .controller-toggle{display:flex;align-items:center;gap:9px;margin:0 0 18px;font-size:12px;color:#c3cbdb;cursor:pointer}
+#launch-terminal-form #terminal-controller{appearance:auto;width:14px;height:14px;min-height:0;margin:0;padding:0;accent-color:#8babe0}
+#controller-options{margin:0 0 20px;padding:14px;border:1px solid #789ed72b;border-radius:9px;background:#789ed709}
+#controller-options label{display:block;font-size:11px;margin-bottom:8px;color:#c3cbdb}
+#controller-goal{width:100%;padding:10px;font:12px/1.5 -apple-system,BlinkMacSystemFont,sans-serif;border-radius:7px;resize:vertical}
+#controller-options p{font-size:10px;margin:8px 0 0;line-height:1.5}
+.session-group-heading{font-size:9px;text-transform:uppercase;letter-spacing:1.3px;color:#7f8593;padding:10px 10px 7px;flex-shrink:0}
+.controller-group-heading{color:#a6b9da;padding-top:2px}
+.worker-group-heading{border-top:1px solid #ffffff14;margin-top:12px;padding-top:14px}
+.session-row[draggable=true]{cursor:grab}.session-row[draggable=true]:active{cursor:grabbing}
+.session-entry.dragging{opacity:.4}
+.session-entry.drop-before::before,.session-entry.drop-after::before{content:'';position:absolute;left:7px;right:7px;height:2px;background:#96b8ec;border-radius:2px;z-index:3;pointer-events:none}
+.session-entry.drop-before::before{top:0}.session-entry.drop-after::before{bottom:0}
+@media(max-width:760px){.session-group-heading{display:flex;align-items:center;writing-mode:vertical-rl;padding:8px 6px;max-height:100px}.worker-group-heading{border-top:0;border-left:1px solid #ffffff14;margin:0 0 0 8px;padding:8px 6px 8px 12px}.session-entry.drop-before::before,.session-entry.drop-after::before{top:5px;bottom:5px;width:2px;height:auto}.session-entry.drop-before::before{left:0;right:auto}.session-entry.drop-after::before{right:0;left:auto}}
+
+#session-attention:not([hidden]){display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 18px;background:#302619;border-bottom:1px solid #8d6636;color:#f0c786;flex-shrink:0}#session-attention .button{padding:5px 10px;color:inherit;border-color:#8d6636;background:#211e19}
+.attention-dismiss{margin-left:auto;width:22px;height:22px;padding:0;border:0;border-radius:5px;background:none;color:#e0c79a;font-size:16px;line-height:1;cursor:pointer}
+.attention-dismiss:hover{background:#ffffff1a;color:#fff}
+.attention-dismiss:focus-visible{outline:1px solid currentColor;outline-offset:-3px}
+
+#terminal-preset-controls{margin:16px 0;padding-top:12px;border-top:1px solid #34343c}.terminal-preset-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+
+
+.session-entry.coordinator-team{border-left:2px solid #9b8be8;background:#9b8be810;border-radius:5px}
+.session-entry.coordinator-team .session-folder{color:#bbc8e6}
+#agent-map-scope{font-weight:600;color:#d9e3f5}
+
+.internal-agent-result{white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.6 inherit;padding:16px}
+
+
+.session-entry.internal-session .session-avatar{width:28px;height:28px;font-size:10px}
+.session-entry.internal-session .session-folder{color:#b5acd3}
+.subagent-history-toggle{display:flex;align-items:center;gap:9px;margin-top:5px;padding:9px 10px 6px;border:0;border-top:1px solid #ffffff10;border-radius:0;background:none;color:var(--ink-2);font-size:11px;text-align:left;cursor:pointer}.subagent-history-toggle:hover{color:var(--ink-1)}.subagent-history-toggle:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.menu-switch{position:relative;width:24px;height:14px;flex-shrink:0;border-radius:7px;background:#3a3d46;transition:background .15s}.menu-switch::after{content:"";position:absolute;top:2px;left:2px;width:10px;height:10px;border-radius:50%;background:#c9ccd4;transition:transform .15s}.subagent-history-toggle[aria-checked="true"] .menu-switch{background:#3f7fd6}.subagent-history-toggle[aria-checked="true"] .menu-switch::after{transform:translateX(10px);background:#fff}@media(prefers-reduced-motion:reduce){.menu-switch,.menu-switch::after{transition:none}}
+
+/* Remote connection setup shares the terminal launcher's controls. */
+#ssh-dialog,#accounts-dialog{padding: 0;width: min(560px, calc(100vw - 24px));max-height: 90vh;overflow: auto}
+.ssh-content{padding: 24px;display: grid;gap: 12px}
+.ssh-content h2, .ssh-content p{margin: 0}
+.ssh-content select, .ssh-content input{width: 100%;min-height: 39px;padding: 10px 12px;background: #101012;color: var(--ink-1);border: 1px solid var(--border);border-radius: 8px;font: inherit;font-size: 12px}
+.ssh-content select:focus, .ssh-content input:focus{outline: 2px solid #789ed76b;outline-offset: 1px}
+.ssh-content .dialog-actions{flex-wrap: wrap}
+#accounts-dialog .ssh-content{grid-template-columns:minmax(0,1fr)}
+#accounts-form{display:grid;grid-template-columns:minmax(0,1fr);gap:0}
+#accounts-form .dialog-actions{margin-top:16px}
+#account-help,#accounts-status{overflow-wrap:anywhere}
+#accounts-list{list-style:none;margin:0;padding:0;border:1px solid var(--border);border-radius:8px}
+#accounts-list li{display:flex;align-items:center;gap:10px;padding:9px 12px;font-size:12px}
+#accounts-list li+li{border-top:1px solid var(--border)}
+#accounts-list code{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink-muted)}
+#accounts-status:empty{display:none}
+#accounts-status.error{color:#efb0b7}
+#ssh-status,#accounts-status{padding: 12px;border: 1px solid var(--border, #334155);border-radius: 8px}
+.launch-remote{display:inline-flex;align-items:center;gap:7px;margin-right:auto;padding:0 6px;height:32px;border:0;border-radius:6px;background:none;color:#9aa0ab;font-size:12px;flex-shrink:0}.launch-remote svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.4;stroke-linecap:round}.launch-remote span{white-space:nowrap}.launch-remote:hover{background:#ffffff0d;color:var(--ink-1)}
+@media(max-width:480px){.launch-remote span{display:none}.launch-remote{padding:0 9px}}
+
+/* The project already appears in the path line below, so spending half the row on a
+   truncated copy of it left every session reading "my-project-… / Codex · Pers…". */
+.session-heading>strong,.session-heading-divider{display:none}
+.session-heading>.session-name{flex:1 1 100%;max-width:100%;font-size:12.5px}
+
+/* --- Sessions that need you — begin ----------------------------------------------
+   A session that needs you must be obvious at a glance, so the signal is a stroked
+   alert triangle in a tinted chip rather than a small amber dot: a shape, not only a
+   hue, and a different shape from the pulsing dot that means working/output.
+   The badge is out of flow inside a fixed 24px right padding that every row carries,
+   whether or not it is showing one, so appearing or clearing cannot change a row's
+   height or move a single character of its text. An in-flow slot was measured first and
+   rejected: the extra flex item plus the row's 15px gap cost 40px of the name column.
+   These rules are the only .needs-reply declarations in the app. */
+.session-row .session-text{position:relative;padding-right:24px}
+.session-row .needs-reply{position:absolute;right:0;top:50%;transform:translateY(-50%);display:grid;place-items:center;width:20px;height:20px;padding:0;border:1px solid transparent;border-radius:6px;background:transparent;color:#f0b84f}
+.session-row .needs-reply>svg{display:block;width:14px;height:14px}
+.session-row .needs-reply[data-attention="false"]{visibility:hidden}
+.session-row .needs-reply[data-attention="true"]{background:#f0b84f1f;border-color:#f0b84f5c;animation:session-needs-you 1.9s ease-in-out infinite}
+.session-row:hover .needs-reply[data-attention="true"],.session-row.selected .needs-reply[data-attention="true"]{background:#f0b84f2e;border-color:#f0b84f85;color:#ffc964}
+@keyframes session-needs-you{0%,100%{box-shadow:0 0 0 0 #f0b84f3d}55%{box-shadow:0 0 0 5px #f0b84f00}}
+@media(prefers-reduced-motion:reduce){.session-row .needs-reply[data-attention="true"]{animation:none;box-shadow:0 0 0 3px #f0b84f1f}}
+@media(max-width:760px){.session-row .session-text{padding-right:22px}.session-row .needs-reply{width:18px;height:18px}.session-row .needs-reply>svg{width:13px;height:13px}}
+/* --- Sessions that need you — end ----------------------------------------------- */
+
+/* ---- BEGIN pane drag-to-reorder ----
+   Scoped to the pane grid only. The sidebar session drag in session-order.js is a
+   separate feature with its own .dragging/.drop-before/.drop-after classes; these use
+   pane- prefixes so neither can clear the other's state. Colours reuse the existing
+   session drop-rail value, no new tokens. */
+.terminal-pane{position:relative}
+.terminal-pane>.terminal-bar{cursor:grab}
+.terminal-pane>.terminal-bar[data-pane-drag=off]{cursor:auto}
+.terminal-pane>.terminal-bar .pane-actions,.terminal-pane>.terminal-bar .pane-name-input{cursor:auto}
+body.pane-dragging-active,body.pane-dragging-active *{cursor:grabbing!important;user-select:none}
+.terminal-pane>.terminal-bar>.pane-title{flex:1}
+/* The held pane is lifted and follows the cursor. Only transform/opacity/shadow change,
+   so the grid never reflows and the xterm inside it is never resized mid-drag. */
+.terminal-pane.pane-dragging{opacity:.92;z-index:5;pointer-events:none;will-change:transform;border-color:#96b8ec73;box-shadow:0 18px 42px #000000b0,0 0 0 1px #96b8ec40}
+.terminal-pane.pane-returning{transition:transform .2s cubic-bezier(.2,.7,.3,1)}
+/* The pane you are hovering slides into the slot the held pane left, so the preview is
+   the result. Only the held pane is exempt: it must track the cursor with no easing. */
+body.pane-dragging-active .terminal-pane:not(.pane-dragging){transition:transform .19s cubic-bezier(.2,.7,.3,1),clip-path .19s cubic-bezier(.2,.7,.3,1)}
+.terminal-pane.pane-swap-target{z-index:2;transform-origin:0 0;border-color:#96b8ec66}
+@media(prefers-reduced-motion:reduce){.terminal-pane.pane-dragging{transform:none!important;opacity:.5;box-shadow:none}.terminal-pane.pane-returning,body.pane-dragging-active .terminal-pane:not(.pane-dragging){transition:none}}
+/* And a short settle where it lands, so the drop is visible rather than instantaneous. */
+.terminal-pane.pane-settled{animation:pane-settle .32s cubic-bezier(.2,.7,.3,1)}
+@keyframes pane-settle{0%{transform:scale(.975);box-shadow:0 0 0 1px #96b8ec70}60%{transform:scale(1.004)}100%{transform:scale(1);box-shadow:none}}
+@media(prefers-reduced-motion:reduce){.terminal-pane.pane-settled{animation:none}}
+.pane-grip{display:grid;place-items:center;width:20px;height:20px;flex-shrink:0;margin-left:-3px;padding:0;border:0;border-radius:4px;background:none;color:#7d808b}
+.pane-grip:hover{color:#d1e4ff;background:#ffffff0f}
+.pane-grip:focus-visible{outline:1px solid currentColor;outline-offset:-3px}
+.pane-grip svg{display:block;width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round}
+/* ---- END pane drag-to-reorder ---- */
+
+/* ---- Project search: keyword combobox over the project list ---- */
+.project-combobox{position:relative}
+#launch-terminal-form .project-combobox input{font-weight:500;padding-right:34px}
+.project-combobox-toggle{position:absolute;top:0;right:0;display:grid;place-items:center;width:32px;height:100%;padding:0;border:0;background:none;color:#8a8f9b}
+.project-combobox-toggle:hover{color:#d1e4ff}
+.project-combobox-toggle svg{width:15px;height:15px}
+.project-combobox-list{position:absolute;z-index:20;top:calc(100% + 4px);left:0;right:0;max-height:260px;overflow:auto;margin:0;padding:4px;list-style:none;background:#151518;border:1px solid #ffffff1f;border-radius:8px;box-shadow:0 14px 34px #000000a6}
+.project-combobox-option{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:7px 9px;border-radius:6px;cursor:pointer}
+.project-combobox-option strong{font-size:12px;font-weight:500;color:#dce0ea;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.project-combobox-option span{flex:0 1 auto;font-size:10.5px;color:#7e8492;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.project-combobox-option:hover,.project-combobox-option.active{background:#ffffff12}
+.project-combobox-option[aria-selected=true] strong{color:#9ccaff}
+.project-combobox-empty{padding:9px;font-size:11px;color:#8a8f9b}
+/* Readouts the pane's own process set (agent-desk-readout or the agent-desk tool). Quiet like the directory row;
+   tone colors only the value. Stale values dim and say so instead of looking current. */
+.pane-readouts{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:baseline;gap:16px;padding:7px 12px;border-bottom:1px solid #ffffff09;flex-shrink:0;font-size:11px;line-height:1.35}
+.pane-readouts[hidden]{display:none}
+.pane-readout-fields{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 16px;min-width:0}
+.pane-readout{display:inline-flex;align-items:baseline;gap:6px;min-width:0;max-width:100%;white-space:nowrap}
+.pane-readout-label{color:var(--ink-muted);font-size:10px}
+.pane-readout-value{color:var(--ink-1);font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis}
+.pane-readout[data-tone="good"] .pane-readout-value{color:#7fc6a8}
+.pane-readout[data-tone="warn"] .pane-readout-value{color:#d9b56f}
+.pane-readout[data-tone="bad"] .pane-readout-value{color:#ee9898}
+.pane-readouts-age{color:var(--ink-muted);font-size:10px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.pane-readouts.stale .pane-readout{opacity:.45}
+.pane-readouts.stale .pane-readouts-age{color:#d9b56f}
+/* New is one button with a menu: a terminal or a web page. The button keeps its own styling. */
+.new-pane-menu{position:relative}
+#new-terminal .new-pane-chevron{width:12px;height:12px;margin-left:-3px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;opacity:.75;transition:transform .15s}
+#new-terminal[aria-expanded=true] .new-pane-chevron{transform:rotate(180deg)}
+.new-pane-options{position:absolute;top:calc(100% + 6px);right:0;z-index:20;display:flex;flex-direction:column;gap:2px;min-width:262px;padding:5px;border:1px solid #36363b;border-radius:9px;background:#1b1b1e;box-shadow:0 12px 30px #0006}
+.new-pane-options[hidden]{display:none}
+.new-pane-options.align-start{right:auto;left:0}
+.new-pane-options button{display:flex;align-items:center;gap:12px;padding:8px 10px;border:0;border-radius:6px;background:none;color:var(--ink-1);text-align:left}
+.new-pane-options button:hover,.new-pane-options button:focus-visible{background:#ffffff0b}
+.new-pane-options button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.new-pane-options svg{flex-shrink:0;width:16px;height:16px;fill:none;stroke:#9ebee9;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.new-pane-options strong{display:block;font-size:12px;font-weight:550;line-height:1.35}
+.new-pane-options small{display:block;font-size:10px;line-height:1.4;color:var(--ink-2)}
+@media(prefers-reduced-motion:reduce){#new-terminal .new-pane-chevron{transition:none}}
+#web-page-form input{display:block;width:100%;min-height:39px;padding:10px 12px;color:#dce0ea;background:#101012;border:1px solid #ffffff14;border-radius:8px;font:12px -apple-system,BlinkMacSystemFont,sans-serif}
+#web-page-form #web-page-url{font:12px ui-monospace,SFMono-Regular,Menlo,monospace}
+#web-page-form input:focus{outline:2px solid #789ed76b;outline-offset:1px;border-color:#789ed770}
+#web-page-form label .muted{font-size:10px;font-weight:400}
+#web-page-error:empty{display:none}
+/* Web page panes: the frame fills the body, and the address line under the header is the editable URL. */
+.pane-body.web-pane-body{position:relative;padding:0;overflow:hidden;background:#0c0c0d}
+.web-pane-frame{display:block;width:100%;height:100%;border:0}
+.web-pane-frame[hidden],.web-pane-notice[hidden]{display:none}
+.web-pane-notice{height:100%;overflow:auto}
+.web-pane-notice .terminal-empty-icon svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round}
+.web-pane-notice code{font:10px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--ink-muted)}
+.web-pane-notice .resume-actions{flex-direction:row;justify-content:center;margin:4px 0 12px}
+.web-pane-notice a.button{text-decoration:none}
+.web-pane .pane-directory{cursor:text}
+.web-pane .pane-directory:hover{color:var(--ink-1)}
+.web-pane .pane-directory:focus-visible{outline:1px solid var(--accent);outline-offset:-2px}
+.pane-directory .web-address-input{display:block;width:calc(100% + 10px);margin:-3px -5px;padding:2px 5px;border:1px solid #799bc1;border-radius:4px;background:#11151d;color:#dce8f7;font:inherit;outline:none}
+.terminal-bar .pane-reload,.terminal-bar .pane-open{opacity:0;transition:opacity .15s}
+.terminal-pane:hover .pane-reload,.terminal-pane:hover .pane-open,.terminal-pane.focused .pane-reload,.terminal-pane.focused .pane-open,.pane-actions:focus-within .pane-reload,.pane-actions:focus-within .pane-open{opacity:1}
+@media(prefers-reduced-motion:reduce){.terminal-bar .pane-reload,.terminal-bar .pane-open{transition:none}}
+/* A frame swallows clicks, so a pin could not land on a web page while annotating. Pane drags use pointer capture and need nothing. */
+body.annotating .web-pane-frame{pointer-events:none}
+
+/* ---- Pane layouts and resizing ----
+   The workspace is a 12-column grid; pane-layout.js sets --pane-row to a twelfth of the
+   visible height and places each pane with grid-area. Rows past one screen scroll. */
+.workspace-empty{grid-column:1/-1;grid-row:1/span 12}
+/* The extra right padding keeps the resize strip of a right-hand pane inside the scroller. */
+.terminal-workspace.pane-overflow{overflow-y:auto;overflow-x:hidden;scrollbar-width:thin;padding-right:6px;margin-right:-6px}
+.pane-edges{position:relative;z-index:4;pointer-events:none;min-width:0;min-height:0}
+.pane-resize{position:absolute;padding:0;border:0;background:none;pointer-events:auto;touch-action:none}
+.pane-resize[data-edge=e]{top:14px;bottom:14px;right:-9px;width:8px;cursor:ew-resize}
+.pane-resize[data-edge=s]{left:14px;right:14px;bottom:-9px;height:8px;cursor:ns-resize}
+.pane-resize[data-edge=se]{right:-10px;bottom:-10px;width:16px;height:16px;border-radius:5px;cursor:nwse-resize}
+/* A thin rule in the gap shows which edge will move; the corner carries a small grip. */
+.pane-resize[data-edge=e]::after,.pane-resize[data-edge=s]::after{content:"";position:absolute;border-radius:2px;background:#96b8ec;opacity:0;transition:opacity .12s}
+.pane-resize[data-edge=e]::after{top:0;bottom:0;left:3px;width:2px}
+.pane-resize[data-edge=s]::after{left:0;right:0;top:3px;height:2px}
+.pane-resize[data-edge=se]::after{content:"";position:absolute;right:5px;bottom:5px;width:6px;height:6px;border-right:1.5px solid #8b8e99;border-bottom:1.5px solid #8b8e99;border-bottom-right-radius:2px;opacity:0;transition:opacity .12s}
+.pane-edges.focused .pane-resize[data-edge=se]::after{opacity:.55}
+.pane-resize:hover::after,.pane-edges[data-active=e] [data-edge=e]::after,.pane-edges[data-active=s] [data-edge=s]::after,.pane-edges[data-active=se] .pane-resize::after{opacity:1}
+.pane-resize[data-edge=se]:hover::after,.pane-edges[data-active=se] [data-edge=se]::after{border-color:#96b8ec}
+.pane-resize[data-edge=se]:focus-visible{outline:1px solid #96b8ec;outline-offset:-1px}
+.pane-resize[data-edge=se]:focus-visible::after{opacity:1;border-color:#96b8ec}
+body.pane-resizing-active,body.pane-resizing-active *{cursor:var(--pane-resize-cursor,nwse-resize)!important;user-select:none}
+/* A web page's frame would swallow the pointer mid-resize. */
+body.pane-resizing-active .web-pane-frame{pointer-events:none}
+.terminal-pane.pane-resizing{border-color:#96b8ec73;box-shadow:0 0 0 1px #96b8ec40}
+body.pane-dragging-active .pane-edges{visibility:hidden}
+.terminal-workspace.has-fullscreen>.pane-edges{display:none}
+#agents-page{position:relative}
+#panes-below{position:absolute;z-index:6;left:50%;bottom:22px;transform:translateX(-50%);display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 12px 0 10px;border:1px solid #96b8ec40;border-radius:14px;background:#17191fe6;backdrop-filter:blur(6px);box-shadow:0 8px 22px #00000080;color:#cfe0fb;font-size:11px}
+#panes-below:hover{background:#1d2129;border-color:#96b8ec73}
+#panes-below svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+#panes-below[hidden],body.pane-resizing-active #panes-below,body.pane-dragging-active #panes-below{display:none}
+
+.layout-picker{position:relative;flex-shrink:0}
+.workspace-toolbar #pane-layout-button{display:inline-flex;align-items:center;gap:7px;margin-left:-6px;padding:0 7px 0 6px;background:transparent;border-color:transparent;box-shadow:none;color:var(--ink-2)}
+.workspace-toolbar #pane-layout-button:hover,.workspace-toolbar #pane-layout-button[aria-expanded=true]{background:#ffffff0f;color:var(--ink-1)}
+#pane-layout-button .layout-glyph{width:21px;height:14px}
+.layout-glyph{display:block;fill:#ffffff0d;stroke:currentColor;stroke-width:1.2;opacity:.9}
+.layout-custom{padding:1px 6px;border-radius:9px;background:#96b8ec1a;color:#a9c3ee;font-size:9.5px;letter-spacing:.2px}
+.layout-chevron{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;opacity:.7}
+.layout-menu{position:absolute;z-index:30;top:calc(100% + 6px);left:-6px;width:max-content;padding:8px;background:#151518;border:1px solid #ffffff1f;border-radius:10px;box-shadow:0 14px 34px #000000a6}
+.layout-options{display:flex;gap:4px}
+.layout-option{display:flex;flex-direction:column;align-items:center;gap:6px;width:72px;padding:9px 4px 7px;border:1px solid transparent;border-radius:7px;background:none;color:#8b8e99;font-size:10.5px;white-space:nowrap}
+.layout-option .layout-glyph{width:48px;height:32px}
+.layout-option:hover{background:#ffffff0d;color:var(--ink-1)}
+.layout-option[aria-checked=true]{background:#96b8ec14;border-color:#96b8ec40;color:#cfe0fb}
+.layout-option[aria-checked=true] .layout-glyph{fill:#96b8ec26;stroke:#96b8ec}
+.layout-option:focus-visible{outline:1px solid #96b8ec;outline-offset:-1px}
+.layout-note{max-width:376px;text-wrap:pretty;margin:8px 4px 1px;padding-top:8px;border-top:1px solid #ffffff0d;color:var(--ink-muted);font-size:10.5px;line-height:1.5}
+@media(prefers-reduced-motion:reduce){.pane-resize::after{transition:none}}
+/* ---- END pane layouts ---- */
+
+/* Sidebar folders (session-groups.js). A folder is a quiet tinted frame around its members with
+   a compact header; collapsed, the header carries a peek of the members and any "needs you",
+   so closing a folder never hides a session that is waiting on the user. */
+/* The negative inline margin keeps member rows on the same x as ungrouped rows despite the frame's border. */
+.nav-group{position:relative;flex-shrink:0;margin:6px -1px;border:1px solid #96b8ec33;border-left:3px solid #96b8ec80;border-radius:11px;background:#96b8ec0d;box-shadow:0 1px 0 #00000040,inset 0 0 0 1px #ffffff05}
+.nav-group-divider{display:flex;align-items:center;gap:8px;flex-shrink:0;margin:10px 4px 6px;color:var(--ink-muted);font-size:9px;letter-spacing:1.3px;text-transform:uppercase}
+.nav-group-divider::before,.nav-group-divider::after{content:'';flex:1;height:1px;background:#ffffff1f}
+@media(max-width:760px){.nav-group-divider{width:1px;align-self:stretch;margin:6px 8px;background:#ffffff1f}.nav-group-divider::before,.nav-group-divider::after,.nav-group-divider>span{display:none}}
+.nav-group-members>.session-entry:last-child::after{display:none}
+.nav-group-toggle{display:flex;align-items:center;gap:7px;width:100%;min-height:34px;margin:0;padding:6px 10px 6px 8px;border:0;border-radius:10px;background:none;box-shadow:none;color:var(--ink-2);font-size:11px;font-weight:600;letter-spacing:.1px;text-align:left;cursor:grab}
+.nav-group-toggle:active{cursor:grabbing}
+.nav-group-toggle:hover{background:#ffffff08;color:var(--ink-1)}
+.nav-group-toggle:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.nav-group:not(.collapsed)>.nav-group-toggle{border-bottom-left-radius:0;border-bottom-right-radius:0}
+.nav-group-chevron{flex-shrink:0;width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;color:var(--ink-muted);transition:transform .15s}
+.nav-group.collapsed .nav-group-chevron{transform:rotate(-90deg)}
+.nav-group-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nav-group-count{flex-shrink:0;color:var(--ink-muted);font-weight:500;font-variant-numeric:tabular-nums}
+.nav-group-working{flex-shrink:0;width:6px;height:6px;border-radius:50%;background:var(--good)}
+.nav-group-peek{display:none;gap:3px;margin-left:auto;padding-left:6px}
+.nav-group.collapsed .nav-group-peek{display:flex}
+.nav-group-peek-avatar{display:grid;place-items:center;width:20px;height:20px;border:1px solid color-mix(in srgb,var(--agent-color) 22%,transparent);border-radius:6px;background:color-mix(in srgb,var(--agent-color) 7%,transparent);color:var(--agent-color);font-size:7.5px;font-weight:650;letter-spacing:.2px;line-height:1}
+.nav-group-attention{display:grid;place-items:center;flex-shrink:0;width:20px;height:20px;margin-left:auto;border:1px solid #f0b84f85;border-radius:6px;background:#f0b84f2e;color:#ffc964;animation:session-needs-you 1.9s ease-in-out infinite}
+.nav-group.collapsed .nav-group-peek+.nav-group-attention{margin-left:4px}
+.nav-group-attention>svg{display:block;width:13px;height:13px}
+.nav-group:not(.collapsed) .nav-group-attention{display:none}
+@media(prefers-reduced-motion:reduce){.nav-group-chevron{transition:none}.nav-group-attention{animation:none}}
+/* A collapsed folder still shows that it holds the focused pane or an open one, a step quieter than the row it hides. */
+.nav-group.collapsed>.nav-group-toggle.holds-open{color:var(--ink-1)}
+.nav-group.collapsed>.nav-group-toggle.holds-selected{background:#3987e514;box-shadow:inset 2px 0 0 #74a8ef}
+.nav-group-toggle.renaming{cursor:default}
+.nav-group-toggle.renaming:hover{background:none}
+.nav-group-rename{flex:1;min-width:0;height:24px;margin:0;padding:3px 7px;border:1px solid #5d7fb3;border-radius:6px;background:#111112;color:var(--ink-1);font:inherit;font-weight:600;outline:none}
+.nav-group-rename:focus{box-shadow:0 0 0 2px #3987e540}
+/* Drag states: the 2px rail for a reorder, a ring for "group with this one". */
+.nav-group.dragging{opacity:.4}
+.nav-group.drop-before::before,.nav-group.drop-after::before{content:'';position:absolute;left:7px;right:7px;height:2px;background:#96b8ec;border-radius:2px;z-index:3;pointer-events:none}
+.nav-group.drop-before::before{top:-5px}.nav-group.drop-after::before{bottom:-5px}
+.session-entry.drop-into>.session-row,.session-entry.drop-into>.session-row:hover{border-color:#96b8ec!important;background:#96b8ec17!important;box-shadow:inset 0 0 0 1px #96b8ec}
+.nav-group-toggle.drop-into{background:#96b8ec17;box-shadow:inset 0 0 0 1px #96b8ec;color:var(--ink-1)}
+#session-group-menu{position:fixed;z-index:80;display:flex;flex-direction:column;gap:2px;min-width:170px;padding:5px;border:1px solid #36363b;border-radius:9px;background:#1b1b1e;box-shadow:0 12px 30px #0006}
+#session-group-menu[hidden]{display:none}
+#session-group-menu button{display:flex;align-items:center;min-height:30px;margin:0;padding:6px 10px;border:0;border-radius:5px;background:none;box-shadow:none;color:var(--ink-2);font-size:11px;text-align:left;cursor:pointer}
+#session-group-menu button:hover,#session-group-menu button:focus-visible{background:#ffffff0d;color:var(--ink-1);outline:none}
+#session-group-menu button.danger:hover,#session-group-menu button.danger:focus-visible{color:#ee9898}
+/* Narrow layouts lay the sessions out in a row, so a folder becomes a row of its own: the
+   header is a slim vertical tab, like the section headings beside it. */
+@media(max-width:760px){
+  .nav-group{display:flex;align-self:flex-start;margin:0 4px}
+  .nav-group-toggle{flex-direction:column;justify-content:flex-start;gap:5px;width:30px;min-height:0;padding:7px 0;border-radius:10px}
+  .nav-group:not(.collapsed)>.nav-group-toggle{border-radius:10px 0 0 10px}
+  .nav-group-name{writing-mode:vertical-rl;max-height:62px}
+  .nav-group-count,.nav-group-working{display:none}
+  .nav-group-members{display:flex}
+  .nav-group.collapsed .nav-group-peek{flex-direction:column;align-items:center;margin:0;padding:0}
+  .nav-group.collapsed .nav-group-name{display:none}
+  .nav-group-attention{margin:0}
+  .nav-group.collapsed .nav-group-peek+.nav-group-attention{margin:0}
+  .nav-group.drop-before::before,.nav-group.drop-after::before{top:5px;bottom:5px;width:2px;height:auto}
+  .nav-group.drop-before::before{left:-4px;right:auto}.nav-group.drop-after::before{right:-4px;left:auto}
+}
+.pane-main{display:flex;flex:1;min-height:0;min-width:0}.pane-main>.pane-body{min-width:0}.pane-main.dock-bottom{flex-direction:column}
+.pane-main.docked>.pane-dock{display:flex;flex-direction:column;flex:0 0 var(--dock-size,50%);min-width:0;min-height:0;background:#0f0f11}
+.pane-dock[hidden],.pane-divider[hidden]{display:none!important}
+.pane-divider{position:relative;z-index:1;flex:0 0 7px;margin:0 -3px;cursor:col-resize;touch-action:none}.pane-divider::before{content:"";position:absolute;inset:0 3px;background:#ffffff12;transition:background .12s}
+.dock-bottom>.pane-divider{margin:-3px 0;cursor:row-resize}.dock-bottom>.pane-divider::before{inset:3px 0}
+.pane-divider:hover::before,.pane-divider:focus-visible::before,.dock-resizing>.pane-divider::before{background:color-mix(in srgb,var(--agent-color) 75%,transparent)}.pane-divider:focus-visible{outline:none}
+.dock-resizing{cursor:col-resize}.dock-resizing.dock-bottom{cursor:row-resize}.dock-resizing iframe{pointer-events:none}
+.pane-dock-bar{display:flex;align-items:center;gap:8px;height:32px;padding:0 6px 0 10px;border-bottom:1px solid #ffffff0b;flex-shrink:0;font-size:11px;color:var(--ink-2)}
+.pane-dock-icon svg,.pane-tool-toggle svg{display:block;width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.pane-dock-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink-1)}
+.pane-dock-pick{flex:1;min-width:0;padding:2px 0;border:0;background:none;color:var(--ink-1);font-size:11px}.pane-dock-pick[hidden],.pane-dock-name[hidden]{display:none}
+.pane-dock-frame{flex:1;min-height:0;width:100%;border:0;background:#0c0c0d}
+.pane-tool{display:inline-flex;align-items:stretch;height:22px;max-width:220px;border:1px solid #ffffff14;border-radius:5px;overflow:hidden}
+.pane-tool:has(.pane-tool-toggle[aria-pressed="true"]){border-color:color-mix(in srgb,var(--agent-color) 45%,transparent);background:color-mix(in srgb,var(--agent-color) 12%,transparent)}
+.pane-tool-toggle{display:inline-flex;align-items:center;gap:6px;min-width:0;padding:0 7px 0 8px;border:0;background:none;color:var(--ink-2);font-size:10px;line-height:1}
+.pane-tool-exit{display:grid;place-items:center;width:20px;padding:0;border:0;border-left:1px solid #ffffff12;background:none;color:var(--ink-2)}
+.pane-tool-exit svg{width:10px;height:10px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round}
+.pane-tool-exit:hover{background:#e8676724;color:#f4b4b4}.pane-tool-exit:focus-visible{outline:1px solid currentColor;outline-offset:-2px}
+.pane-tool-toggle span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pane-tool-toggle:hover{background:#ffffff0a;color:var(--ink-1)}
+.pane-tool-toggle[aria-pressed="true"],.pane-tool-toggle[aria-pressed="true"]+.pane-tool-exit{color:color-mix(in srgb,var(--agent-color) 55%,#fff)}
+.pane-tool-toggle:focus-visible{outline:1px solid currentColor;outline-offset:-2px}
+@media(max-width:1050px){.pane-tool{max-width:140px}}
+@media(prefers-reduced-motion:reduce){.pane-divider::before{transition:none}}
+@media(max-width:760px){.pane-tool-toggle{padding:0 6px}.pane-tool-toggle span{display:none}.pane-dock-side{display:none}}
+#launch-terminal-form .launch-readouts{align-items:flex-start}#launch-terminal-form .launch-readouts input{flex:none;width:14px;height:14px;min-height:0;margin:2px 0 0;padding:0}#launch-terminal-form .launch-readouts small{display:block;margin-top:2px;font-size:11px;line-height:1.5;color:var(--ink-muted)}

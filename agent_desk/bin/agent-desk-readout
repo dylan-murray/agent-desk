@@ -1,0 +1,108 @@
+#!/usr/bin/env python3
+"""Set the readouts on the Agent Desk pane this process runs in: a row of labeled values under
+the pane header.
+
+  agent-desk-readout set 'Jobs done=412:good' Queue=4 'Last run=10:35' --ttl 15m
+  agent-desk-readout set --json <<'EOF'
+  {"fields": [{"label": "Jobs done", "value": "412", "tone": "good"}], "ttl_seconds": 900}
+  EOF
+  agent-desk-readout clear
+
+Each set replaces everything shown before it. A value ending in :good, :warn, :bad or
+:neutral sets its color. With --ttl, the pane marks the values stale once that long passes
+without another set. Single-quote arguments containing $, or use --json with a quoted
+heredoc as above, so the shell cannot expand them.
+
+Exit codes: 0 shown (or handed to Agent Desk for its next refresh), 1 rejected or
+undeliverable (the reason is printed), 2 not running inside an Agent Desk pane.
+"""
+import argparse
+import json
+import os
+import re
+import sys
+from urllib.error import HTTPError, URLError
+from urllib.request import ProxyHandler, Request, build_opener
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
+import readouts  # noqa: E402  (agent_desk/readouts.py; stdlib only)
+
+TONES = ('neutral', 'good', 'warn', 'bad')
+
+
+def field(text):
+    label, sep, value = text.partition('=')
+    if not sep:
+        raise argparse.ArgumentTypeError('expected LABEL=VALUE, got %r' % text)
+    head, colon, tone = value.rpartition(':')
+    if colon and tone in TONES:
+        return dict(label=label, value=head, tone=tone)
+    return dict(label=label, value=value)
+
+
+def duration(text):
+    match = re.fullmatch(r'(\d+(?:\.\d+)?)([smhd]?)', text.strip())
+    if not match:
+        raise argparse.ArgumentTypeError('expected a duration like 90, 90s, 15m, 2h or 1d')
+    return float(match.group(1)) * {'': 1, 's': 1, 'm': 60, 'h': 3600, 'd': 86400}[match.group(2)]
+
+
+def main():
+    parser = argparse.ArgumentParser(prog='agent-desk-readout', description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    commands = parser.add_subparsers(dest='command', required=True)
+    setter = commands.add_parser('set', help='Replace the readouts shown on this pane')
+    setter.add_argument('fields', nargs='*', type=field, metavar='LABEL=VALUE[:tone]')
+    setter.add_argument('--ttl', type=duration, help='Mark the values stale after this long without another set')
+    setter.add_argument('--json', action='store_true', help='Read {"fields": [{"label", "value", "tone"}], "ttl_seconds"} from stdin')
+    commands.add_parser('clear', help='Remove the readouts shown on this pane')
+    args = parser.parse_args()
+
+    terminal, token, desk = (os.environ.get(k) for k in ('AGENT_DESK_TERMINAL_ID', 'AGENT_DESK_PANE_TOKEN', 'AGENT_DESK_URL'))
+    if not (terminal and token and desk):
+        parser.exit(2, 'agent-desk-readout: not running inside an Agent Desk pane (AGENT_DESK_TERMINAL_ID, AGENT_DESK_PANE_TOKEN or AGENT_DESK_URL is unset)\n')
+    elsewhere = readouts.outside_pane()
+    if elsewhere:
+        parser.exit(2, 'agent-desk-readout: %s\n' % elsewhere)
+    if args.command == 'clear':
+        payload = dict(fields=[])
+    elif args.json:
+        if args.fields or args.ttl is not None:
+            parser.error('--json reads fields and ttl_seconds from stdin; do not also pass them as arguments')
+        try:
+            payload = json.load(sys.stdin)
+        except ValueError as error:
+            parser.exit(2, 'agent-desk-readout: stdin is not valid JSON: %s\n' % error)
+        if not isinstance(payload, dict):
+            parser.exit(2, 'agent-desk-readout: stdin must be a JSON object\n')
+    else:
+        if not args.fields:
+            parser.error('give at least one LABEL=VALUE, or use clear')
+        payload = dict(fields=args.fields, ttl_seconds=args.ttl)
+    request = Request(desk.rstrip('/') + '/api/readouts', data=json.dumps(dict(payload, id=terminal)).encode(),
+                      headers={'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'})
+    try:
+        # Loopback only: a sandbox's HTTP_PROXY must not carry this request elsewhere.
+        with build_opener(ProxyHandler({})).open(request, timeout=5) as response:
+            json.load(response)
+    except HTTPError as error:
+        try:
+            message = json.load(error).get('error')
+        except ValueError:
+            message = None
+        parser.exit(1, 'agent-desk-readout: %s\n' % (message or 'HTTP %d' % error.code))
+    except (URLError, OSError) as error:
+        # Sandboxes such as Codex's deny loopback network but allow the desk's private /tmp folder.
+        reason = getattr(error, 'reason', error)
+        try:
+            folder = os.environ.get('AGENT_DESK_READOUTS_DIR')
+            if not folder:
+                raise OSError('AGENT_DESK_READOUTS_DIR is unset')
+            readouts.drop(terminal, token, folder, payload)
+        except ValueError as invalid:
+            parser.exit(1, 'agent-desk-readout: %s\n' % invalid)
+        except OSError as failure:
+            parser.exit(1, 'agent-desk-readout: could not reach Agent Desk at %s (%s) or hand off through its readouts folder (%s)\n' % (desk, reason, failure))
+
+
+if __name__ == '__main__':
+    main()

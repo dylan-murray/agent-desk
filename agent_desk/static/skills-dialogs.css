@@ -1,0 +1,48 @@
+/* One form treatment for the Skills dialogs: Build a skill, Build a tool and Find skills.
+   Name fields, dropdowns and spacing match across all three. Scoped by id so it outranks the older
+   per-dialog rules in palette.css. */
+:is(#skill-builder,#tool-builder,#skills-find-dialog){box-sizing:border-box;width:min(560px,calc(100vw - 24px));max-height:calc(100dvh - 24px);overflow:auto;padding:26px 28px 22px;border:1px solid #34343c;border-radius:14px;background:#18181b;box-shadow:0 24px 70px #000a}
+:is(#skill-builder,#tool-builder,#skills-find-dialog) form{display:flex;flex-direction:column;gap:0}
+:is(#skill-builder,#tool-builder,#skills-find-dialog) h2{margin:0;font-size:19px;font-weight:550;letter-spacing:-.3px}
+:is(#skill-builder,#tool-builder,#skills-find-dialog) h2+p{margin:6px 0 2px;font-size:12.5px;line-height:1.6;color:var(--ink-2)}
+:is(#skill-builder,#tool-builder,#skills-find-dialog) :is(label,legend){display:block;margin:16px 0 6px;padding:0;font-size:12px;font-weight:500;color:var(--ink-2)}
+
+:is(#skill-builder,#tool-builder,#skills-find-dialog) :is(input:not([type=radio]),select,textarea){box-sizing:border-box;display:block;width:100%;margin:0;padding:0 12px;border:1px solid #ffffff1a;border-radius:8px;background:#111113;color:var(--ink-1);font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;transition:border-color .12s,box-shadow .12s}
+:is(#skill-builder,#tool-builder,#skills-find-dialog) :is(input:not([type=radio]),select){height:38px}
+:is(#skill-builder,#tool-builder,#skills-find-dialog) textarea:not([hidden]){min-height:96px;padding:10px 12px;resize:vertical}
+:is(#skill-builder,#tool-builder,#skills-find-dialog) :is(input,textarea)::placeholder{color:#6f7480}
+:is(#skill-builder,#tool-builder,#skills-find-dialog) :is(input:not([type=radio]),select,textarea):hover{border-color:#ffffff2e}
+:is(#skill-builder,#tool-builder,#skills-find-dialog) :is(input:not([type=radio]),select,textarea):focus{outline:none;border-color:#4c8cdb;box-shadow:0 0 0 3px #4c8cdb26}
+:is(#skill-builder,#tool-builder,#skills-find-dialog) select:not([multiple]){appearance:none;-webkit-appearance:none;padding-right:34px;background:#111113 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%239aa0ab' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E") no-repeat right 12px center/12px;cursor:pointer}
+
+:is(#skill-builder,#tool-builder,#skills-find-dialog) .dialog-actions{position:static;display:flex;flex-wrap:nowrap;justify-content:flex-end;align-items:center;gap:8px;margin:22px 0 0;padding:16px 0 0;border-top:1px solid #ffffff10;background:none}
+:is(#skill-builder,#tool-builder,#skills-find-dialog) .dialog-actions .button{height:34px;min-height:34px;padding:0 14px;border-radius:8px;font-size:12.5px}
+:is(#skill-builder,#tool-builder,#skills-find-dialog) .dialog-actions .button.primary{background:#3a79c9;border-color:#4c8cdb;color:#f6f9ff;font-weight:600}
+:is(#skill-builder,#tool-builder,#skills-find-dialog) .dialog-actions .button.primary:hover{background:#4386db}
+/* Once a preview exists, Create is the next step and Preview steps back. */
+#skill-builder .dialog-actions:has(#skill-build-install:not([hidden])) button[type=submit]{background:var(--surface-raised);border-color:#ffffff1f;color:var(--ink-1);font-weight:500}
+:is(#skill-builder,#tool-builder,#skills-find-dialog) [role=alert]:empty{display:none}
+:is(#skill-builder,#tool-builder,#skills-find-dialog) [role=alert]{margin:14px 0 0}
+#skill-build-review h3{margin:22px 0 8px;font-size:12px;font-weight:500;color:var(--ink-2)}
+
+/* Find skills: nothing reserves room for results that have not been searched for yet. */
+#skills-find-dialog .skills-find-row{display:flex;flex-wrap:nowrap;align-items:center;gap:8px}
+#skills-find-dialog .skills-find-row input{flex:1;font:12px ui-monospace,SFMono-Regular,Menlo,monospace}
+#skills-find-dialog .skills-find-row .button{flex-shrink:0;width:auto;height:38px;padding:0 14px;border-radius:8px}
+#skills-find-status:empty,#skills-find-results:empty{display:none}
+#skills-find-status{min-height:0;margin:10px 0 0}
+#skills-find-results{margin-top:10px}
+#skills-find-dialog label[for=skills-add-path]{margin-top:20px;padding-top:18px;border-top:1px solid #ffffff10}
+@media(max-width:600px){:is(#skill-builder,#tool-builder,#skills-find-dialog){padding:22px 18px 18px}#skills-find-dialog .skills-find-row{flex-wrap:wrap}#skills-find-dialog .skills-find-row .button{width:100%;justify-content:center;text-align:center}}
+
+/* The SSH dialog uses the same labels and fields (its frame stays as it is). */
+#ssh-dialog .ssh-content>label,#accounts-dialog .ssh-content>label,#ssh-dialog #ssh-fields>label,#accounts-dialog #accounts-form>label,#ssh-dialog .ssh-content label[for],#accounts-dialog .ssh-content label[for]{display:block;margin:16px 0 6px;font-size:12px;font-weight:500;color:var(--ink-2)}
+#ssh-dialog :is(input:not([type=checkbox],[type=radio]),select:not([multiple])),#accounts-dialog :is(input:not([type=checkbox],[type=radio]),select:not([multiple])){box-sizing:border-box;height:38px;padding-left:12px;border:1px solid #ffffff1a;border-radius:8px;background-color:#111113;color:var(--ink-1);font-size:13px}
+#ssh-dialog :is(input,select):hover,#accounts-dialog :is(input,select):hover{border-color:#ffffff2e}
+/* The automation dialog's fields had no styling of their own; they get the same labels and fields. */
+#special-agent-form>label,#special-agent-form details label{display:block;margin:16px 0 6px;font-size:12px;font-weight:500;color:var(--ink-2)}
+#special-agent-form :is(input:not([type=checkbox],[type=radio]),select:not([multiple]),textarea){box-sizing:border-box;display:block;width:100%;padding-left:12px;border:1px solid #ffffff1a;border-radius:8px;background-color:#111113;color:var(--ink-1);font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+#special-agent-form :is(input:not([type=checkbox],[type=radio]),select:not([multiple])){height:38px}
+#special-agent-form textarea{padding:10px 12px}
+#special-agent-form :is(input,select,textarea):hover{border-color:#ffffff2e}
+#special-agent-form details{margin-top:16px}#special-agent-form summary{cursor:pointer;font-size:12.5px;color:var(--ink-2)}
