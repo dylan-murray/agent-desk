@@ -237,6 +237,46 @@ class DeskTests(unittest.TestCase):
         self.assertEqual(sent, [dict(cwd=self.temp.name, name='Claude · Personal', launch_profile='claude-2',
                                      argv=['/bin/zsh', '-lic', 'claude-2 "$@"', 'agent-desk'])])
 
+    def test_coordinators_launch_with_the_browsers_instructions(self):
+        sent = self.launched(dict(choice='codex', cwd=self.temp.name, coordinator=dict(objective='Ship the refund flow', router=False)))
+        body, = sent
+        self.assertRegex(body['name'], r'^Controller · Codex · [0-9a-f]{6}$')
+        self.assertEqual((body['coordinator_harness'], body['launch_profile']), ('codex', 'codex'))
+        self.assertEqual(body['argv'][:4], ['/bin/zsh', '-lic', 'codex "$@"', 'agent-desk'])
+        # The browser's own prompt, naming this terminal and this desk's control CLI.
+        instructions = body['argv'][4]
+        self.assertTrue(instructions.startswith('You are the controller agent for this local Agent Desk workspace.'))
+        self.assertIn('User objective: Ship the refund flow', instructions)
+        self.assertIn(json.dumps(body['name'], ensure_ascii=False), instructions)
+        self.assertIn(f"/scripts/agent_control.py' --desk 'http://127.0.0.1:{self.port}'", instructions)
+        self.assertNotIn('Model routing is on', instructions)
+        for request, error in ((dict(choice='shell', coordinator=dict(objective='x')), 'Choose Codex, Claude or Grok'),
+                               (dict(choice='opencode', coordinator=dict(objective='x')), 'Choose Codex, Claude or Grok'),
+                               (dict(choice='claude', coordinator=dict(objective=' ')), 'coordinator objective'),
+                               (dict(choice='claude', prompt='hi', coordinator=dict(objective='x')), 'not a separate first prompt'),
+                               (dict(choice='claude', coordinator=dict(objective='x', router=True)), 'Set up the model router')):
+            with self.subTest(error=error), self.assertRaisesRegex(mobile.DeskError, error):
+                mobile.launch(self.desk, dict(request, cwd=self.temp.name))
+
+    def test_account_agents_are_named_by_their_cli(self):
+        agent, shell = self.launch('/bin/sh', '-c', 'sleep 30'), self.launch('/bin/sh', '-c', 'sleep 30')
+        real = self.desk.request
+
+        def request_to(path, body=None):
+            # As the desk lists an account agent: its terminal runs the login shell, its profile names the CLI.
+            listing = real(path, body)
+            if path == '/api/agents':
+                for record in listing['agents']:
+                    if record['id'] == agent.id:
+                        record.update(harness='zsh', launch_profile='claude-personal', display_name='Claude · Personal')
+            return listing
+
+        out = io.StringIO()
+        with patch.object(self.desk, 'request', request_to):
+            mobile.Watch(self.desk, out).run(once=True)
+        records = {s['id']: s for s in json.loads(out.getvalue())['sessions']}
+        self.assertEqual((records[agent.id]['harness'], records[shell.id]['harness']), ('claude', 'sh'))
+
     def test_launch_starts_a_real_pane_and_refuses_bad_requests(self):
         result = mobile.launch(self.desk, dict(choice='shell', cwd=self.temp.name, desk='main'))
         self.assertEqual(result['session']['cwd'], self.temp.name)

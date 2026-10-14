@@ -50,6 +50,14 @@ public struct DeskInfo: Decodable, Sendable {
     public var desks: [DeskRef]
     public var launchChoices: [LaunchChoice]
     public var projects: [Project]
+    public var coordinator: CoordinatorOptions?
+}
+
+/// What the desk offers for "Coordinate other agents": which harnesses can coordinate, and
+/// whether its model router is set up to pick each worker's model.
+public struct CoordinatorOptions: Decodable, Sendable {
+    public var harnesses: [String]
+    public var router: Bool
 }
 
 public struct Session: Codable, Hashable, Identifiable, Sendable {
@@ -90,12 +98,25 @@ public struct LaunchRequest: Encodable, Sendable {
     public var cwd: String
     public var desk: String?
     public var prompt: String?
+    /// Launches the agent as a coordinator of the desk's other agents, as the desk's own dialog does.
+    public var coordinator: Coordinator?
 
-    public init(choice: String, cwd: String, desk: String?, prompt: String?) {
+    public struct Coordinator: Encodable, Sendable {
+        public var objective: String
+        public var router: Bool
+
+        public init(objective: String, router: Bool) {
+            self.objective = objective
+            self.router = router
+        }
+    }
+
+    public init(choice: String, cwd: String, desk: String?, prompt: String?, coordinator: Coordinator? = nil) {
         self.choice = choice
         self.cwd = cwd
         self.desk = desk
         self.prompt = prompt
+        self.coordinator = coordinator
     }
 }
 

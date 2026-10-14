@@ -5,14 +5,22 @@ import SwiftUI
 struct AgentDeskApp: App {
     @State private var model = AppModel()
     @Environment(\.scenePhase) private var scenePhase
+    private static let hostingUnitTests = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
 
     var body: some Scene {
         WindowGroup {
-            RootView()
-                .environment(model)
-                .preferredColorScheme(.dark)
-                .tint(Theme.accent)
-                .onOpenURL { model.open($0) }
+            if Self.hostingUnitTests {
+                // Unit tests run inside the app and test its types, not its screens. Opening a saved
+                // desk would start a Live Activity that outlives the run, and on the next install
+                // ActivityKit relaunches the app in the background, before the test bundle is in it.
+                Color.clear
+            } else {
+                RootView()
+                    .environment(model)
+                    .preferredColorScheme(.dark)
+                    .tint(Theme.accent)
+                    .onOpenURL { model.open($0) }
+            }
         }
         .onChange(of: scenePhase) { _, phase in
             switch phase {

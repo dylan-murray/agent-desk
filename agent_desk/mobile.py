@@ -14,6 +14,8 @@ import http.client
 import json
 import os
 import queue
+import re
+import secrets
 import select
 import shutil
 import signal
@@ -35,6 +37,9 @@ OUTPUT_RECENT = 4
 REFRESH = 2
 HEARTBEAT = 15
 ROOT = Path(__file__).resolve().parents[1]
+# The account profiles that run Claude or Codex, and the CLIs that can coordinate other agents.
+AGENT_PROFILE = re.compile(r'(claude|codex)(-[a-z0-9-]+)?')
+COORDINATOR_HARNESSES = ('codex', 'claude', 'grok')
 
 
 class DeskError(Exception):
@@ -320,6 +325,26 @@ def launch_command(choice, args):
     return json.loads(result.stdout)
 
 
+def controller_prompt(desk, objective, name, routed):
+    """The browser's coordinator instructions, read from its own source, so the two never disagree."""
+    script = ('const vm=require("vm"),fs=require("fs"),[file,root,origin,args]=process.argv.slice(1);'
+              'const page={document:{addEventListener(){}},window:{},terminalDefaultCwd:root,location:{origin}};'
+              'vm.runInNewContext(fs.readFileSync(file,"utf8"),page);'
+              'console.log(JSON.stringify(page.controllerPrompt(...JSON.parse(args))))')
+    result = subprocess.run([shutil.which('node') or 'node', '-e', script, str(ROOT / 'agent_desk/static/controller.js'), str(ROOT.resolve()),
+                             f'http://127.0.0.1:{desk.port}', json.dumps([objective, name, routed])], capture_output=True, text=True, timeout=10)
+    if result.returncode:
+        raise DeskError('Could not write the coordinator instructions: ' + result.stderr.strip())
+    return json.loads(result.stdout)
+
+
+def router_configured(desk):
+    try:
+        return bool(desk.request('/api/model-router/settings', {}).get('configured'))
+    except DeskError:
+        return False
+
+
 def info(desk):
     choices = launch_choices(desk)
     agents = desk.request('/api/agents')
@@ -327,7 +352,8 @@ def info(desk):
     return dict(type='info', protocol=PROTOCOL, port=desk.port, desks=agents.get('desks', []),
                 launch_choices=[dict(key=key, label=choice['label'], harness=choice['harness'])
                                 for key, choice in choices.items() if choice['harness'] != 'custom'],
-                projects=projects.get('projects', projects) if isinstance(projects, dict) else projects)
+                projects=projects.get('projects', projects) if isinstance(projects, dict) else projects,
+                coordinator=dict(harnesses=list(COORDINATOR_HARNESSES), router=router_configured(desk)))
 
 
 def launch(desk, request):
@@ -347,8 +373,26 @@ def launch(desk, request):
         raise DeskError('A first prompt needs a coding agent, not a shell')
     # An account's key is its launch profile, which selects its config folder, as in the browser.
     body = dict(cwd=str(Path(cwd).expanduser()), name=choice['label'], launch_profile=key if choice.get('account') else None)
+    args = [prompt] if prompt else []
+    coordinator = request.get('coordinator')
+    if coordinator is not None:
+        # As the browser's "Coordinate other agents": the objective is the agent's first message.
+        objective = coordinator.get('objective') if isinstance(coordinator, dict) else None
+        if not isinstance(objective, str) or not objective.strip() or choice['harness'] not in COORDINATOR_HARNESSES:
+            raise DeskError('Choose Codex, Claude or Grok and enter a coordinator objective')
+        if prompt is not None:
+            raise DeskError('A coordinator takes its objective, not a separate first prompt')
+        routed = coordinator.get('router') is True
+        events = desk.request('/api/coordinator-events')
+        if not events.get('event_delivery') or (choice['harness'] == 'grok' and not events.get('native_grok_terminal')):
+            raise DeskError('Restart Agent Desk to enable event-driven coordinators.')
+        if routed and not router_configured(desk):
+            raise DeskError('Set up the model router at the desk before routing worker models')
+        body['name'] = 'Controller · ' + choice['label'] + ' · ' + secrets.token_hex(3)
+        body['coordinator_harness'] = choice['harness']
+        args = [controller_prompt(desk, objective.strip(), body['name'], routed)]
     if choice['harness'] != 'shell':
-        body['argv'] = launch_command(choice, [prompt] if prompt else [])
+        body['argv'] = launch_command(choice, args)
     if request.get('desk') is not None:
         body['desk'] = request['desk']
     session = desk.request('/api/terminals/launch', body)
@@ -361,8 +405,10 @@ def session_record(agent, approval, now):
     if live and not agent.get('runtime_status') and agent.get('remote_connected') is not False:
         last = agent.get('last_output')
         status = 'needs_input' if approval else 'output' if last and now - last < OUTPUT_RECENT else 'quiet'
+    # Account agents run through a login shell, so the terminal's own command is the shell.
+    profile = AGENT_PROFILE.fullmatch(agent.get('launch_profile') or '')
     return dict(id=agent['id'], name=agent.get('display_name') or agent.get('name') or agent['id'], desk=agent.get('desk'),
-                harness=agent.get('harness'), launch_profile=agent.get('launch_profile'), cwd=agent.get('cwd'),
+                harness=profile.group(1) if profile else agent.get('harness'), launch_profile=agent.get('launch_profile'), cwd=agent.get('cwd'),
                 project=agent.get('project') or (Path(agent['cwd']).name if agent.get('cwd') else None),
                 status=status, question=approval or agent.get('question'), exit_code=agent.get('exit_code'),
                 last_output=agent.get('last_output'), active_since=agent.get('active_since'), parent_id=agent.get('parent_id'),

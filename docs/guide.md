@@ -142,12 +142,12 @@ The private Unix socket is scoped to the resolved data directory and port, insid
 
 ## iPhone app
 
-The [iPhone app](../ios/README.md) shows which sessions need you, answers approval prompts with one tap, types into live terminals, dictates prompts on the phone, and launches agents. It reaches the desk over SSH, the way a laptop would, so the desk still listens only on 127.0.0.1 and nothing changes if you never use it. Terminals run over [Mosh](https://mosh.org), which keeps them live across Wi-Fi and cellular changes; install it on the machine running the desk (`brew install mosh`).
+The [iPhone app](../ios/README.md) shows which sessions need you, answers approval prompts with one tap, types into live terminals, dictates prompts on the phone, and launches agents and coordinators. It reaches the desk over SSH, the way a laptop would, so the desk still listens only on 127.0.0.1 and nothing changes if you never use it. Terminals run over [Mosh](https://mosh.org), which keeps them live across Wi-Fi and cellular changes; install it on the machine running the desk (`brew install mosh`).
 
 Two commands make this work, and both are clients of a running desk, so they never start or stop it:
 
 - `agent-desk attach ID` joins a terminal in the current terminal, as a browser pane does. What you type reaches the pane, the pane's output and exit appear here, and the pane takes this terminal's size while attached. Leaving (closing the terminal, or Mosh's `Ctrl-^ .`) detaches without stopping the pane. The app runs it under `mosh-server`.
-- `agent-desk mobile info`, `watch` and `launch` answer in JSON: the desks, launch choices and projects; one line per change to the session list, with approval prompts read from each terminal's screen as the browser reads them; and a launch from a JSON request on stdin with the same command the launch dialog builds.
+- `agent-desk mobile info`, `watch` and `launch` answer in JSON: the desks, launch choices and projects; one line per change to the session list, with approval prompts read from each terminal's screen as the browser reads them; and a launch from a JSON request on stdin with the same command the launch dialog builds, including a coordinator with its objective (`"coordinator": {"objective": "…"}`), as with "Coordinate other agents".
 
 Both are local helpers (see [Who can reach a session](#who-can-reach-a-session)): they read the desk's helper token from its data directory, so run them with the same `AGENT_DESK_DATA_DIR` as the desk, and a protected session stays at the desk: `attach` refuses it and `watch` lists it without reading its screen. Both take `--port`, defaulting to `AGENT_DESK_PORT` or 4310. If you installed Agent Desk with `pip install`, reinstall it to get them, or run `python3 -m agent_desk attach`. A terminal supervisor started before this release does not report pane sizes, so `watch` reads its screens at 80×24 until the supervisor is restarted (see above).
 

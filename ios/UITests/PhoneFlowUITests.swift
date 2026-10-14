@@ -104,6 +104,19 @@ final class PhoneFlowUITests: XCTestCase {
         sleep(2)
         shot("11-sessions-after")
 
+        // Launch a coordinator, as with the desk's "Coordinate other agents": a shell cannot coordinate, so Claude stands in.
+        app.navigationBars.buttons["Launch an agent"].tap()
+        let coordinate = app.switches["launch-coordinate"]
+        XCTAssert(coordinate.waitForExistence(timeout: 10))
+        coordinate.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
+        XCTAssertEqual(app.buttons["launch-agent"].value as? String, "Claude")
+        XCTAssert(app.staticTexts["Coordinator objective"].exists)
+        shot("11b-coordinator")
+        app.navigationBars.buttons["Launch"].tap()
+        let controller = app.navigationBars.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Controller · Claude'")).firstMatch
+        XCTAssert(controller.waitForExistence(timeout: 30))
+        back()
+
         // The Live Activity carries the desk to the Home Screen and Lock Screen.
         XCUIDevice.shared.press(.home)
         sleep(3)

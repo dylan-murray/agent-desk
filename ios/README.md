@@ -2,8 +2,8 @@
 
 An iPhone app for the desk running on your Mac or server: see which sessions need you,
 answer approval prompts with one tap, type into live terminals, dictate prompts, and launch
-agents. A Live Activity keeps the desk's state on the Lock Screen and in the Dynamic Island
-while the app is connected.
+agents and coordinators. A Live Activity keeps the desk's state on the Lock Screen and in the
+Dynamic Island while the app is connected.
 
 <p>
   <img src="../docs/images/ios-sessions.png" width="250" alt="A desk's sessions, the one that needs you first">
@@ -82,12 +82,12 @@ AGENT_DESK_E2E_PORT=4377 AGENT_DESK_E2E_COMMAND=agent-desk swift test --filter D
 
 The app's own tests run in the Simulator: `AgentDeskTests` checks approval-menu reading and
 transcribes recorded speech with the on-device Whisper model (downloading it once), and
-`AgentDeskUITests` drives the app through setup, an approval, typing, a launch and the Live
-Activity against a fixture desk. The UI test needs a desk and an sshd to talk to, passed in
-`TEST_RUNNER_E2E_*` variables: `E2E_SSH_PORT`, `E2E_DESK_PORT`, `E2E_USER`, `E2E_COMMAND`,
-`E2E_AUTHORIZED_KEYS` (a file the sshd reads, which the test writes the app's key into),
-`E2E_FINGERPRINT` (the sshd's host key fingerprint) and, optionally, `E2E_SHOTS` for
-screenshots. Never point tests at the desk you work in.
+`AgentDeskUITests` drives the app through setup, an approval, typing, launching an agent and a
+coordinator, and the Live Activity against a fixture desk. The UI test needs a desk and an sshd
+to talk to, passed in `TEST_RUNNER_E2E_*` variables: `E2E_SSH_PORT`, `E2E_DESK_PORT`,
+`E2E_USER`, `E2E_COMMAND`, `E2E_AUTHORIZED_KEYS` (a file the sshd reads, which the test writes
+the app's key into), `E2E_FINGERPRINT` (the sshd's host key fingerprint) and, optionally,
+`E2E_SHOTS` for screenshots. Never point tests at the desk you work in.
 
 ## Limits
 
