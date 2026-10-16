@@ -5,6 +5,9 @@ input {id, data} and resize {id, cols, rows}. Server messages: output {sub, id, 
 truncated, exit_code}, exit {sub, id, cursor, exit_code} and error {sub?, id?, message}.
 Cursors mean what they do for GET /api/terminals/output, so a reconnecting tab re-subscribes
 from the last cursor it received and nothing is lost or repeated.
+
+The desk page's token reaches every pane. A local helper's token, such as `agent-desk attach`,
+reaches only what it could over HTTP: ``refusal(id, write)`` says why a pane is off limits.
 """
 import json
 import secrets
@@ -18,15 +21,31 @@ MAX_SUBSCRIPTIONS = 64
 
 
 class TerminalStream:
-    def __init__(self, socket, terminals, token):
+    def __init__(self, socket, terminals, token, helper_token=None, refusal=None):
         self.socket, self.terminals, self.token = socket, terminals, token
+        self.helper_token, self.helper_refusal = helper_token, refusal
+        # Set once a helper authenticates; the page is never refused.
+        self.refusal = None
         self.subscriptions = {}
         self.lock = threading.Lock()
 
+    def authenticate(self, message):
+        token = str(message.get('token', '')) if message.get('type') == 'auth' else ''
+        if token and secrets.compare_digest(token, self.token):
+            return True
+        if token and self.helper_token and self.helper_refusal and secrets.compare_digest(token, self.helper_token):
+            self.refusal = self.helper_refusal
+            return True
+        return False
+
+    def check(self, identity, write):
+        refused = self.refusal and self.refusal(identity, write)
+        if refused:
+            raise ValueError(refused)
+
     def serve(self):
         try:
-            first = self.receive()
-            if first.get('type') != 'auth' or not secrets.compare_digest(str(first.get('token', '')), self.token):
+            if not self.authenticate(self.receive()):
                 return self.socket.close(1008, 'Terminal authentication required')
             while True:
                 self.handle(self.receive())
@@ -56,6 +75,7 @@ class TerminalStream:
         kind, identity = message.get('type'), message.get('id')
         try:
             if kind == 'subscribe':
+                self.check(identity, write=False)
                 self.subscribe(message.get('sub'), identity, message.get('cursor'))
             elif kind == 'unsubscribe':
                 with self.lock:
@@ -63,8 +83,10 @@ class TerminalStream:
                 if cancelled:
                     cancelled.set()
             elif kind == 'input':
+                self.check(identity, write=True)
                 self.terminals.send(identity, input_event(message.get('data')))
             elif kind == 'resize':
+                self.check(identity, write=True)
                 self.terminals.send(identity, resize_event(message.get('cols'), message.get('rows')))
             else:
                 raise ValueError('Unknown terminal stream message')
