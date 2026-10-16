@@ -68,6 +68,29 @@ Choose your iPhone and run. Xcode asks once to trust SwiftTerm's build plugin, w
 writes SwiftTerm's version into the build. With a free Apple ID, apps installed this way
 expire after seven days; a paid developer account lasts a year.
 
+## Run it in the Simulator
+
+`ios/dev-desk.sh` runs this checkout's desk on 127.0.0.1:4390 with an sshd on 127.0.0.1:2298
+that only takes the keys in `data/ios-dev/sshd/authorized_keys`, so the app logs in to the code
+you are changing and never to the desk you work in. The desk keeps its own state in
+`data/ios-dev/desk`, starting with a copy of the checkout's accounts. Both stay running until `ios/dev-desk.sh
+down`, or a restart; run it again to bring them back.
+
+```sh
+ios/dev-desk.sh            # start both and print the settings for the app
+cd ios && xcodegen generate && open AgentDesk.xcodeproj
+```
+
+Run the **AgentDesk** scheme on an iPhone simulator. Xcode 27 shows simulators in DeviceHub
+(Xcode → Open Developer Tool → DeviceHub). Once, in the app: copy **This iPhone's key** into
+`data/ios-dev/sshd/authorized_keys`, add a desk with the printed host, user, ports and command
+(the last three under **Advanced**), and check the server key it asks you to trust against the
+printed one. The app keeps them across launches and
+rebuilds.
+
+Changes to `agent_desk/mobile.py` take effect on the app's next request, as the app runs it
+fresh each time; changes to the desk's server need `ios/dev-desk.sh down` and `up`.
+
 ## Tests
 
 ```sh
