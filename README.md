@@ -8,10 +8,11 @@
 </h4>
 
 <p align="center">
-  <a href="https://github.com/dylan-murray/agent-desk/actions/workflows/checks.yml"><img src="https://github.com/dylan-murray/agent-desk/actions/workflows/checks.yml/badge.svg?branch=main" alt="Checks"></a>
-  <a href="pyproject.toml"><img src="https://img.shields.io/badge/python-3.11%2B-blue" alt="Python 3.11+"></a>
-  <a href="pyproject.toml"><img src="https://img.shields.io/badge/dependencies-none-brightgreen" alt="No Python dependencies"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-green" alt="License: Apache 2.0"></a>
+  <a href="https://github.com/dylan-murray/agent-desk/actions/workflows/checks.yml"><img src="https://img.shields.io/github/actions/workflow/status/dylan-murray/agent-desk/checks.yml?branch=main&label=checks&logo=githubactions&logoColor=white&style=flat-square&labelColor=24292f" alt="Checks"></a>
+  <a href="pyproject.toml"><img src="https://img.shields.io/badge/python-3.11%2B-3776ab?logo=python&logoColor=white&style=flat-square&labelColor=24292f" alt="Python 3.11+"></a>
+  <a href="package.json"><img src="https://img.shields.io/badge/node.js-18%2B-5fa04e?logo=nodedotjs&logoColor=white&style=flat-square&labelColor=24292f" alt="Node.js 18+"></a>
+  <img src="https://img.shields.io/badge/macOS%20%7C%20Linux-555?logo=apple&logoColor=white&style=flat-square&labelColor=24292f" alt="macOS or Linux">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-d22128?style=flat-square&labelColor=24292f" alt="License: Apache 2.0"></a>
 </p>
 
 <h2></h2>
@@ -22,7 +23,7 @@ OpenCode, and Pi, and a custom command option for any other agent CLI.
 Hand work to a coordinator that splits it across agents, and review what comes
 back in one inbox.
 
-<img src="docs/images/agent-desk-demo.webp" alt="Agent Desk demo: three Claude Code and Codex sessions are open side by side. One opens a code review of its change inside its own pane. The review is opened full screen, a comment is left on a line of the diff and sent to that agent, and the pane goes back to the grid. While the agent edits the code, its pane is resized from the corner and dragged to the other side, and the review reloads with the new diff. The sessions are grouped in the sidebar. Then a second desk is created with a new Claude Code terminal on it, and an automation is scheduled for weekdays">
+<img src="docs/images/agent-desk-demo.webp" alt="Agent Desk demo: three Claude Code and Codex sessions are open side by side. One opens a code review of its change inside its own pane. The review is opened full screen, a comment is left on a line of the diff and sent to that agent, and the pane goes back to the grid. While the agent edits the code, its pane is resized from the corner and dragged to the other side, and the review reloads with the new diff. The sessions are grouped in the sidebar. Then on a new desk a coordinator is asked to add a password rule, launches three Claude Code and Codex workers whose terminals open beside it, and reports back when they finish. Last, an automation is scheduled for weekdays">
 
 ## ✨ What you get
 
