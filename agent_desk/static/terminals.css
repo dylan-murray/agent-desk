@@ -453,7 +453,5 @@ body.pane-dragging-active .pane-edges{visibility:hidden}
 @media(prefers-reduced-motion:reduce){.pane-divider::before{transition:none}}
 @media(max-width:760px){.pane-tool-toggle{padding:0 6px}.pane-tool-toggle span{display:none}.pane-dock-side{display:none}}
 #launch-terminal-form .launch-readouts{align-items:flex-start}#launch-terminal-form .launch-readouts input{flex:none;width:14px;height:14px;min-height:0;margin:2px 0 0;padding:0}#launch-terminal-form .launch-readouts small{display:block;margin-top:2px;font-size:11px;line-height:1.5;color:var(--ink-muted)}
-/* The focused pane's ring is an overlay, so moving focus never resizes the terminal. */
-.terminal-pane.focused:not(.pane-fullscreen,.pane-dragging){border-color:transparent;box-shadow:0 0 22px -4px color-mix(in srgb,var(--agent-color) 55%,transparent)}
-.terminal-pane.focused:not(.pane-fullscreen,.pane-dragging)::after{content:'';position:absolute;inset:-1px;border-radius:9px;padding:2px;background:var(--selected-ring);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;pointer-events:none;z-index:5}
+.terminal-pane.focused:not(.pane-fullscreen,.pane-dragging){border-color:color-mix(in srgb,var(--agent-color) 80%,transparent);box-shadow:0 0 0 1px color-mix(in srgb,var(--agent-color) min(100%,calc(30% * var(--glow,1))),transparent),0 0 18px -2px color-mix(in srgb,var(--agent-color) min(100%,calc(35% * var(--glow,1))),transparent)}
 .terminal-pane.focused .terminal-bar{background:color-mix(in srgb,var(--agent-color) 12%,var(--surface-raised))}

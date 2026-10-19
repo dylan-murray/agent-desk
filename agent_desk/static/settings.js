@@ -16,3 +16,26 @@
   document.addEventListener('desk-alerts-change', render);
   render();
 })();
+
+// Focus glow: on/off and brightness, saved per browser, applied as --glow on the root.
+(() => {
+  const KEY = 'agent-desk-focus-glow';
+  const toggle = document.getElementById('settings-glow-enabled');
+  const slider = document.getElementById('settings-glow-strength');
+  const value = document.getElementById('settings-glow-value');
+  let glow = { on: true, strength: 100 };
+  try { glow = { ...glow, ...JSON.parse(localStorage.getItem(KEY) || '{}') }; } catch {}
+  const clamp = n => Math.min(200, Math.max(25, Math.round(Number(n) / 5) * 5 || 100));
+  glow.strength = clamp(glow.strength);
+  function apply() {
+    document.documentElement.style.setProperty('--glow', glow.on ? String(glow.strength / 100) : '0');
+    toggle.setAttribute('aria-checked', String(glow.on));
+    slider.value = glow.strength; slider.disabled = !glow.on; value.textContent = glow.strength + '%';
+    document.getElementById('settings-glow-strength-row').classList.toggle('muted-choices', !glow.on);
+  }
+  function save() { try { localStorage.setItem(KEY, JSON.stringify(glow)); } catch {} apply(); }
+  toggle.onclick = () => { glow.on = !glow.on; save(); };
+  slider.oninput = () => { glow.strength = clamp(slider.value); save(); };
+  window.addEventListener('storage', event => { if (event.key !== KEY) return; try { glow = { on: true, strength: 100, ...JSON.parse(event.newValue || '{}') }; glow.strength = clamp(glow.strength); } catch {} apply(); });
+  apply();
+})();

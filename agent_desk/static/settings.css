@@ -27,7 +27,12 @@
 .settings-option-text{display:flex;flex-direction:column;gap:2px;min-width:0}
 .settings-preview{flex-shrink:0;height:28px;padding:0 11px;font-size:12px}
 .settings-choices.muted-choices .settings-option label{opacity:.55}
+.settings-range{display:flex;align-items:center;gap:12px;flex-shrink:0}
+.settings-range input{width:180px;accent-color:#3f7fd6;cursor:pointer}
+.settings-range input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.settings-range output{min-width:40px;text-align:right;color:var(--ink-2);font-size:12px;font-variant-numeric:tabular-nums}
+.settings-row.muted-choices{opacity:.55}
 @media(prefers-reduced-motion:reduce){.settings-option{transition:none}}
-@media(max-width:760px){#settings-page{padding:16px}.settings-group{margin-top:18px}.settings-row,.settings-group-head{padding-left:14px;padding-right:14px}.settings-option{flex-wrap:wrap;padding:12px}.settings-preview{margin-left:26px}}
+@media(max-width:760px){#settings-page{padding:16px}.settings-group{margin-top:18px}.settings-row,.settings-group-head{padding-left:14px;padding-right:14px}.settings-option{flex-wrap:wrap;padding:12px}.settings-preview{margin-left:26px}.settings-range input{width:120px}}
 .top-actions .header-nav #open-settings{margin-left:6px}
 @media(max-width:760px){.top-actions .header-nav #open-settings{margin-left:4px}}
