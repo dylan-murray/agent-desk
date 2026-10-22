@@ -252,6 +252,17 @@ document.addEventListener('DOMContentLoaded',()=>{
     const first=panesBelow()[0];if(!first)return;
     workspace.scrollBy({top:first.getBoundingClientRect().top-workspace.getBoundingClientRect().top,behavior:reducedMotion()?'auto':'smooth'});
   };
+  // While panes run past the screen, the wheel scrolls the focused pane's terminal and the
+  // workspace everywhere else. A gesture keeps the target it started on, so a pane sliding under
+  // the pointer mid-scroll never catches it; Option scrolls the workspace from anywhere.
+  let wheelTarget=null,wheelIdle=0;
+  workspace.addEventListener('wheel',event=>{
+    clearTimeout(wheelIdle);wheelIdle=setTimeout(()=>{wheelTarget=null;},250);
+    if(!workspace.classList.contains('pane-overflow')||fullscreenPaneId){wheelTarget=null;return;}
+    if(!wheelTarget){const pane=event.target.closest('.terminal-pane');wheelTarget=!event.altKey&&pane&&paneViews.get(selectedId)?.node===pane?pane:workspace;}
+    if(wheelTarget!==workspace||Math.abs(event.deltaX)>Math.abs(event.deltaY))return;
+    event.stopPropagation();
+  },{capture:true,passive:true});
   workspace.addEventListener('pointerdown',event=>{
     const handle=event.target.closest('.pane-resize');
     if(!handle||paneResize||annotating||event.pointerType==='mouse'&&event.button!==0)return;
