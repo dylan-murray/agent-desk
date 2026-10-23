@@ -270,7 +270,7 @@ def discover():
             continue
         pid, command = parts
         name = Path(command).name.lower()
-        harness = next((h for h in ('codex', 'claude', 'grok', 'opencode') if name in (h, h + '.exe')), None)
+        harness = next((h for h in ('codex', 'claude', 'grok', 'opencode', 'cortex') if name in (h, h + '.exe')), None)
         if harness:
             agents.append(dict(id='process-' + pid, name=accounts.SINGLE.get(harness, harness.title()) + ' session', harness=harness,
                                status='unknown', task='Task unavailable — connect an event adapter',

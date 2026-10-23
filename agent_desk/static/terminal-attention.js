@@ -11,6 +11,13 @@ function terminalApprovalPrompt(term){
     const no=lines.findIndex((line,i)=>i>yes&&/^\s*No, quit\s+n\s*$/i.test(line));
     if(yes>trust&&no>yes&&no-trust<=12&&lines.slice(no+1).every(line=>!line.trim()))return 'Do you trust the contents of this directory?';
   }
+  // Cortex Code asks in a box and parks its hidden cursor at the bottom of the screen.
+  const project=lines.findIndex(line=>/^\s*│\s*Do you trust this project\?\s*│\s*$/.test(line));
+  if(project>=0){
+    const yes=lines.findIndex((line,i)=>i>project&&/^\s*[❯ ]\s*1\.\s*Yes, proceed\s*$/.test(line));
+    const no=lines.findIndex((line,i)=>i>yes&&/^\s*[❯ ]\s*2\.\s*No, exit\s*$/.test(line));
+    if(yes>project&&no===yes+1&&no-project<=15)return 'Do you trust this project?';
+  }
 
   const question=/(?:do you (?:want|trust)|would you like|allow .{0,100}\?|approve .{0,100}\?|proceed\?|continue\?)[^\n]*/i;
   const match=text.match(question);

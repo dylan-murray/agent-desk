@@ -20,6 +20,14 @@ def providers():
     return {a['id']:(a['harness'],a['label']) for a in accounts()}|{name:(name,label) for name,label in SINGLE.items()}
 
 
+# CLIs that run as workers but have no planning adapter, so they cannot coordinate or read sources.
+WORKER_ONLY = {'cortex'}
+
+
+def planners():
+    return {profile:value for profile,value in providers().items() if profile not in WORKER_ONLY}
+
+
 def setting(value,label):
     if value is None:return ''
     if not isinstance(value,str) or len(value)>200 or value.startswith('-') or any(ord(c)<32 or ord(c)==127 for c in value):

@@ -19,7 +19,7 @@
 
 Agent Desk is a local workspace for coding agents. Run any coding agent side by
 side in real terminals, with built-in support for Claude Code, Codex, Grok,
-OpenCode, and Pi, and a custom command option for any other agent CLI.
+OpenCode, Pi, and Cortex Code, and a custom command option for any other agent CLI.
 Hand work to a coordinator that splits it across agents, and review what comes
 back in one inbox.
 
@@ -27,7 +27,7 @@ back in one inbox.
 
 ## ✨ What you get
 
-- 🖥️ **Terminals** for Claude Code, Codex, Grok, OpenCode, Pi, and more, up to 16 in resizable layouts
+- 🖥️ **Terminals** for Claude Code, Codex, Grok, OpenCode, Pi, Cortex Code, and more, up to 16 in resizable layouts
 - 🗂️ **Desks** that keep separate projects' agents apart, each with its own panes
 - 🧭 **Coordinators** that hand work to agents and track what comes back
 - 🔀 **Model router** support, so coordinators pick each worker's model and harness per task

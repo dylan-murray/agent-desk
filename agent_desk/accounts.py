@@ -11,7 +11,7 @@ ACCOUNTS_FILE = DATA_DIR / 'accounts.json'
 HARNESSES = {'codex': ('CODEX_HOME', '.codex', 'Codex'), 'claude': ('CLAUDE_CONFIG_DIR', '.claude', 'Claude')}
 LIMIT = 20
 # CLIs with one login each: launched as they are, with no config folder to select.
-SINGLE = {'grok': 'Grok', 'opencode': 'OpenCode', 'pi': 'Pi'}
+SINGLE = {'grok': 'Grok', 'opencode': 'OpenCode', 'pi': 'Pi', 'cortex': 'Cortex Code'}
 
 
 def _saved():

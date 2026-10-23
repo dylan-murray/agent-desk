@@ -4,6 +4,8 @@ const dialogTemplate=document.getElementById('coord-create-dialog');dialogTempla
 const workspaces=new Map();
 const providerLabels={};
 function syncProviderLabels(){for(const key of Object.keys(providerLabels))delete providerLabels[key];Object.assign(providerLabels,accountLabels());}
+// Cortex Code runs as a worker only: it has no planning adapter to coordinate or read sources with.
+const plannerLabels=()=>Object.fromEntries(Object.entries(providerLabels).filter(([profile])=>profile!=='cortex'));
 syncProviderLabels();document.addEventListener('agent-desk-accounts',syncProviderLabels);
 let drafts={};try{drafts=JSON.parse(localStorage.getItem('agent-desk-coordinator-drafts')||'{}');}catch{}
 
@@ -116,7 +118,7 @@ const savedDialog=document.createElement('dialog');savedDialog.className='coord-
 const savedHeading=document.createElement('h2');savedHeading.textContent='Saved sessions';const savedClose=document.createElement('button');savedClose.textContent='×';savedClose.className='saved-dismiss';savedClose.setAttribute('aria-label','Close saved sessions');savedClose.onclick=()=>savedDialog.close();const savedHeader=document.createElement('header');savedHeader.append(savedHeading,savedClose);const savedHint=document.createElement('p');savedHint.className='saved-hint';savedHint.textContent='Pick up a previous worker conversation.';savedDialog.append(savedHeader,savedHint,savedList);document.body.append(savedDialog);
 el('coord-saved').querySelector('.coord-saved-open').onclick=()=>savedDialog.showModal();
 const deliveryList=document.createElement('div');deliveryList.className='coord-deliveries';deliveryList.hidden=true;el('coord-status').after(deliveryList);
-const contextPanel=window.createContextPanel({identity:()=>identity,providers:providerLabels,renderText:textBlocks,onError:failure});
+const contextPanel=window.createContextPanel({identity:()=>identity,providers:plannerLabels(),renderText:textBlocks,onError:failure});
 el('coord-context-open').onclick=()=>contextPanel.open();
 const retireDialog=document.createElement('dialog');retireDialog.className='coord-retire-dialog';retireDialog.setAttribute('aria-label','Review completed work');
 retireDialog.innerHTML=`<form class="coord-retire-form">
@@ -344,7 +346,7 @@ let remoteNodes=[];
 const environmentPicker=coordinatorPicker(el('coord-environment'),[{value:'',label:'This computer'}]);
 function environmentChanged(reset=true){
  const node=remoteNodes.find(n=>n.id===el('coord-environment').value),prior=el('coord-profile').value;
- const choices=node?(node.profiles||[]).map(p=>({value:p,label:p[0].toUpperCase()+p.slice(1)+' · Remote environment'})):Object.entries(providerLabels).map(([value,label])=>({value,label}));
+ const choices=node?(node.profiles||[]).map(p=>({value:p,label:p[0].toUpperCase()+p.slice(1)+' · Remote environment'})):Object.entries(plannerLabels()).map(([value,label])=>({value,label}));
  el('coord-profile').replaceChildren(...choices.map(c=>new Option(c.label,c.value)));
  if(choices.some(c=>c.value===prior))el('coord-profile').value=prior;
  providerPicker.setEntries(choices);providerPicker.sync();environmentPicker.sync();
