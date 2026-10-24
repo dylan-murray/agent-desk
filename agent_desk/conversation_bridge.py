@@ -12,7 +12,8 @@ from agent_desk.conversations import read_transcript, context_document, handoff_
 
 def sources(home=None):
     home=Path(home or Path.home())
-    found={a['id']:(config_folder(a['id'],home)/('projects' if a['harness']=='claude' else 'sessions'),'*.jsonl') for a in accounts()}
+    found={a['id']:(config_folder(a['id'],home)/('projects' if a['harness']=='claude' else 'sessions'),'chat_history.jsonl' if a['harness']=='grok' else '*.jsonl')
+           for a in accounts() if a['harness'] in ('claude','codex','grok')}
     return found|{'grok':(home/'.grok/sessions','chat_history.jsonl')}
 
 

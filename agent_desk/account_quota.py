@@ -170,8 +170,10 @@ class AccountQuota:
     def read(self,profile,refresh=False):
         if profile!='grok' and not account(profile):raise QuotaError('Unknown account profile')
         base={'profile':profile,'label':account_label(profile),'windows':[],'fetched_at':None}
-        if profile=='grok':
+        if harness_of(profile)=='grok':
             return base|{'state':'unsupported','message':'Grok account allowance is not connected to Agent Desk. Use /usage inside Grok; its usage CLI subcommand only reports session spending.'}
+        if harness_of(profile) not in ('claude','codex'):
+            return base|{'state':'unsupported','message':account_label(profile)+' account allowance is not connected to Agent Desk.'}
         with self.lock:
             now=self.clock()
             if profile not in self.pending and now-self.attempted.get(profile,-float('inf'))>=(15 if refresh else 120):

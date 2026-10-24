@@ -48,7 +48,7 @@ class AccountTests(unittest.TestCase):
             accounts.delete_account({'id': 'claude'})
 
     def test_invalid_accounts_and_unreadable_files_are_rejected_without_saving(self):
-        for payload in (dict(harness='grok', name='Other', config_dir='~/.grok-other'), dict(harness='claude', name='', config_dir='~/.claude-x'),
+        for payload in (dict(harness='cortex', name='Other', config_dir='~/.cortex-other'), dict(id='grok', harness='grok', name='Work', config_dir=''), dict(harness='claude', name='', config_dir='~/.claude-x'),
                         dict(harness='claude', name='x'*41, config_dir='~/.claude-x'), dict(harness='claude', name='Personal', config_dir='relative/path'),
                         dict(harness='claude', name='Personal', config_dir='~/../outside'), dict(harness='claude', name='···', config_dir='~/.claude-x'),
                         dict(id='grok', harness='claude', name='Personal', config_dir='~/.claude-x'),
@@ -76,6 +76,60 @@ class AccountTests(unittest.TestCase):
         self.assertEqual(launched[3:], ['agent-desk', 'resume'])
         # The default account keeps its own command, so a user's alias for it still applies.
         self.assertTrue(profile_command(['/bin/zsh', '-lic', 'codex "$@"', 'agent-desk'], 'codex', self.home)[2].endswith('\ncodex "$@"'))
+
+    def test_grok_opencode_and_pi_accounts_run_their_cli_with_its_own_folder(self):
+        for harness, variable in (('grok', 'GROK_HOME'), ('opencode', 'XDG_DATA_HOME'), ('pi', 'PI_CODING_AGENT_DIR')):
+            saved = accounts.save_account(dict(harness=harness, name='Work', config_dir='~/.'+harness+'-work'))['saved']
+            self.assertEqual((saved['id'], accounts.harness_of(saved['id'])), (harness+'-work', harness))
+            self.assertEqual(terminal_environment({'GROK_HOME': '/inherited'}, saved['id'], self.home)[variable], str(self.home/('.'+harness+'-work')))
+            launched = profile_command(['/bin/zsh', '-lic', harness+'-work "$@"', 'agent-desk'], saved['id'], self.home)
+            self.assertTrue(launched[2].endswith('export '+variable+'='+str(self.home/('.'+harness+'-work'))+'\n'+harness+' "$@"'))
+        self.assertEqual(accounts.label('pi-work'), 'Pi · Work')
+        # Their own logins stay plain CLIs, not accounts.
+        self.assertEqual(accounts.account_ids(), ['codex', 'claude', 'grok-work', 'opencode-work', 'pi-work'])
+        self.assertEqual((accounts.harness_of('grok'), accounts.account('grok')), ('grok', None))
+
+    def test_an_added_grok_or_pi_account_keeps_its_conversations_and_has_no_quota(self):
+        from agent_desk.account_quota import AccountQuota
+        from agent_desk.native_session_lookup import find_conversation
+        handoff = 'Run reply task-123 --file /tmp/report'
+        for harness in ('grok', 'pi'):
+            accounts.save_account(dict(harness=harness, name='Work', config_dir=str(self.home/(harness+'-work'))))
+        grok = self.home/'grok-work'/'sessions'/'project'/'session-one'/'chat_history.jsonl'
+        grok.parent.mkdir(parents=True)
+        grok.write_text(json.dumps(dict(type='user', content=[dict(type='text', text=handoff)]))+'\n')
+        pi = self.home/'pi-work'/'sessions'/'--tmp-project--'/'one.jsonl'
+        pi.parent.mkdir(parents=True)
+        pi.write_text(json.dumps(dict(type='session', id='11111111-2222-4333-8444-555555555555'))+'\n'+
+                      json.dumps(dict(type='message', message=dict(role='user', content=[dict(type='text', text=handoff)])))+'\n')
+        self.assertEqual(find_conversation('grok-work', 'task-123'), 'session-one')
+        self.assertEqual(find_conversation('pi-work', 'task-123'), '11111111-2222-4333-8444-555555555555')
+        calls = []
+        quota = AccountQuota(fetcher=calls.append)
+        self.assertEqual([quota.read(profile)['state'] for profile in ('grok-work', 'pi-work')], ['unsupported', 'unsupported'])
+        self.assertEqual(calls, [])
+
+    def test_a_cortex_account_is_a_saved_snowflake_connection(self):
+        for connection in ('', '-x', 'two words', 'a\nb'):
+            with self.assertRaisesRegex(ValueError, 'Snowflake connection'):
+                accounts.save_account(dict(harness='cortex', name='Prod', connection=connection))
+        snowflake = self.home/'snowflake';snowflake.mkdir()
+        (snowflake/'connections.toml').write_text('[prod_conn]\naccount = "fixture"\n')
+        (snowflake/'config.toml').write_text('[connections.dev_conn]\naccount = "fixture"\n')
+        with patch.dict('os.environ', {'SNOWFLAKE_HOME': str(snowflake)}):
+            self.assertEqual(accounts.snowflake_connections(), {'prod_conn', 'dev_conn'})
+            saved = accounts.save_account(dict(harness='cortex', name='Prod', connection=' prod_conn ', config_dir='~/ignored'))['saved']
+            missing = accounts.save_account(dict(harness='cortex', name='Old', connection='gone_conn'))['saved']
+        self.assertEqual((saved['id'], saved['label'], saved['connection'], saved['exists']), ('cortex-prod', 'Cortex Code · Prod', 'prod_conn', True))
+        self.assertFalse(missing['exists'])
+        self.assertEqual(accounts.harness_of('cortex-prod'), 'cortex')
+        # Cortex Code keeps its one folder: only the connection changes.
+        self.assertNotIn(None, terminal_environment({}, 'cortex-prod', self.home))
+        launched = profile_command(['/bin/zsh', '-lic', 'cortex-prod "$@"', 'agent-desk', '--', 'task'], 'cortex-prod', self.home)
+        self.assertTrue(launched[2].endswith('\ncortex --connection prod_conn "$@"'))
+        self.assertEqual(launched[3:], ['agent-desk', '--', 'task'])
+        accounts.ACCOUNTS_FILE.write_text(json.dumps([dict(id='cortex-bad', harness='cortex', name='Bad', config_dir='~/.snowflake/cortex', connection='-x')]))
+        self.assertEqual(accounts.account_ids(), ['codex', 'claude'])
 
     def test_accounts_with_the_same_name_go_together_across_harnesses(self):
         accounts.save_account(dict(harness='codex', name='Personal', config_dir='~/.codex-personal'))

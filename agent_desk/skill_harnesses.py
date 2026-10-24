@@ -49,6 +49,10 @@ def harnesses(home=None, environ=None):
         if row['harness'] == 'claude':
             found.append(dict(id=row['id'], label='Claude Code' + (' · ' + row['name'] if row['name'] else ''),
                               roots=[account / 'skills'], link_root=account / 'skills'))
+        elif row['harness'] in ('opencode', 'cortex'):
+            # An OpenCode account moves only its data folder and a Cortex Code account only its connection;
+            # their skills stay where the CLI's own login reads them.
+            continue
         else:
             found.append(dict(id=row['id'], label=row['label'], roots=[shared, account / 'skills'], link_root=shared))
     grok = home / '.grok'

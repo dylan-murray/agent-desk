@@ -6,7 +6,7 @@ import uuid
 import threading
 from contextlib import contextmanager
 from pathlib import Path
-from agent_desk.accounts import account, harness_of
+from agent_desk.accounts import harness_of
 from agent_desk.report_format import DIAGRAM_GUIDANCE, STRUCTURE_GUIDANCE
 
 
@@ -73,7 +73,7 @@ class SpecialAgents:
                  ('cwd', 2000), ('choice', 40), ('command', 2000), ('mode', 30)]}
         if role['kind'] not in ('watcher', 'fixer', 'researcher', 'custom'):
             raise ValueError('Choose an agent role')
-        if role['choice'] != 'custom' and not account(role['choice']):
+        if role['choice'] != 'custom' and harness_of(role['choice']) not in ('claude', 'codex'):
             raise ValueError('Choose a supported launch configuration')
         if role['mode'] not in ('direct', '/bin/zsh', '/bin/bash'):
             raise ValueError('Invalid command mode')

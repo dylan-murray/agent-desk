@@ -50,7 +50,7 @@ def terminal_environment(parent, profile=None, home=None):
             env.pop(key, None)
         # Unset preserves Claude's default macOS Keychain entry. Explicitly setting
         # even ~/.claude can select a different store from a normal CLI launch.
-        if selected['config_dir'] or selected['harness'] != 'claude':
+        if HARNESSES[selected['harness']][0] and (selected['config_dir'] or selected['harness'] != 'claude'):
             env[HARNESSES[selected['harness']][0]] = str(config_folder(profile, home))
     return env
 
@@ -60,7 +60,7 @@ def profile_command(argv, profile=None, home=None):
 
     Keep aliases/functions and positional arguments, but do not let rc exports
     silently replace the selected saved login with an API key or another store.
-    The command names the account; an added account runs its harness's CLI.
+    The command names the account; an added account runs its harness's CLI, and a Cortex Code account its connection.
     """
     if remote_native():
         terminal_environment({}, profile)
@@ -73,7 +73,8 @@ def profile_command(argv, profile=None, home=None):
     prefix += ''.join('export '+key+'='+shlex.quote(value)+'\n' for key,value in env.items())
     script = argv[2]
     if not selected['default']:
-        script = re.sub(r'(^|\n)'+re.escape(profile)+r' "\$@"$', lambda m: m.group(1)+selected['harness']+' "$@"', script)
+        command = selected['harness'] + (' --connection ' + shlex.quote(selected['connection']) if selected['harness'] == 'cortex' else '')
+        script = re.sub(r'(^|\n)'+re.escape(profile)+r' "\$@"$', lambda m: m.group(1)+command+' "$@"', script)
     return [*argv[:2], prefix+script, *argv[3:]]
 
 

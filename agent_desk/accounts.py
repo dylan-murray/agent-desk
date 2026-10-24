@@ -1,4 +1,5 @@
-"""Saved CLI logins. Claude and Codex each have a default account; more are added by config folder."""
+"""Saved CLI logins. Claude and Codex each have a default account; more are added by config folder, for them and for Grok, OpenCode and Pi,
+and Cortex Code accounts are added by Snowflake connection."""
 import json
 import os
 from pathlib import Path
@@ -8,9 +9,14 @@ from agent_desk.paths import DATA_DIR
 
 ACCOUNTS_FILE = DATA_DIR / 'accounts.json'
 # harness: (variable that selects its config folder, default folder, label)
-HARNESSES = {'codex': ('CODEX_HOME', '.codex', 'Codex'), 'claude': ('CLAUDE_CONFIG_DIR', '.claude', 'Claude')}
+# OpenCode keeps its login under its data folder, so an OpenCode account moves XDG_DATA_HOME for the whole terminal.
+HARNESSES = {'codex': ('CODEX_HOME', '.codex', 'Codex'), 'claude': ('CLAUDE_CONFIG_DIR', '.claude', 'Claude'),
+             'grok': ('GROK_HOME', '.grok', 'Grok'), 'opencode': ('XDG_DATA_HOME', '.local/share', 'OpenCode'),
+             'pi': ('PI_CODING_AGENT_DIR', '.pi/agent', 'Pi'),
+             # Cortex Code keeps one folder; an account names the Snowflake connection it runs with.
+             'cortex': (None, '.snowflake/cortex', 'Cortex Code')}
 LIMIT = 20
-# CLIs with one login each: launched as they are, with no config folder to select.
+# CLIs launched as they are by default, with no config folder to select. Grok, OpenCode and Pi can also have added accounts.
 SINGLE = {'grok': 'Grok', 'opencode': 'OpenCode', 'pi': 'Pi', 'cortex': 'Cortex Code'}
 
 
@@ -21,7 +27,12 @@ def _saved():
         return []
     return [row for row in rows if isinstance(row, dict) and row.get('harness') in HARNESSES and isinstance(row.get('id'), str)
             and re.fullmatch(r'[a-z][a-z0-9-]{0,59}', row['id'])
-            and isinstance(row.get('name'), str) and isinstance(row.get('config_dir'), str)][:LIMIT] if isinstance(rows, list) else []
+            and isinstance(row.get('name'), str) and isinstance(row.get('config_dir'), str)
+            and (row['harness'] != 'cortex' or isinstance(row.get('connection'), str) and _connection_name(row['connection']))][:LIMIT] if isinstance(rows, list) else []
+
+
+def _connection_name(value):
+    return bool(re.fullmatch(r'[^\x00-\x20\x7f-][^\x00-\x20\x7f]{0,199}', value))
 
 
 def accounts():
@@ -29,17 +40,35 @@ def accounts():
     saved = _saved()
     names = {row['id']: row['name'] for row in saved if row['id'] in HARNESSES}
     return [found for harness in HARNESSES for found in
-            [_row(harness, harness, names.get(harness, ''), ''), *(_row(row['id'], harness, row['name'], row['config_dir']) for row in saved if row['harness'] == harness and row['id'] not in HARNESSES)]]
+            [*([] if harness in SINGLE else [_row(harness, harness, names.get(harness, ''), '')]),
+             *(_row(row['id'], harness, row['name'], row['config_dir'], row.get('connection', '')) for row in saved if row['harness'] == harness and row['id'] not in HARNESSES)]]
 
 
-def _row(identity, harness, name, config_dir):
+def _row(identity, harness, name, config_dir, connection=''):
     label = HARNESSES[harness][2] + (' · ' + name if name else '')
-    return dict(id=identity, harness=harness, name=name, label=label, config_dir=config_dir, default=identity == harness)
+    return dict(id=identity, harness=harness, name=name, label=label, config_dir=config_dir, default=identity == harness,
+                **({'connection': connection} if harness == 'cortex' else {}))
 
 
 def listing():
-    """Accounts for the settings dialog, with whether each config folder is there yet."""
-    return [dict(row, exists=config_folder(row['id']).is_dir()) for row in accounts()]
+    """Accounts for the settings dialog, with whether each config folder or Snowflake connection is there yet."""
+    return [dict(row, exists=row['connection'] in snowflake_connections() if row['harness'] == 'cortex' else config_folder(row['id']).is_dir()) for row in accounts()]
+
+
+def snowflake_connections(home=None):
+    """Connection names from the Snowflake config files Cortex Code reads; only the names are kept."""
+    import tomllib
+    root = Path(os.environ.get('SNOWFLAKE_HOME') or (Path(home) if home is not None else Path.home()) / '.snowflake')
+    names = set()
+    for path, nested in ((root / 'connections.toml', False), (root / 'config.toml', True)):
+        try:
+            data = tomllib.loads(path.read_text())
+        except (OSError, ValueError):
+            continue
+        tables = data.get('connections', {}) if nested else data
+        if isinstance(tables, dict):
+            names.update(name for name, value in tables.items() if isinstance(value, dict))
+    return names
 
 
 def account(identity):
@@ -91,20 +120,26 @@ def save_account(payload):
     harness, name, folder = payload.get('harness'), payload.get('name'), payload.get('config_dir', '')
     identity = payload.get('id') or ''
     if harness not in HARNESSES:
-        raise ValueError('Choose Claude or Codex')
+        raise ValueError('Choose Claude, Codex, Grok, OpenCode, Pi or Cortex Code')
     if not isinstance(name, str) or len(name.strip()) > 40 or re.search(r'[\x00-\x1f\x7f]', name):
         raise ValueError('Name this account with up to 40 characters')
     name = name.strip()
     if not isinstance(identity, str) or not isinstance(folder, str):
         raise ValueError('Invalid account')
     saved = _saved()
+    if identity == harness and harness in SINGLE:
+        raise ValueError('Invalid account')
     if identity == harness:
         # The default account can be named, but keeps the folder its CLI chooses.
         folder = ''
     else:
         if not name:
             raise ValueError('Name this account')
-        folder = folder.strip()
+        connection = payload.get('connection', '')
+        connection = connection.strip() if isinstance(connection, str) else ''
+        if harness == 'cortex' and not _connection_name(connection):
+            raise ValueError('Enter a Snowflake connection name, as listed by cortex connections list')
+        folder = folder.strip() if harness != 'cortex' else '~/.snowflake/cortex'
         if not (folder.startswith('~/') or folder.startswith('/')) or re.search(r'[\x00-\x1f\x7f]', folder) or len(folder) > 500 or '..' in Path(folder).parts:
             raise ValueError('Enter the account’s config folder as an absolute path or one starting with ~/')
         folder = folder.rstrip('/') or '/'
@@ -118,7 +153,7 @@ def save_account(payload):
         existing = next((row for row in saved if row['id'] == identity), None)
         if existing and (not payload.get('id') or existing['harness'] != harness):
             raise ValueError('An account with this name already exists')
-    entry = dict(id=identity, harness=harness, name=name, config_dir=folder)
+    entry = dict(id=identity, harness=harness, name=name, config_dir=folder, **({'connection': connection} if harness == 'cortex' else {}))
     rows = [row for row in saved if row['id'] != identity] + [entry]
     if len(rows) > LIMIT:
         raise ValueError('Remove an account before adding another')
