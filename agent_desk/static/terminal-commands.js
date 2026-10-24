@@ -4,6 +4,7 @@ const launchChoices={
   grok:{harness:'grok',label:'Grok',command:'grok',mode:'direct'},
   opencode:{harness:'opencode',label:'OpenCode',command:'opencode',mode:'direct'},
   pi:{harness:'pi',label:'Pi',command:'pi',mode:'direct'},
+  cortex:{harness:'cortex',label:'Cortex Code',command:'cortex',mode:'direct'},
   custom:{harness:'custom',label:'Custom',command:'',mode:'direct'}
 };
 // Claude and Codex logins. The command names the account; Agent Desk runs its CLI with that account's config folder.
@@ -14,7 +15,7 @@ function applyAccounts(accounts){
   for(const account of accounts)launchChoices[account.id]={harness:account.harness,label:account.label,command:account.id,mode:'/bin/zsh',account:true};
 }
 applyAccounts((typeof window!=='undefined'&&window.AGENT_DESK_CONFIG?.accounts)||[{id:'codex',harness:'codex',name:'',label:'Codex'},{id:'claude',harness:'claude',name:'',label:'Claude'}]);
-const accountLabels=()=>({...Object.fromEntries(launchAccounts.map(account=>[account.id,account.label])),grok:'Grok',opencode:'OpenCode',pi:'Pi'});
+const accountLabels=()=>({...Object.fromEntries(launchAccounts.map(account=>[account.id,account.label])),grok:'Grok',opencode:'OpenCode',pi:'Pi',cortex:'Cortex Code'});
 function buildTerminalCommand(command,mode,args){
   if(!command||/[\x00-\x1f\x7f]/.test(command))throw Error('Enter an executable path or a command name');
   if(mode==='direct')return [command,...args];

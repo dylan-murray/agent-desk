@@ -11,6 +11,8 @@ function loadLaunchChoice(){
   $('#terminal-command-mode').value=settings.mode||'direct';
   $('#terminal-args').value=(choice.args||[]).join('\n');
   $('#terminal-readouts-field').hidden=!['claude','codex'].includes(choice.harness);
+  $('#terminal-connection-field').hidden=choice.harness!=='cortex';
+  $('#terminal-connection').value=choice.harness==='cortex'&&launchSettings[key]?.connection||'';
   updateTerminalPresetControls();
   updateResumeOptions();
 }
@@ -565,7 +567,8 @@ const resumeFlags={
   claude:{picker:['--resume'],latest:['--continue'],id:identity=>['--resume',identity]},
   grok:{latest:['--continue'],id:identity=>['--resume',identity]},
   opencode:{latest:['--continue'],id:identity=>['--session',identity]},
-  pi:{picker:['--resume'],latest:['--continue'],id:identity=>['--session',identity]}
+  pi:{picker:['--resume'],latest:['--continue'],id:identity=>['--session',identity]},
+  cortex:{picker:['--resume'],latest:['--continue'],id:identity=>['--resume',identity]}
 };
 function resumeCommand(harness,mode,identity){
   if(mode==='new'||mode==='portable')return [];
@@ -621,6 +624,8 @@ document.addEventListener('DOMContentLoaded',()=>{
     try{
       const choiceKey=$('#terminal-harness').value,choice=launchChoices[choiceKey],harness=choice.harness,args=$('#terminal-args').value.split('\n').map(s=>s.trim()).filter(Boolean);
       const command=$('#terminal-executable').value.trim(),commandMode=$('#terminal-command-mode').value;
+      const connection=$('#terminal-connection-field').hidden?'':$('#terminal-connection').value.trim();
+      if(connection&&(connection.startsWith('-')||/[\x00-\x20\x7f]/.test(connection)))throw Error('Enter a Snowflake connection name, as listed by cortex connections list');
       const body={cwd:$('#terminal-cwd').value.trim(),launch_profile:choice.account?choiceKey:null,name:harness==='custom'&&!choiceKey.startsWith('preset-')?command:choice.label};
       const mode=$('#terminal-session-mode').value;
       const goal=$('#terminal-controller').checked?$('#controller-goal').value.trim():null;
@@ -634,13 +639,13 @@ document.addEventListener('DOMContentLoaded',()=>{
         args.push(controllerPrompt(goal,body.name,$('#controller-router').checked));
       }
       if(mode==='portable'){const prepared=await window.preparePortableConversation();args.push(prepared.prompt);}
-      if(harness!=='shell')body.argv=buildTerminalCommand(command,commandMode,[...resumeCommand(harness,mode,$('#terminal-session-id').value.trim()),...args]);
+      if(harness!=='shell')body.argv=buildTerminalCommand(command,commandMode,[...(connection?['--connection',connection]:[]),...resumeCommand(harness,mode,$('#terminal-session-id').value.trim()),...args]);
       if(mode!=='new')body.name+=mode==='portable'?' · continued':' · resumed';
       if(harness==='shell'&&args.length)throw Error('For shell arguments, choose Custom executable and specify the shell.');
       body.cwd=await resolveProjectDirectory();
       body.desk=activeDesk().id;
       if(!$('#terminal-readouts-field').hidden&&$('#terminal-readouts').checked)body.readouts=true;
-      const session=await terminalRequest('/api/terminals/launch',body);rememberLaunchChoice(choiceKey,{command,mode:commandMode},session.id,goal);freshTerminalIds.add(session.id);demo=false;paneMode=paneStoreKey();
+      const session=await terminalRequest('/api/terminals/launch',body);rememberLaunchChoice(choiceKey,{command,mode:commandMode,...(connection?{connection}:{})},session.id,goal);freshTerminalIds.add(session.id);demo=false;paneMode=paneStoreKey();
       agents.unshift({...session,project:session.cwd.split('/').pop()||session.cwd});
       if(openPaneIds.length>=PANE_LIMIT)openPaneIds=openPaneIds.filter(id=>id!==selectedId).slice(0,PANE_LIMIT-1);
       openPaneIds.push(session.id);selectedId=session.id;savePanes();$('#launch-terminal-dialog').close();switchPage('agents');render();paneViews.get(session.id)?.node.scrollIntoView({block:'nearest'});
