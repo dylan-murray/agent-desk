@@ -1,7 +1,7 @@
 // Tools are skills with a UI. Skills launches one beside a new agent session, so there is always an
 // agent to send notes to, and starts an agent session to build a new one.
 let toolLaunchers=[];
-const toolAgents=()=>launchAccounts.map(account=>account.id);
+const toolAgents=()=>launchAccounts.filter(account=>['claude','codex'].includes(account.harness)).map(account=>account.id);
 function preferredToolAgent(){try{const key=localStorage.getItem('agent-desk-tool-agent');return toolAgents().includes(key)?key:'claude';}catch{return 'claude';}}
 function fillToolAgents(select){select.innerHTML=toolAgents().map(key=>`<option value="${escapeHTML(key)}">${escapeHTML(launchChoices[key].label)}</option>`).join('');select.value=preferredToolAgent();}
 async function loadToolLaunchers(){try{toolLaunchers=(await terminalRequest('/api/tool-launchers')).launchers||[];}catch{toolLaunchers=[];}}

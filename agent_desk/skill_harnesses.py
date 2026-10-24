@@ -8,6 +8,8 @@ Discovery roots, as read from the harnesses themselves:
 - OpenCode (1.3.5) lists skills from ``~/.agents/skills`` and ``~/.claude/skills`` in ``opencode debug skill``;
   its own folder is ``~/.config/opencode/skills``.
 - Pi's bundled docs (``docs/skills.md``, 0.79) name ``~/.pi/agent/skills`` and ``~/.agents/skills``.
+- Cortex Code (1.1.87) lists ``~/.snowflake/cortex/skills`` and ``~/.claude/skills`` in ``cortex skill list``,
+  but not ``~/.agents/skills``, so shared skills are linked into its own folder.
 """
 import os
 import re
@@ -23,7 +25,7 @@ EXPLICIT_OPENAI = re.compile(r'allow_implicit_invocation:\s*false')
 # ("Claude:", "in Claude Code that is ...") is guidance, not a dependency.
 CLAUDE_ONLY_TOOLS = re.compile(r'\b(Monitor\(|AskUserQuestion|TodoWrite|ExitPlanMode|EnterPlanMode|subagent_type|Skill tool)')
 MCP_TOOL = re.compile(r'`mcp__[A-Za-z0-9_]+`')
-HARNESS_EXAMPLE = re.compile(r'\b(Claude|Claude Code|Codex|Grok|OpenCode|Pi)\b\s*(:|that is|exposes)')
+HARNESS_EXAMPLE = re.compile(r'\b(Claude|Claude Code|Codex|Grok|OpenCode|Pi|Cortex Code)\b\s*(:|that is|exposes)')
 # `/name` or a bare /name on a line about skills, subagents or sessions, but not a URL or endpoint path.
 SKILL_REFERENCE = re.compile(r'(?:`/([a-z][a-z0-9-]+)`|(?<![\w/.:>])/([a-z][a-z0-9-]+)(?=[\s,;:)!?]|$))')
 SKILL_CONTEXT = re.compile(r'\b(skills?|subagents?|session|run)\b', re.I)
@@ -47,6 +49,10 @@ def harnesses(home=None, environ=None):
         if row['harness'] == 'claude':
             found.append(dict(id=row['id'], label='Claude Code' + (' · ' + row['name'] if row['name'] else ''),
                               roots=[account / 'skills'], link_root=account / 'skills'))
+        elif row['harness'] in ('opencode', 'cortex'):
+            # An OpenCode account moves only its data folder and a Cortex Code account only its connection;
+            # their skills stay where the CLI's own login reads them.
+            continue
         else:
             found.append(dict(id=row['id'], label=row['label'], roots=[shared, account / 'skills'], link_root=shared))
     grok = home / '.grok'
@@ -61,6 +67,9 @@ def harnesses(home=None, environ=None):
     pi = home / '.pi' / 'agent'
     if pi.is_dir():
         found.append(dict(id='pi', label='Pi', roots=[pi / 'skills', shared], link_root=shared))
+    cortex = home / '.snowflake' / 'cortex'
+    if cortex.is_dir():
+        found.append(dict(id='cortex', label='Cortex Code', roots=[cortex / 'skills', home / '.claude' / 'skills'], link_root=cortex / 'skills'))
     return found
 
 

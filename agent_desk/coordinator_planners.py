@@ -12,12 +12,20 @@ import tomllib
 
 from agent_desk.coordinator_efficiency import PlanningReply, usage_from_output, PROMPT_BYTES
 
-from agent_desk.accounts import SINGLE, accounts, harness_of, label as account_label
+from agent_desk.accounts import SINGLE, account, accounts, harness_of, label as account_label
 from agent_desk.launch_profiles import profile_command, terminal_environment, login_shell
 
 def providers():
     """Coordinator and worker choices as {profile: (harness, label)}."""
     return {a['id']:(a['harness'],a['label']) for a in accounts()}|{name:(name,label) for name,label in SINGLE.items()}
+
+
+# CLIs that run as workers but have no planning adapter, so they cannot coordinate or read sources.
+WORKER_ONLY = {'cortex'}
+
+
+def planners():
+    return {profile:value for profile,value in providers().items() if harness_of(profile) not in WORKER_ONLY}
 
 
 def setting(value,label):
@@ -118,7 +126,7 @@ class NativePlanner:
             if provider in ('opencode','pi'):source=source[len(self.rules)+1:]
             prompt.write_text(source);os.chmod(prompt,0o600)
             extra=['--model',model] if model else []
-            selected=profile if provider in ('claude','codex') else None
+            selected=profile if account(profile) else None
             env=terminal_environment(os.environ,selected)
             if provider=='claude':
                 options=['--print','--output-format','json','--no-session-persistence','--tools','',

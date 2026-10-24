@@ -43,7 +43,7 @@ def targets(home=None, environ=None):
     for harness in skill_harnesses.harnesses(home, environ):
         profile = harness['id']
         known = account(profile)
-        if not known:
+        if not known or known['harness'] not in ('claude', 'codex'):
             found.append(dict(id=profile, label=harness['label'], kind='unsupported'))
             continue
         folder = config_folder(profile, home)

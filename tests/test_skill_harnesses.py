@@ -76,6 +76,16 @@ class SkillHarnessTests(unittest.TestCase):
         seen = {s['name']: (s['availability']['opencode'], s['availability']['pi']) for s in result['skills']}
         self.assertEqual(seen, {'shared': (True, True), 'claude-only': (True, False), 'pi-only': (False, True)})
 
+    def test_cortex_reads_its_own_folder_and_claude_skills_but_not_the_shared_one(self):
+        (self.home / '.snowflake' / 'cortex').mkdir(parents=True)
+        skill(self.home / '.agents' / 'skills' / 'shared')
+        skill(self.home / '.claude' / 'skills' / 'claude-only')
+        skill(self.home / '.snowflake' / 'cortex' / 'skills' / 'cortex-only')
+        result = self.listing()
+        self.assertEqual([h['id'] for h in result['harnesses']][-1], 'cortex')
+        seen = {s['name']: s['availability']['cortex'] for s in result['skills']}
+        self.assertEqual(seen, {'shared': False, 'claude-only': True, 'cortex-only': True})
+
     def test_grok_claude_compatibility_can_be_turned_off(self):
         skill(self.home / '.claude' / 'skills' / 'claude-only')
         (self.home / '.grok' / 'config.toml').write_text('[compat.claude]\nskills = false\n')

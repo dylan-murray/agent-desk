@@ -56,7 +56,7 @@ Process existence does not establish whether an agent is working, waiting, idle,
 
 ## Interactive terminals
 
-Use **New → Terminal** to start a shell, Codex, Claude Code, Grok, OpenCode, Pi, or a custom executable in an absolute working directory. Extra arguments are supplied one per line and passed as an argument list; they are not interpreted as shell syntax. Once launched, type directly into the terminal, including approval responses, arrow keys, and Ctrl-C. Commands run with the local server user's permissions and environment.
+Use **New → Terminal** to start a shell, Codex, Claude Code, Grok, OpenCode, Pi, Cortex Code, or a custom executable in an absolute working directory. Extra arguments are supplied one per line and passed as an argument list; they are not interpreted as shell syntax. Once launched, type directly into the terminal, including approval responses, arrow keys, and Ctrl-C. Commands run with the local server user's permissions and environment.
 
 Each desk's workspace holds up to 16 panes. Closing a pane leaves its session running; **Stop** confirms before ending it. Returning to the pane or reloading restores a per-tab screen checkpoint (including colors, cursor, modes, and dimensions), then reads output after its matching byte offset. Checkpoints keep up to 1,000 scrollback rows in session storage, with smaller fallbacks if storage is full. A checkpoint is never saved halfway through UTF-8 or a terminal control sequence. For sessions without a checkpoint, the app sizes the terminal before replay and requests a resize-driven redraw. Up to 16 managed terminals can run on each desk, including hidden ones; a terminal an agent starts without naming a desk counts on its parent's desk, and moving a terminal to another desk frees its place. Output is kept in a bounded 2 MiB memory buffer per session. Managed local terminal sessions survive web-server shutdowns and restarts; stop sessions explicitly when finished. At narrow widths, multiple panes stack vertically.
 
@@ -211,7 +211,7 @@ Reconnecting an unchanged runtime reuses its process and state. A different runt
 
 ### Resume conversations
 
-Codex, Claude Code, Grok, OpenCode, and Pi panes offer **Resume conversation**, which prefills the harness and working folder. The launcher also exposes conversation choices whenever one of these harnesses is selected:
+Codex, Claude Code, Grok, OpenCode, Pi, and Cortex Code panes offer **Resume conversation**, which prefills the harness and working folder. The launcher also exposes conversation choices whenever one of these harnesses is selected:
 
 | Harness | Choose conversation | Latest in folder | Specific conversation |
 | --- | --- | --- | --- |
@@ -220,8 +220,11 @@ Codex, Claude Code, Grok, OpenCode, and Pi panes offer **Resume conversation**, 
 | Grok | Use latest or ID/title | `grok --continue` | `grok --resume ID_OR_TITLE` |
 | OpenCode | Use latest or ID | `opencode --continue` | `opencode --session ID` |
 | Pi | `pi --resume` | `pi --continue` | `pi --session ID` |
+| Cortex Code | `cortex --resume` | `cortex --continue` | `cortex --resume ID` |
 
 OpenCode and Pi launch, resume, return to a shell on exit, come back after a restart as new sessions, and share skills. A coordinator can plan with either one and assign work to either as a worker: follow-ups and review feedback wait for an empty prompt, and a finished worker's exact conversation is saved for resuming. Neither CLI can enforce a reply schema, so a coordinator planning with one of them relies on the model returning valid JSON; a malformed reply is rejected and no action runs. Controller agents (a terminal with **Coordinate other agents** ticked) and remote environments still run on Claude Code, Codex, or Grok only; such a controller can launch OpenCode and Pi workers and send them tasks.
+
+Cortex Code launches, resumes, comes back after a restart as a new session, and shares skills. Cortex Code runs with its default Snowflake connection; to use another, save a Cortex Code account for it under **Accounts** (see below). A coordinator can assign work to Cortex Code as a worker, which starts with its task and reports back like the others, but cannot plan or read sources with it. Follow-ups and review feedback to a running Cortex Code worker are not sent yet: Agent Desk does not recognize its empty prompt, so it refuses rather than typing into a busy session. Cortex Code asks whether to trust a new folder before it starts; a worker in an untrusted folder shows that question as needing you.
 
 The native picker runs inside the interactive pane. Session IDs refer to saved conversations, not process IDs. Resuming starts a new process with saved history; it does not stop the original terminal or automatically identify which conversation its PID belongs to. Custom harnesses can use their own resume command through the existing executable and argument fields. Remote histories must be resumed on their remote host through SSH.
 
@@ -235,9 +238,11 @@ Use × beside a managed terminal to close it. Running terminals ask before stopp
 
 ### Accounts
 
-Claude and Codex each start with one account: the login their CLI already uses. To use a second login, such as a personal subscription beside a work one, open **New → Terminal → Accounts**, pick the agent, name the account, and enter its config folder (for example `~/.claude-personal`). Agent Desk starts that agent's CLI with `CLAUDE_CONFIG_DIR` or `CODEX_HOME` set to the folder, so no shell alias or wrapper is needed. Sign in once from any terminal, for example `CLAUDE_CONFIG_DIR=~/.claude-personal claude` or `CODEX_HOME=~/.codex-personal codex login`.
+Every agent starts with one account: the login its CLI already uses. To use a second login, such as a personal subscription beside a work one, open **New → Terminal → Accounts**, pick the agent, name the account, and enter its config folder (for example `~/.claude-personal`). Agent Desk starts that agent's CLI with its folder variable set, so no shell alias or wrapper is needed: `CLAUDE_CONFIG_DIR` for Claude, `CODEX_HOME` for Codex, `GROK_HOME` for Grok, `PI_CODING_AGENT_DIR` for Pi and `XDG_DATA_HOME` for OpenCode. Sign in once from any terminal, for example `CLAUDE_CONFIG_DIR=~/.claude-personal claude` or `CODEX_HOME=~/.codex-personal codex login`.
 
-An added account appears as its own choice in the terminal launcher, coordinators, automations, the model router, account quota, Skills and conversation import. Accounts are saved in `accounts.json` in the data directory. Removing one leaves its config folder alone; sessions saved under it can no longer be resumed until it is added again under the same name. Two accounts with the same name, one for each agent, go together: a coordinator on Claude · Personal launches Codex workers on Codex · Personal.
+OpenCode keeps its login in its data folder rather than its config folder, so an OpenCode account moves `XDG_DATA_HOME` for everything run in that terminal, and its skills and settings stay shared with your usual OpenCode. An account selects a saved login, not API keys: Agent Desk removes the Anthropic and OpenAI keys from an account's terminal, but a CLI that finds another provider's key in your shell environment, such as Pi or OpenCode, can still use it. A Cortex Code account is a saved Snowflake connection instead of a folder: name it and enter the connection name that `cortex connections list` shows, and Agent Desk starts `cortex --connection <name>`. Its conversations, settings and skills stay in your one `~/.snowflake/cortex`.
+
+An added Claude or Codex account appears as its own choice in the terminal launcher, coordinators, automations, the model router, account quota, Skills and conversation import. An added Grok, OpenCode or Pi account appears in the terminal launcher, as a coordinator worker and planner, and in Skills (Grok and Pi), and a Cortex Code account in the terminal launcher and as a coordinator worker; its conversations are found for resuming, and an added Grok account's history can be imported. Account quota is not read for them, automations and skill tools still run on Claude or Codex, and a terminal coordinator on Grok uses its own login. Accounts are saved in `accounts.json` in the data directory. Removing one leaves its config folder alone; sessions saved under it can no longer be resumed until it is added again under the same name. Two accounts with the same name, one for each agent, go together: a coordinator on Claude · Personal launches Codex workers on Codex · Personal.
 
 The sidebar preserves the chosen agent and account label across refreshes.
 

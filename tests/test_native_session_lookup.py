@@ -38,6 +38,30 @@ class PiLookupTests(unittest.TestCase):
             self.assertIsNone(find_conversation('pi','task-123'))
 
 
+class CortexLookupTests(unittest.TestCase):
+    def test_history_file_name_is_the_conversation(self):
+        with tempfile.TemporaryDirectory() as temp, patch('agent_desk.native_session_lookup.Path.home',return_value=Path(temp)):
+            root=Path(temp)/'.snowflake/cortex/conversations';root.mkdir(parents=True)
+            def write(identity,role,text):
+                (root/(identity+'.json')).write_text(json.dumps(dict(session_id=identity,working_directory='/tmp/project')))
+                (root/(identity+'.history.jsonl')).write_text(json.dumps(dict(id='m1',role=role,content=[dict(type='text',text=text)]))+'\n')
+            write('11111111-2222-4333-8444-555555555555','assistant','reply task-123 --file /tmp/report')
+            self.assertIsNone(find_conversation('cortex','task-123'))
+            write('11111111-2222-4333-8444-555555555555','user','Run reply task-123 --file /tmp/report')
+            self.assertEqual(find_conversation('cortex','task-123'),'11111111-2222-4333-8444-555555555555')
+            write('66666666-7777-4888-8999-aaaaaaaaaaaa','user','Run reply task-123 --file /tmp/report')
+            self.assertIsNone(find_conversation('cortex','task-123'))
+
+    def test_a_cortex_account_shares_the_one_conversations_folder(self):
+        from agent_desk import accounts
+        with tempfile.TemporaryDirectory() as temp, patch('agent_desk.native_session_lookup.Path.home',return_value=Path(temp)), \
+             patch.object(accounts,'DATA_DIR',Path(temp)), patch.object(accounts,'ACCOUNTS_FILE',Path(temp)/'accounts.json'):
+            accounts.save_account(dict(harness='cortex',name='Prod',connection='prod_conn'))
+            root=Path(temp)/'.snowflake/cortex/conversations';root.mkdir(parents=True)
+            (root/'11111111-2222-4333-8444-555555555555.history.jsonl').write_text(json.dumps(dict(id='m1',role='user',content=[dict(type='text',text='Run reply task-123 --file /tmp/report')]))+'\n')
+            self.assertEqual(find_conversation('cortex-prod','task-123'),'11111111-2222-4333-8444-555555555555')
+
+
 class OpenCodeLookupTests(unittest.TestCase):
     def test_user_text_part_in_a_top_level_session(self):
         with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ,{'XDG_DATA_HOME':temp}):

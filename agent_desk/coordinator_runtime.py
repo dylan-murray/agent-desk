@@ -28,7 +28,7 @@ from agent_desk.coordinator_memory import CoordinatorMemory
 from agent_desk.coordinator_reader import CoordinatorReader
 from agent_desk.coordinator_watches import CoordinatorWatches
 from agent_desk.coordinator_efficiency import bounded_context, encoded_size, CONTEXT_BYTES
-from agent_desk.coordinator_planners import NativePlanner, providers, setting
+from agent_desk.coordinator_planners import NativePlanner, planners, providers, setting
 
 from agent_desk.accounts import SINGLE, harness_of, label as account_label
 from agent_desk.launch_profiles import login_shell, remote_native
@@ -61,7 +61,7 @@ Use remember to keep a compact durable note: name=short key, task=note, worker_i
 Use analyze for broad read-only source questions only when reader is configured: task=question, name=JSON array of relative file paths. It caches exact file content and model. Use targeted source reads in a coding worker before edits; never treat a summary as proof of correctness. Do not duplicate an existing analysis.
 Use watch_pr with task=github.com PR URL for monitoring. This is a deterministic service, not a terminal worker. It checks every three minutes and wakes you only on relevant changes, failures, merge/close, two idle hours, or a 24-hour limit. Prefer it over launching an LLM polling loop. Use stop_watch with worker_id=watch ID when no longer needed. Monitoring never authorizes posting comments or merging, nor marks worker assignments complete. Do not start a duplicate monitor while an existing worker monitors that PR without an explicit handoff.
 Use ask when the user must make a decision. Put the question in message and task.
-Worker profiles are the keys of worker_model_options in context: claude, codex, grok, opencode, pi, and any accounts the user added. Prefer the coordinator's own account unless the user specifies otherwise.
+Worker profiles are the keys of worker_model_options in context: claude, codex, grok, opencode, pi, cortex, and any accounts the user added. Prefer the coordinator's own account unless the user specifies otherwise.
 When model_router is present in context, Agent Desk asks that router for the best model for each launch task and opens the harness that runs it. For launch, leave model and profile empty unless the user explicitly asked for a specific model or harness: a set model skips routing, and a set profile limits routing to that harness. Write the launch task so it describes the work well, since the router classifies it. The launch result records the routed model and harness; never name them before it does. A router failure launches nothing; report it and ask the user rather than retrying with a guessed model.
 Each action must have all fields; use empty strings for irrelevant fields. Maximum four actions per turn.
 For monitoring tasks, define a clear stopping condition. Batch updates in the terminal are progress, not final completion. Do not instruct a worker to file a final reply and then keep working.
@@ -198,7 +198,7 @@ class CoordinatorRuntime(CoordinatorTools, CoordinatorHooks, WorkerSessions, Coo
         cwd=payload.get('cwd','');name=payload.get('name','Coordinator');profile=payload.get('profile','claude')
         if not isinstance(cwd,str) or not Path(cwd).is_absolute() or not Path(cwd).is_dir():raise ValueError('Choose an existing project directory')
         if not isinstance(name,str) or not 1<=len(name.strip())<=80:raise ValueError('Enter a coordinator name')
-        if profile not in providers():raise ValueError('Choose a supported coordinator provider')
+        if profile not in planners():raise ValueError('Choose a supported coordinator provider')
         if remote_native() and profile not in REMOTE_PROFILES:raise ValueError('Choose a remote native CLI profile')
         model=setting(payload.get('model'),'model')
         router=self.router_setting(payload.get('router',False))
@@ -404,7 +404,7 @@ class CoordinatorRuntime(CoordinatorTools, CoordinatorHooks, WorkerSessions, Coo
                 prompt=task+'\n\nReport the result to Agent Desk before ending. Write it to a UTF-8 file and run:\n'+helper+' reply '+task_id+' --file /absolute/path/to/result.txt\nUse --outcome blocked or failed if appropriate. A terminal answer alone does not report completion. For a watcher, keep intermediate updates in your terminal; use reply only once the stop condition is verified and your background monitor has stopped. Do not file a final reply and then continue working.'
                 prompt+=self.context_helper(c['id'])+self.tool_hook_guidance(c['id'])
                 options=[]
-                if profile not in SINGLE:
+                if harness_of(profile) in ('claude','codex'):
                     harness=harness_of(profile)
                     observer=[sys.executable,str(Path(__file__).resolve().parents[1]/'scripts'/'worker_report.py'),'--db',str(self.mailbox.path),'--desk',self.desk,'--task',task_id,'--harness',harness]
                     if harness=='claude':

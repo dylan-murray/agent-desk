@@ -183,6 +183,18 @@ class CoordinatorTests(unittest.TestCase):
         self.runtime.action(self.c,dict(kind='launch',name='Default',profile='claude',task='Inspect'),'cwd-default')
         self.assertEqual(self.terminals.launched[-1]['cwd'],str(self.root.resolve()))
 
+    def test_an_added_grok_pi_or_cortex_account_worker_runs_its_own_cli_without_the_codex_hook(self):
+        from agent_desk import accounts
+        for harness in ('grok','pi','cortex'):
+            accounts.save_account(dict(harness=harness,name='Side',config_dir='~/.'+harness+'-side',connection='side_conn'))
+            self.addCleanup(accounts.delete_account,{'id':harness+'-side'})
+            self.runtime.action(self.c,dict(kind='launch',name='Side worker',profile=harness+'-side',task='Inspect'),'side-'+harness)
+            launched=self.terminals.launched[-1]
+            self.assertEqual((launched['launch_profile'],launched['argv'][2]),(harness+'-side',harness+'-side "$@"'))
+            self.assertNotIn('-c',launched['argv']);self.assertNotIn('--settings',launched['argv'])
+        from agent_desk.coordinator_planners import planners,providers
+        self.assertIn('cortex-side',providers());self.assertNotIn('cortex-side',planners())
+
     def test_invalid_worker_directory_does_not_launch_or_reserve_task(self):
         for i,cwd in enumerate(('relative',str(self.root/'missing'),None,5)):
             with self.assertRaisesRegex(ValueError,'worker directory'):
@@ -652,6 +664,8 @@ print('Worker reported',flush=True)
         self.assertEqual(prompt_argv(['pi'],'pi','-x'),['pi','Task: -x'])
         self.assertEqual(prompt_argv(['pi'],'pi','do it'),['pi','do it'])
         self.assertEqual(prompt_argv(['grok'],'grok','do it'),['grok','--','do it'])
+        self.assertEqual(prompt_argv(['cortex'],'cortex','-x'),['cortex','--','-x'])
+        self.assertEqual(WorkerSessions.resume_argv(['cortex','--model','auto','--','old task'],'cortex','session-123'),['cortex','--model','auto','--resume','session-123'])
 
     def test_restart_preserves_worker_lineage_goal_and_unfinished_callback(self):
         import uuid
@@ -715,6 +729,13 @@ print('Worker reported',flush=True)
             persisted=next(a for a in self.runtime.snapshot()['coordinators'] if a['id']==c['id'])
             self.assertEqual(persisted['profile'],profile);self.assertEqual(persisted['model'],'selected-model')
         with self.assertRaises(ValueError):self.runtime.create(dict(name='Invalid',cwd=str(self.root),profile='grok',model='--bad-flag'))
+
+    def test_cortex_works_as_a_worker_but_cannot_coordinate(self):
+        with self.assertRaisesRegex(ValueError,'supported coordinator provider'):self.runtime.create(dict(name='Cortex',cwd=str(self.root),profile='cortex'))
+        self.runtime.action(self.c,dict(kind='launch',name='Cortex worker',profile='cortex',task='Summarize the warehouse tables'),'launch')
+        worker=next(s for s in self.terminals.sessions.values() if s.name=='Cortex worker')
+        self.assertEqual(worker.argv[0],'cortex');self.assertEqual(worker.argv[-2],'--')
+        self.assertIn('Summarize the warehouse tables',worker.argv[-1]);self.assertIsNone(worker.launch_profile)
 
     def test_review_discovers_exact_native_session_and_full_report(self):
         session=self.terminals.launch({'parent_id':self.c['id'],'launch_profile':'claude-personal','argv':['claude','task-review-native']})

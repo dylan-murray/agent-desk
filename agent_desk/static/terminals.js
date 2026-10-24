@@ -620,7 +620,8 @@ const resumeFlags={
   claude:{picker:['--resume'],latest:['--continue'],id:identity=>['--resume',identity]},
   grok:{latest:['--continue'],id:identity=>['--resume',identity]},
   opencode:{latest:['--continue'],id:identity=>['--session',identity]},
-  pi:{picker:['--resume'],latest:['--continue'],id:identity=>['--session',identity]}
+  pi:{picker:['--resume'],latest:['--continue'],id:identity=>['--session',identity]},
+  cortex:{picker:['--resume'],latest:['--continue'],id:identity=>['--resume',identity]}
 };
 function resumeCommand(harness,mode,identity){
   if(mode==='new'||mode==='portable')return [];

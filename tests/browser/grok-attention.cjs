@@ -58,9 +58,13 @@ const assert=require('node:assert/strict');
    cases.push(await check(trust));
    cases.push(await check(trust+'\r\nWorking now'));
    cases.push(await check('Do you trust the contents of this directory?'));
+   // Cortex Code's trust box, with its hidden cursor parked at the bottom of the screen.
+   const box='╭'+'─'.repeat(40)+'╮\r\n│  Do you trust this project?'+' '.repeat(13)+'│\r\n│  /tmp/project'+' '.repeat(26)+'│\r\n╰'+'─'.repeat(40)+'╯\r\n\r\n❯ 1. Yes, proceed\r\n  2. No, exit\r\n\r\n↑↓ navigate • y/n select • enter confirm\x1b[24;1H';
+   cases.push(await check(box));
+   cases.push(await check(box.replace('Do you trust this project?','Do you trust this folder? ')));
    term.dispose();return cases;
   });
-  assert.deepEqual(results,[false,false,true,true,false,true,false,false]);
+  assert.deepEqual(results,[false,false,true,true,false,true,false,false,true,false]);
   await page.setViewportSize({width:390,height:844});
   await page.screenshot({path:evidence('grok-attention-mobile.png')});
   assert.deepEqual(inputs,[]);assert.deepEqual(errors,[]);
