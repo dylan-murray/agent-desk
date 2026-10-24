@@ -8,7 +8,7 @@ const agent=id=>({id,terminal_id:id,name:'Layout fixture '+id.slice(-1),cwd:'/tm
   source:'terminal',task:'Interactive terminal',project:'fixture',events:[],question:null,exit_code:null,updated:Date.now()/1000});
 const boxes=page=>page.$$eval('#terminal > .terminal-pane',nodes=>nodes.map(node=>{const r=node.getBoundingClientRect();
   return {id:node.dataset.paneId,x:Math.round(r.x),y:Math.round(r.y),w:Math.round(r.width),h:Math.round(r.height)};}));
-const workspaceBox=page=>page.$eval('#terminal',node=>{const r=node.getBoundingClientRect();return {x:r.x,y:r.y,w:node.clientWidth,h:node.clientHeight,scroll:node.scrollTop,scrollMax:node.scrollHeight-node.clientHeight};});
+const workspaceBox=page=>page.$eval('#terminal',node=>{const r=node.getBoundingClientRect();return {x:r.x,y:r.y,w:node.clientWidth,h:node.clientHeight,gap:parseFloat(getComputedStyle(node).rowGap),pad:parseFloat(getComputedStyle(node).paddingBottom),scroll:node.scrollTop,scrollMax:node.scrollHeight-node.clientHeight};});
 const overlaps=(a,b)=>a.x<b.x+b.w-1&&b.x<a.x+a.w-1&&a.y<b.y+b.h-1&&b.y<a.y+a.h-1;
 const near=(a,b,slack=2)=>Math.abs(a-b)<=slack;
 (async()=>{const browser=await chromium.launch({executablePath:process.env.CHROME_PATH||undefined,headless:true});
@@ -33,7 +33,7 @@ const near=(a,b,slack=2)=>Math.abs(a-b)<=slack;
     const [a,b,c,d]=quad;
     assert.ok(near(a.w,b.w)&&near(a.w,c.w)&&near(a.w,d.w)&&near(a.h,c.h),'the quadrants are not equal: '+JSON.stringify(quad));
     assert.ok(near(a.y,b.y)&&near(c.y,d.y)&&c.y>a.y&&b.x>a.x,'the panes are not two by two');
-    assert.ok(near(d.y+d.h,ws.y+ws.h),'the quadrants do not fill the workspace height');
+    assert.ok(ws.gap>=10&&near(d.y+d.h,ws.y+ws.h-ws.gap),'the quadrants do not fill the workspace height, less a gap below them');
     assert.ok(near(b.x+b.w,ws.x+ws.w),'the quadrants do not fill the workspace width');
   });
 
@@ -68,7 +68,7 @@ const near=(a,b,slack=2)=>Math.abs(a-b)<=slack;
     assert.ok(added,'a pane added below the screen was not scrolled fully into view');
     assert.equal(rows.length,5);
     for(let i=1;i<rows.length;i++){assert.ok(near(rows[i].x,rows[0].x)&&near(rows[i].w,rows[0].w),'a row is not full width');assert.ok(rows[i].y>rows[i-1].y,'rows are not stacked in order');}
-    assert.ok(near(rows[0].h*2+10,rowsWs.h),'two rows do not fill one screen: '+rows[0].h+' vs '+rowsWs.h);
+    assert.ok(near(rows[0].h*2+rowsWs.gap*2,rowsWs.h),'two rows do not fill one screen: '+rows[0].h+' vs '+rowsWs.h);
     assert.ok(rowsWs.scrollMax>rowsWs.h,'the workspace does not scroll to the extra rows');
     assert.deepEqual(pill,{hidden:false,text:'3 panes below'});
   });
@@ -82,6 +82,11 @@ const near=(a,b,slack=2)=>Math.abs(a-b)<=slack;
     assert.ok(scrolled.scroll>0,'clicking the cue did not scroll');
     assert.ok(near(afterPill[2].y,scrolled.y),'the first hidden pane is not at the top: '+afterPill[2].y+' vs '+scrolled.y);
   });
+  // Scrolled all the way down, the lowest pane ends the padding's height above the workspace's
+  // bottom, so its last rows and the focus ring around it are never cut off.
+  await page.$eval('#terminal',node=>node.scrollTop=node.scrollHeight);await page.waitForTimeout(150);
+  const end=await workspaceBox(page),last=(await boxes(page)).at(-1);
+  check('scrolled to the end, the lowest pane sits clear of the bottom edge',()=>assert.ok(end.pad>=24&&near(end.y+end.h-(last.y+last.h),end.pad),'gap below the lowest pane: '+(end.y+end.h-(last.y+last.h))));
   await page.$eval('#terminal',node=>node.scrollTop=0);
 
   // Back to 2 × 2 with four panes, then widen the first pane by dragging its right edge.
