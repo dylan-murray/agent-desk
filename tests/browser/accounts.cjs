@@ -8,7 +8,7 @@ const APP=process.env.AGENT_DESK_TEST_URL||'http://127.0.0.1:4310/';
  try{
   const page=await browser.newPage({viewport:{width:1500,height:900}}),errors=[],launches=[],writes=[];
   page.on('pageerror',error=>errors.push(error.message));
-  const row=(id,harness,name,config_dir)=>({id,harness,name,label:(harness==='codex'?'Codex':'Claude')+(name?' · '+name:''),config_dir,default:!config_dir,exists:!config_dir});
+  const row=(id,harness,name,config_dir)=>({id,harness,name,label:({codex:'Codex',claude:'Claude',pi:'Pi'})[harness]+(name?' · '+name:''),config_dir,default:!config_dir,exists:!config_dir});
   let accounts=[row('codex','codex','',''),row('claude','claude','','')];
   await page.route('**/api/**',route=>{const path=new URL(route.request().url()).pathname,body=route.request().postDataJSON();
    if(path==='/api/accounts/list')return route.fulfill({json:{accounts}});
@@ -56,6 +56,18 @@ const APP=process.env.AGENT_DESK_TEST_URL||'http://127.0.0.1:4310/';
   await page.locator('#accounts-close').click();
   const removed=await options(),selected=await page.locator('#terminal-harness').inputValue();
   check('removing it takes it out of the launcher',()=>{assert.deepEqual(removed,before);assert.notEqual(selected,'claude-personal');assert.deepEqual(writes.at(-1),['/api/accounts/delete',{id:'claude-personal'}]);});
+  await page.locator('#open-accounts').click();await page.selectOption('#account-harness','pi');
+  const piHint=await page.locator('#account-help').innerText();
+  await page.fill('#account-name','Work');await page.fill('#account-folder','~/.pi-work');await page.locator('#account-save').click();
+  await page.waitForFunction(()=>document.querySelectorAll('#accounts-list li').length===3);await page.locator('#accounts-close').click();
+  const withPi=await options(),specialWithPi=await page.locator('#special-choice option').evaluateAll(nodes=>nodes.map(node=>node.value));
+  check('a Pi account goes beside Pi and runs with its own folder, but not as an automation',()=>{
+   assert.match(piHint,/PI_CODING_AGENT_DIR=~\/\.pi-personal pi/);
+   assert.deepEqual(withPi,['shell=Shell','codex=Codex','claude=Claude','grok=Grok','opencode=OpenCode','pi=Pi','pi-work=Pi · Work','cortex=Cortex Code','custom=Custom executable']);
+   assert.deepEqual(specialWithPi,['codex','claude','custom']);});
+  await page.selectOption('#terminal-harness','pi-work');await page.locator('#launch-terminal-form button[type=submit]').click();
+  await page.waitForFunction(()=>!document.getElementById('launch-terminal-dialog').open);
+  check('launching the Pi account names it',()=>{assert.equal(launches.at(-1).launch_profile,'pi-work');assert.deepEqual(launches.at(-1).argv.slice(0,4),['/bin/zsh','-lic','pi-work "$@"','agent-desk']);});
   check('no page errors',()=>assert.deepEqual(errors,[]));
   if(failures.length)throw Error(failures.length+' checks failed: '+failures.join(', '));
  }finally{await browser.close();}

@@ -404,7 +404,7 @@ class CoordinatorRuntime(CoordinatorTools, CoordinatorHooks, WorkerSessions, Coo
                 prompt=task+'\n\nReport the result to Agent Desk before ending. Write it to a UTF-8 file and run:\n'+helper+' reply '+task_id+' --file /absolute/path/to/result.txt\nUse --outcome blocked or failed if appropriate. A terminal answer alone does not report completion. For a watcher, keep intermediate updates in your terminal; use reply only once the stop condition is verified and your background monitor has stopped. Do not file a final reply and then continue working.'
                 prompt+=self.context_helper(c['id'])+self.tool_hook_guidance(c['id'])
                 options=[]
-                if profile not in SINGLE:
+                if harness_of(profile) in ('claude','codex'):
                     harness=harness_of(profile)
                     observer=[sys.executable,str(Path(__file__).resolve().parents[1]/'scripts'/'worker_report.py'),'--db',str(self.mailbox.path),'--desk',self.desk,'--task',task_id,'--harness',harness]
                     if harness=='claude':

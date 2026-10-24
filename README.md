@@ -58,7 +58,7 @@ Then open [localhost:4310](http://127.0.0.1:4310). Pass `--port` to use another 
 
 Requires macOS or Linux, Python 3.11+, Node.js 18+ (22+ to run the test suite), and the agent CLIs you want to use. To install the `agent-desk` command instead, run `pip install .` from the checkout.
 
-Using more than one Claude or Codex login? Add each under **New → Terminal → Accounts**.
+Using more than one Claude, Codex, Grok, OpenCode or Pi login, or more than one Snowflake connection for Cortex Code? Add each under **New → Terminal → Accounts**.
 
 Agent Desk only listens on 127.0.0.1. It saves its state in `data/`, or wherever `AGENT_DESK_DATA_DIR` points.
 
