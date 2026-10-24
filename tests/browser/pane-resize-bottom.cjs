@@ -38,7 +38,7 @@ const agent=(id,i)=>({id,terminal_id:id,name:['API worker','Docs worker','Test r
     const done=await state();
     check(edge+' handle: a press without movement leaves the pane alone',()=>assert.equal(pressed.h,3));
     check(edge+' handle: holding at the bottom of the window grows the pane',()=>assert.ok(held.h>=5,'height '+held.h));
-    check(edge+' handle: the pane keeps its top edge and the workspace scrolls with it',()=>{assert.equal(held.top,9);assert.ok(held.scroll>0);assert.ok(held.bottom<=held.workspace+12,'bottom edge '+held.bottom+' past '+held.workspace);});
+    check(edge+' handle: the pane keeps its top edge and the workspace scrolls with it, its bottom in view',()=>{assert.equal(held.top,9);assert.ok(held.scroll>0);assert.ok(held.bottom<=held.workspace,'bottom edge '+held.bottom+' past '+held.workspace);});
     check(edge+' handle: growth stops when the pointer leaves the bottom',()=>assert.equal(later.h,stopped.h));
     check(edge+' handle: the new height is kept',()=>assert.equal(done.h,later.h));
   }

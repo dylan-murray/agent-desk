@@ -142,11 +142,13 @@ function applyPaneLayout({animate=false,held=[]}={}){
     node.reflow=node.animate([{transform:`translate(${dx}px,${dy}px)`},{transform:'none'}],{duration:200,easing:'cubic-bezier(.2,.7,.3,1)'});
   }
 }
-// The row unit is a twelfth of the visible height, less the gaps between rows.
+// The row unit is a twelfth of the visible height, less a gap below each row: the last one
+// keeps one screen of panes off the window's edge, and puts the next row just out of sight.
+// Panes that run past the screen scroll on into the workspace's bottom padding instead.
 function measurePaneRows(){
   const workspace=$('#terminal');if(!workspace?.clientHeight)return;
   const gap=parseFloat(getComputedStyle(workspace).rowGap)||0;
-  workspace.style.setProperty('--pane-row',Math.max(8,(workspace.clientHeight-gap*(PANE_GRID-1))/PANE_GRID)+'px');
+  workspace.style.setProperty('--pane-row',Math.max(8,(workspace.clientHeight-gap*PANE_GRID)/PANE_GRID)+'px');
 }
 // Overlay scrollbars stay hidden until you scroll, so say when panes are out of sight below.
 function panesBelow(){
@@ -286,6 +288,10 @@ document.addEventListener('DOMContentLoaded',()=>{
     if(state.edge!=='e'&&state.y>state.startY+4&&state.y>workspace.getBoundingClientRect().bottom-28&&state.h<PANE_MAX_ROWS){
       const before=workspace.scrollTop;workspace.scrollTop+=4;
       state.pull+=4-(workspace.scrollTop-before);dragPaneEdge(state);
+      // A pane that grew a whole row past the visible bottom is scrolled into view, its padding
+      // included. That scroll is not the pointer moving on, so it does not grow the pane further.
+      const over=paneViews.get(state.id).node.getBoundingClientRect().bottom-workspace.getBoundingClientRect().bottom+(parseFloat(getComputedStyle(workspace).paddingBottom)||0);
+      if(over>0){const at=workspace.scrollTop;workspace.scrollTop+=over;state.pull-=workspace.scrollTop-at;}
     }
     state.frame=requestAnimationFrame(pullPaneEdge);
   };
