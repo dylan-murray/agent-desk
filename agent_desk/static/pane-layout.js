@@ -109,6 +109,30 @@ function handOverPaneRect(from,to){
   if(!paneRects?.[from]||from===to)return;
   paneRects[to]=paneRects[from];delete paneRects[from];savePaneRects();
 }
+// A pane dropped beside another takes one side of that pane's cells: half its width on the left
+// or right, half its height above or below. So a pane as wide as the screen can share its row,
+// and one of two panes side by side can become a full-width row of its own. The space the moved
+// pane leaves closes up first, as when a pane is closed, and then the other pane splits. A drop
+// that changes nothing is not offered.
+function paneRectsBeside(rects,id,targetId,side){
+  if(!rects[id]||!rects[targetId]||id===targetId)return null;
+  const items=fillPaneGaps(settlePanes(Object.entries(rects).filter(([pane])=>pane!==id).map(([pane,rect])=>({id:pane,...rect}))));
+  const target=items.find(item=>item.id===targetId),across=side==='left'||side==='right';
+  const [pos,size]=across?['x','w']:['y','h'];
+  if(paneGapCells(items)||target[size]<2*PANE_MIN)return null;
+  const give=Math.floor(target[size]/2),keep=target[size]-give,first=side==='left'||side==='top';
+  items.push({...target,id,[pos]:first?target[pos]:target[pos]+keep,[size]:give});
+  if(first)target[pos]+=give;
+  target[size]=keep;
+  const next=Object.fromEntries(items.map(({id,...rect})=>[id,rect]));
+  return Object.keys(rects).every(pane=>['x','y','w','h'].every(key=>next[pane][key]===rects[pane][key]))?null:next;
+}
+function placePaneBeside(id,targetId,side){
+  const next=paneRectsBeside(resolvePaneRects(openPaneIds),id,targetId,side);if(!next)return false;
+  paneRects=next;
+  applyPaneLayout({animate:true});sortPanesByLayout();syncPaneOrder();savePanes();savePaneRects();renderLayoutPicker();
+  return true;
+}
 // Pane order follows reading order, so the keyboard, the DOM and screen readers agree with
 // what is on screen.
 function sortPanesByLayout(){
