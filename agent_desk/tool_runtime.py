@@ -1,12 +1,13 @@
 """Shared skill UI lifecycle for the API and command-line launcher."""
 from agent_desk.paths import DATA_DIR
+from agent_desk.local_transport import runtime_directory, write_private_json
+from agent_desk.managed_processes import OwnedProcesses
 from contextlib import contextmanager
 import fcntl
 import hashlib
 import json
 import os
 from pathlib import Path
-import signal
 import socket
 import subprocess
 import sys
@@ -27,7 +28,7 @@ class ToolRuntime:
     def __init__(self,state=None,roots=None):
         self.state=Path(state or DATA_DIR/'tool-runtime');self.state.mkdir(parents=True,exist_ok=True)
         self.processes={}
-        self.roots=roots or [Path.home()/'.claude'/'skills',Path.home()/'.agents'/'skills']
+        self.roots=roots or ([Path(p).expanduser().resolve() for p in os.environ['AGENT_DESK_TOOL_ROOTS'].split(os.pathsep) if p] if os.environ.get('AGENT_DESK_TOOL_ROOTS') else [Path.home()/'.claude'/'skills',Path.home()/'.agents'/'skills'])
 
     def catalog(self):
         found={}
@@ -44,6 +45,8 @@ class ToolRuntime:
                         if not script.is_relative_to(folder.resolve()):continue
                         title=item.get('title',folder.name);description=item.get('description','');kind=item.get('target','file')
                         # A tool may open on a file, a folder, or nothing at all; the agent that builds it decides.
+                        transports=item.get('transports', [])
+                        if os.environ.get('AGENT_DESK_WORKSPACE_ID') and 'unix-http-v1' not in transports:continue
                         arguments=item.get('args',(['{target}'] if kind!='none' else [])+['--port','{port}','--no-browser'])
                     elif folder.name in BUILTINS:
                         title,description,entry,kind=BUILTINS[folder.name];script=folder/entry
@@ -65,13 +68,18 @@ class ToolRuntime:
         if not isinstance(identity,str) or not identity or len(identity)>80:raise ValueError('Invalid tool ID')
         return self.state/(hashlib.sha256(identity.encode()).hexdigest()+'.json')
 
+    @staticmethod
+    def read_record(path):
+        try:return json.loads(path.read_text())
+        except (OSError, ValueError):return None
+
     def read(self,identity):
         try:return json.loads(self.record_path(identity).read_text())
         except (OSError,ValueError):return None
 
     def save(self,item):
-        path=self.record_path(item['id']);temp=path.with_suffix('.tmp')
-        temp.write_text(json.dumps(item));os.replace(temp,path)
+        path=self.record_path(item['id'])
+        write_private_json(path, item)
 
     def owned(self,item):
         if not item or item.get('stopped'):return False
@@ -99,16 +107,28 @@ class ToolRuntime:
         extra=extra or []
         if not isinstance(extra,list) or not all(isinstance(a,str) and len(a)<=10000 for a in extra):raise ValueError('Invalid arguments')
         if any(a.split('=')[0] in ('--port','--no-browser') for a in extra):raise ValueError('Port and browser mode are managed by Agent Desk')
+        workspace=os.environ.get('AGENT_DESK_WORKSPACE_ID')
+        if workspace and port is not None:raise ValueError('Desktop tools use Unix sockets, not TCP ports')
         with self.locked():
+            if workspace and (self.state.parent/'desktop-shutdown.json').exists():
+                raise ValueError('Desktop launches are paused during shutdown recovery')
             previous=self.read(identity)
             if previous and self.owned(previous):
                 if previous['context']!=str(target or '') or previous['skill']!=skill:raise ValueError('This tool ID already belongs to another target')
                 return previous
             instance=uuid.uuid4().hex;ready=self.state/(instance+'.ready');log=self.state/(instance+'.log')
-            with socket.socket() as listener:
-                listener.bind(('127.0.0.1',port or 0));port=listener.getsockname()[1]
+            socket_path=None
+            if workspace:
+                folder=runtime_directory(DATA_DIR, workspace)
+                socket_path=folder/('tool-'+instance[:16]+'.sock')
+            with socket.socket(socket.AF_UNIX if workspace else socket.AF_INET) as listener:
+                if workspace:
+                    listener.bind(str(socket_path));os.chmod(socket_path,0o600);port=0
+                else:
+                    listener.bind(('127.0.0.1',port or 0));port=listener.getsockname()[1]
                 argv=[arg.replace('{target}',str(target)).replace('{port}',str(port)) for arg in spec['args'] if target is not None or '{target}' not in arg]
                 env=dict(os.environ,AGENT_DESK_LISTEN_FD=str(listener.fileno()),PYTHONUNBUFFERED='1')
+                if workspace:env['AGENT_DESK_TOOL_INSTANCE']=instance
                 if skill=='code-review' and identity.startswith('hook-ui-'):env['AGENT_DESK_REVIEW_BRIDGE']='1'
                 with log.open('ab') as output:
                     process=subprocess.Popen([sys.executable,str(ROOT/'scripts'/'serve_skill_ui.py'),'--instance',instance,'--ready',str(ready),spec['script'],*argv,*extra],env=env,pass_fds=(listener.fileno(),),stdout=output,stderr=subprocess.STDOUT,start_new_session=True)
@@ -120,11 +140,12 @@ class ToolRuntime:
                     time.sleep(.05)
                 else:raise ValueError('Tool did not claim its reserved socket. See '+str(log))
                 item=dict(id=identity,title=title or spec['title']+(' · '+target.name if target else ''),skill=skill,context=str(target or ''),url=f'http://127.0.0.1:{port}',pid=process.pid,instance=instance,log=str(log))
+                if workspace:item.update(url='agent-tool://t'+instance,transport='unix-http-v1',socket=str(socket_path))
                 self.processes[identity]=process
                 self.save(item);return item
             except Exception:
-                if process.poll() is None:os.killpg(process.pid,signal.SIGTERM)
-                process.wait(timeout=5);raise
+                if process.poll() is None:OwnedProcesses(process.pid).stop()
+                process.wait(timeout=3);raise
             finally:ready.unlink(missing_ok=True)
 
     def stop(self,identity):
@@ -132,11 +153,8 @@ class ToolRuntime:
             item=self.read(identity)
             if not item:raise ValueError('This tool was registered externally; Agent Desk does not own its process')
             if self.owned(item):
-                os.killpg(item['pid'],signal.SIGTERM)
+                OwnedProcesses(item['pid']).stop()
                 process=self.processes.pop(identity,None)
                 if process:process.wait(timeout=3)
-                deadline=time.monotonic()+3
-                while self.owned(item) and time.monotonic()<deadline:time.sleep(.05)
-                if self.owned(item):raise ValueError('Tool has not stopped yet; try again after checking it')
             item['stopped']=True;self.save(item)
             return self.status(identity)

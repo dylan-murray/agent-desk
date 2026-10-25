@@ -28,3 +28,8 @@ test-results/
 build/
 dist/
 *.egg-info/
+
+# Desktop build artifacts and local signing configuration
+desktop/.build/
+desktop/out/
+desktop/.env*

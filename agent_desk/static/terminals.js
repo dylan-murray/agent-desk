@@ -93,10 +93,10 @@ async function monitorTerminals(){
 setInterval(monitorTerminals,2000);
 // Open panes belong to this tab and to the desk it shows; each desk keeps its own.
 const paneStoreKey=()=>demo?'demo':deskScoped('live');
-function savePanes(){try{sessionStorage.setItem('agent-desk-panes-'+paneStoreKey(),JSON.stringify(openPaneIds));}catch{}}
+function savePanes(){try{(window.agentDeskDesktop?localStorage:sessionStorage).setItem('agent-desk-panes-'+paneStoreKey(),JSON.stringify(openPaneIds));}catch{}}
 function loadPanes(){
   paneMode=paneStoreKey();
-  try{const saved=sessionStorage.getItem('agent-desk-panes-'+paneMode);paneInitialized=saved!==null;openPaneIds=JSON.parse(saved||'[]').filter(x=>typeof x==='string').slice(0,PANE_LIMIT);}catch{openPaneIds=[];paneInitialized=false;}
+  try{const saved=(window.agentDeskDesktop?localStorage:sessionStorage).getItem('agent-desk-panes-'+paneMode);paneInitialized=saved!==null;openPaneIds=JSON.parse(saved||'[]').filter(x=>typeof x==='string').slice(0,PANE_LIMIT);}catch{openPaneIds=[];paneInitialized=false;}
   loadPaneRects();loadPaneLayout();loadSeenSpawned();
 }
 // Agents spawn sessions onto the desk they run on (scripts/agent_control.py launch --parent).
@@ -341,7 +341,7 @@ function renderTerminal(){
   if(paneMode!==paneStoreKey())loadPanes();
   const all=current();
   // Don't discard restored selection while the initial process fetch is pending.
-  if(all.length||agents.length||demo){openPaneIds=openPaneIds.filter(id=>webPages.has(id)||all.some(a=>a.id===id));if(!openPaneIds.length&&!paneInitialized&&selectedId)openPaneIds=[selectedId];paneInitialized=true;if(!demo)openSpawnedPanes(all);}
+  if(all.length||agents.length||demo||typeof agentsLoaded!=='undefined'&&agentsLoaded){openPaneIds=openPaneIds.filter(id=>webPages.has(id)||all.some(a=>a.id===id));if(!openPaneIds.length&&!paneInitialized&&selectedId)openPaneIds=[selectedId];paneInitialized=true;if(!demo)openSpawnedPanes(all);}
   if(!openPaneIds.includes(selectedId))selectedId=openPaneIds[0]||null;
   const workspace=$('#terminal');workspace.dataset.count=openPaneIds.length;
   $('#pane-count').textContent=`${openPaneIds.length} / ${PANE_LIMIT} open`;

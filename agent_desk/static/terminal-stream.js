@@ -25,7 +25,7 @@ const terminalStream=(()=>{
   function connect(){
     if(socket||!subscriptions.size)return;
     clearTimeout(retryTimer);retryTimer=null;
-    const ws=new WebSocket(`${location.protocol==='https:'?'wss':'ws'}://${location.host}/api/terminals/stream`);socket=ws;
+    const ws=(globalThis.deskTransport?.socket || (url => new WebSocket(url)))(`${location.protocol==='https:'?'wss':'ws'}://${location.host}/api/terminals/stream`);socket=ws;
     ws.onopen=async()=>{
       try{await terminalAuthToken();}catch{ws.close();return;}
       if(socket!==ws)return;

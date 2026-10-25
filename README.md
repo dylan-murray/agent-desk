@@ -60,7 +60,9 @@ Requires macOS or Linux, Python 3.11+, Node.js 18+ (22+ to run the test suite), 
 
 Using more than one Claude, Codex, Grok, OpenCode or Pi login, or more than one Snowflake connection for Cortex Code? Add each under **New → Terminal → Accounts**.
 
-Agent Desk only listens on 127.0.0.1. It saves its state in `data/`, or wherever `AGENT_DESK_DATA_DIR` points.
+The browser server only listens on 127.0.0.1. It saves its state in `data/`, or wherever `AGENT_DESK_DATA_DIR` points.
+
+Agent Desk also has a macOS desktop app. See [desktop setup](desktop/README.md) for local Apple Silicon builds on macOS 14+. Use Agent Desk in your browser or in the desktop app.
 
 ## 📚 Docs
 

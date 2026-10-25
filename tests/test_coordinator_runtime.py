@@ -83,6 +83,40 @@ class CoordinatorTests(unittest.TestCase):
             db.execute("UPDATE tasks SET status='cancelled' WHERE controller=?",(self.c['id'],))
         self.assertEqual(self.runtime.activity(self.c['id'])['phase'],'idle')
 
+    def test_desktop_quit_status_counts_only_runtime_work(self):
+        from agent_desk.desktop_backend import status
+        app = SimpleNamespace(
+            COORDINATORS=self.runtime, TERMINALS=SimpleNamespace(list=lambda: []),
+            TOOL_RUNTIME=SimpleNamespace(state=self.root / 'no-tools'),
+            WORKFLOWS=SimpleNamespace(snapshot=lambda: {'workflows': []}, shutdown_jobs=lambda: []))
+        server = SimpleNamespace(workspace_key='a' * 32, paused=False)
+        self.assertFalse(status(app, server)['active'], 'An idle saved coordinator is not work')
+        self.message()
+        queued = status(app, server)
+        self.assertTrue(queued['active'])
+        self.assertEqual(queued['coordinators']['queued_turns'], 1)
+        with self.runtime.db() as db:
+            db.execute("UPDATE turns SET state='running'")
+        planning = status(app, server)
+        self.assertTrue(planning['active'])
+        self.assertEqual(planning['coordinators']['planning'], 1)
+        self.assertEqual(planning['coordinators']['queued_turns'], 0)
+        with self.runtime.db() as db:
+            db.execute("UPDATE turns SET state='done'")
+        self.assertFalse(status(app, server)['active'])
+        watch = self.runtime.watch_pr(dict(id=self.c['id'], url='https://github.com/fixture/repo/pull/1'))
+        monitoring = status(app, server)
+        self.assertTrue(monitoring['active'])
+        self.assertEqual(monitoring['coordinators']['monitors'], 1)
+        self.runtime.stop_watch(dict(id=self.c['id'], watch_id=watch['id']))
+        self.assertFalse(status(app, server)['active'])
+        with self.runtime.db() as db:
+            db.execute('INSERT INTO actions VALUES(?,?,?,?,?,?,?,?)', ('delivery', self.c['id'], 'send', '{}', 'queued', 'worker-fixture', '', ''))
+        self.assertTrue(status(app, server)['active'])
+        self.assertEqual(status(app, server)['coordinators']['queued_deliveries'], 1)
+        self.runtime.pause(self.c['id'])
+        self.assertFalse(status(app, server)['active'])
+
     def test_invalid_optional_memory_does_not_pause_or_skip_work(self):
         self.message()
         def plan(c,ctx,cancel):

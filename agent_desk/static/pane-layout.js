@@ -84,11 +84,11 @@ let paneLayoutId=PANE_LAYOUTS[0].id,paneRects=null,paneResize=null;
 function loadPaneLayout(){try{paneLayoutId=paneLayout(localStorage.getItem(deskScoped('agent-desk-pane-layout'))).id;}catch{paneLayoutId=PANE_LAYOUTS[0].id;}}
 const paneRectsKey=()=>'agent-desk-pane-rects-'+(demo?'demo':deskScoped('live'));
 function loadPaneRects(){
-  try{const saved=JSON.parse(sessionStorage.getItem(paneRectsKey())||'null');
+  try{const saved=JSON.parse((window.agentDeskDesktop?localStorage:sessionStorage).getItem(paneRectsKey())||'null');
     paneRects=saved&&typeof saved==='object'&&Object.values(saved).every(validPaneRect)?saved:null;}
   catch{paneRects=null;}
 }
-function savePaneRects(){try{if(paneRects)sessionStorage.setItem(paneRectsKey(),JSON.stringify(paneRects));else sessionStorage.removeItem(paneRectsKey());}catch{}}
+function savePaneRects(){try{if(paneRects)(window.agentDeskDesktop?localStorage:sessionStorage).setItem(paneRectsKey(),JSON.stringify(paneRects));else (window.agentDeskDesktop?localStorage:sessionStorage).removeItem(paneRectsKey());}catch{}}
 // Explicit sizes for every open pane. Closed panes are dropped and the rest rise into their
 // space; a newly opened pane takes the layout's cell size at the first spot it fits. Then the
 // panes grow to fill any gap; one that no pane can grow into whole (a pinwheel of four panes

@@ -14,15 +14,16 @@ import sys
 import time
 from urllib.error import HTTPError
 from urllib.parse import urlencode, urlparse
-from urllib.request import Request, urlopen
+from urllib.request import Request
+from agent_desk.local_transport import urlopen, endpoint_key, desk_url
 
 
 class DeskClient:
     def __init__(self, desk):
-        url = urlparse(desk)
-        if url.scheme != 'http' or url.hostname not in ('127.0.0.1', 'localhost') or not url.port or url.username or url.password or url.path not in ('', '/') or url.query or url.fragment:
-            raise ValueError('Use a loopback Agent Desk URL with an explicit port')
-        self.desk, self.token = f'http://127.0.0.1:{url.port}', None
+        endpoint_key(desk)
+        if urlparse(desk).path not in ('', '/') or urlparse(desk).query or urlparse(desk).fragment:
+            raise ValueError('Use an Agent Desk workspace address without a path')
+        self.desk, self.token = desk_url(endpoint_key(desk)), None
 
     def request(self, path, payload=None):
         if self.token is None:
@@ -124,7 +125,7 @@ class DeskClient:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--desk', default='http://127.0.0.1:4310')
+    parser.add_argument('--desk', default=os.environ.get('AGENT_DESK_URL', 'http://127.0.0.1:4310'))
     commands = parser.add_subparsers(dest='command', required=True)
     commands.add_parser('list', help='List managed and externally discovered agents')
     read = commands.add_parser('read', help='Read recent terminal output or continue from a byte cursor')

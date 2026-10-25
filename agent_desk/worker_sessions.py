@@ -1,5 +1,6 @@
 """Confirmed worker retirement and durable native-conversation resume records."""
 import json
+import sys
 import re
 import time
 from pathlib import Path
@@ -311,7 +312,7 @@ class WorkerSessions:
             if pending:
                 from pathlib import Path
                 import shlex
-                helper=shlex.join(['python3',str(Path(__file__).resolve().parents[1]/'scripts'/'agent_control.py'),'--desk',self.desk])
+                helper=shlex.join([sys.executable,str(Path(__file__).resolve().parents[1]/'scripts'/'agent_control.py'),'--desk',self.desk])
                 instructions='Agent Desk is resuming this existing conversation after an interruption. Inspect the current worktree and actual task state first. Do not blindly repeat prior commands or external actions. Continue only the outstanding assignments below and report against their ORIGINAL task IDs.\n'
                 for task in pending:
                     instructions+='\nTask '+task['id']+': '+task['task']+'\nFinal report: '+helper+' reply '+task['id']+' --file /absolute/path/to/result.txt\n'

@@ -1,7 +1,7 @@
 const $ = (s) => document.querySelector(s);
 const escapeHTML = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const labels = {working:'Working',needs_input:'Needs you',idle:'Idle',completed:'Completed',ready_for_review:'Ready for review',error:'Error',unknown:'Unknown',output:'Output active',quiet:'Quiet'};
-let agents = [], demo = false, filter = 'all', annotating = false, pending = null, selectedId = null;
+let agents = [], agentsLoaded = false, demo = false, filter = 'all', annotating = false, pending = null, selectedId = null;
 const demoAgents = [
   ['frontend','Interface polish','claude','needs_input','Refine the agent dashboard and interaction states','agent-desk','Should the sidebar stay expanded on smaller screens?'],
   ['adapters','Harness adapters','codex','working','Normalize session events across agent harnesses','agent-desk'],
@@ -82,7 +82,7 @@ function render(){
 }
 function openDetails(id){selectedId=id;renderDetails();$('#details').showModal();}
 function renderDetails(){const a=current().find(a=>a.id===selectedId);if(!a)return;$('#detail-content').innerHTML=`<div class="eyebrow">${escapeHTML(a.harness)} / ${escapeHTML(a.source)}</div><h2>${escapeHTML(a.name)}</h2><span class="status ${escapeHTML(a.status)}">${escapeHTML(labels[a.status])}</span><p>${escapeHTML(a.task)}</p><p class="muted">${escapeHTML(a.project)}${a.pid?' · PID '+escapeHTML(a.pid):''} · ${relative(a.updated)}</p>${a.question?'<div class="question"><strong>Waiting for your answer</strong><p>'+escapeHTML(a.question)+'</p><small>Reply in the original harness. Responses from this app are not connected yet.</small></div>':''}<h3>Activity</h3>${a.events.length?a.events.slice().reverse().map(e=>`<div class="event"><small>${new Date(e.time*1000).toLocaleTimeString()}</small>${escapeHTML(e.message)}</div>`).join(''):'<p class="muted">No adapter events yet. A detected process doesn’t reveal its task or whether it needs input.</p>'}`;}
-async function refresh(){try{const r=await fetch('/api/agents');if(!r.ok)throw Error();const data=await r.json();setDesks(data.desks);agents=stampReadouts(data.agents);$('#sync-status').textContent='● Connected';$('#sync-status').classList.remove('error-banner');$('#sync-status').classList.add('connected');if(!annotating&&!window.annotationNoteOpen?.())render();if($('#details').open)renderDetails();}catch{$('#sync-status').textContent='Connection lost · showing last update';$('#sync-status').classList.add('error-banner');$('#sync-status').classList.remove('connected');}}
+async function refresh(){try{const r=await fetch('/api/agents');if(!r.ok)throw Error();const data=await r.json();setDesks(data.desks);agents=stampReadouts(data.agents);agentsLoaded=true;$('#sync-status').textContent='● Connected';$('#sync-status').classList.remove('error-banner');$('#sync-status').classList.add('connected');if(!annotating&&!window.annotationNoteOpen?.())render();if($('#details').open)renderDetails();}catch{$('#sync-status').textContent='Connection lost · showing last update';$('#sync-status').classList.add('error-banner');$('#sync-status').classList.remove('connected');}}
 // Header controls keep their order when switching pages. One declared header order, in
 // the same order as .top-actions in index.html, applied on every page switch. Sessions is a destination like the others and
 // is the active chip on the Agents page, so the cluster is one width everywhere without an

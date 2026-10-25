@@ -361,7 +361,7 @@ class CoordinatorRuntime(CoordinatorTools, CoordinatorHooks, WorkerSessions, Coo
         return row['text'] if row else ''
 
     def context_helper(self,identity):
-        command=shlex.join(['python3',str(Path(__file__).resolve().parents[1]/'scripts'/'agent_context.py'),'--desk',self.desk,'--coordinator',identity])
+        command=shlex.join([sys.executable,str(Path(__file__).resolve().parents[1]/'scripts'/'agent_context.py'),'--desk',self.desk,'--coordinator',identity])
         return ('\n\n'+STRUCTURE_GUIDANCE+'\n'+DIAGRAM_GUIDANCE+'\nUse inline backticks for commands and paths in your final report; put multi-line code in fenced blocks tagged with its language (bash for shell, python for Python). '
                 'Save context: search before reading whole files; keep long logs in files and report a concise outcome. '
                 'Retrieve prior coordinator decisions only when needed with '+command+' search "phrase", or '+command+' read "message:ID". '
@@ -400,7 +400,7 @@ class CoordinatorRuntime(CoordinatorTools, CoordinatorHooks, WorkerSessions, Coo
                 if not Path(cwd).is_absolute() or not Path(cwd).is_dir():raise ValueError('Choose an existing absolute worker directory')
                 cwd=str(Path(cwd).resolve())
                 task_id='task-'+secrets.token_hex(10)
-                helper=shlex.join(['python3',str(Path(__file__).resolve().parents[1]/'scripts'/'agent_control.py'),'--desk',self.desk])
+                helper=shlex.join([sys.executable,str(Path(__file__).resolve().parents[1]/'scripts'/'agent_control.py'),'--desk',self.desk])
                 prompt=task+'\n\nReport the result to Agent Desk before ending. Write it to a UTF-8 file and run:\n'+helper+' reply '+task_id+' --file /absolute/path/to/result.txt\nUse --outcome blocked or failed if appropriate. A terminal answer alone does not report completion. For a watcher, keep intermediate updates in your terminal; use reply only once the stop condition is verified and your background monitor has stopped. Do not file a final reply and then continue working.'
                 prompt+=self.context_helper(c['id'])+self.tool_hook_guidance(c['id'])
                 options=[]
@@ -451,7 +451,7 @@ class CoordinatorRuntime(CoordinatorTools, CoordinatorHooks, WorkerSessions, Coo
                 if any(t['result'] is None and t['status']!='cancelled' for t in prior):
                     raise WorkerNotReady('Waiting for this worker’s explicit final report before assigning new work')
                 candidate='task-'+secrets.token_hex(10)
-                helper=shlex.join(['python3',str(Path(__file__).resolve().parents[1]/'scripts'/'agent_control.py'),'--desk',self.desk])
+                helper=shlex.join([sys.executable,str(Path(__file__).resolve().parents[1]/'scripts'/'agent_control.py'),'--desk',self.desk])
                 prompt=(task+'\n\n[Agent Desk follow-up '+candidate+']\n'
                     'Continue in your existing worktree. This is a new task; use this new report ID.\n'
                     'Format your final report with inline backticks for commands and paths, and language-tagged fenced blocks for multi-line code. When finished, write the final result to a UTF-8 file and run:\n'+helper+' reply '+candidate+
@@ -478,7 +478,7 @@ class CoordinatorRuntime(CoordinatorTools, CoordinatorHooks, WorkerSessions, Coo
                 task_id=pending[0]['id']
                 if pending[0]['status'] in ('send_uncertain','nudge_uncertain'):
                     raise ValueError('Prior delivery is uncertain; inspect the worker before sending more input')
-                helper=shlex.join(['python3',str(Path(__file__).resolve().parents[1]/'scripts'/'agent_control.py'),'--desk',self.desk])
+                helper=shlex.join([sys.executable,str(Path(__file__).resolve().parents[1]/'scripts'/'agent_control.py'),'--desk',self.desk])
                 prompt=(task+'\n\n[Agent Desk clarification for existing assignment '+task_id+']\n'
                     'This does not create a new assignment. Inspect the actual current state; do not repeat completed actions. '
                     'If its stop condition is verified, stop the background monitor, write the final report to a UTF-8 file, and run:\n'
@@ -693,7 +693,17 @@ class CoordinatorRuntime(CoordinatorTools, CoordinatorHooks, WorkerSessions, Coo
                 self.wake.wait(.5);self.wake.clear()
         self.scheduler=threading.Thread(target=loop,daemon=True);self.scheduler.start()
 
-    def close(self):
+    def shutdown_activity(self):
+        """Work a local runtime would interrupt, without exposing saved prompts."""
+        with self.lock, self.db() as db:
+            planning = set(self.running)
+            planning.update(row[0] for row in db.execute("SELECT DISTINCT coordinator FROM turns WHERE state='running'"))
+            queued = db.execute("SELECT COUNT(*) FROM turns t JOIN coordinators c ON c.id=t.coordinator WHERE t.state='pending' AND c.paused=0 AND NOT EXISTS(SELECT 1 FROM closed_coordinators x WHERE x.id=c.id)").fetchone()[0]
+            deliveries = db.execute("SELECT COUNT(*) FROM actions a JOIN coordinators c ON c.id=a.coordinator WHERE a.state='queued' AND c.paused=0 AND NOT EXISTS(SELECT 1 FROM closed_coordinators x WHERE x.id=c.id)").fetchone()[0]
+            monitors = db.execute("SELECT COUNT(*) FROM coordinator_watches WHERE state='watching'").fetchone()[0]
+        return dict(planning=len(planning), queued_turns=queued, queued_deliveries=deliveries, monitors=monitors)
+
+    def close(self, strict=False):
         self.stopping.set();self.wake.set()
         with self.lock:
             for cancel in self.running.values():cancel.set()
@@ -702,4 +712,6 @@ class CoordinatorRuntime(CoordinatorTools, CoordinatorHooks, WorkerSessions, Coo
         deadline=time.monotonic()+3
         while self.running and time.monotonic()<deadline:time.sleep(.05)
         self.checkpoint_workers()
+        if strict and (self.running or any(thread and thread.is_alive() for thread in (self.scheduler, self.watch_thread))):
+            raise ValueError('Coordinator work has not stopped; shutdown remains paused')
         if getattr(self,'lease',None) and not self.lease.closed:self.lease.close()
