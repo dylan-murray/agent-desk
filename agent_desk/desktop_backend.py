@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import signal
+import sqlite3
 import subprocess
 import socketserver
 import threading
@@ -139,25 +140,23 @@ def lifecycle_request(handler, app):
             tools = list(app.TOOL_RUNTIME.state.glob('*.json'))
         failures = []
         # Cancel pending planner turns before taking the stable set of terminals.
-        try:app.COORDINATORS.close(strict=True)
-        except (OSError, ValueError) as exc:failures.append({'id': 'coordinators', 'error': str(exc)})
+        try:
+            app.COORDINATORS.close(strict=True)
+            app.COORDINATORS.checkpoint_workers(resolve_native=True)
+        except (OSError, ValueError, sqlite3.Error) as exc:failures.append({'id': 'coordinators', 'error': str(exc)})
         for row in app.WORKFLOWS.shutdown_jobs():
             try:app.WORKFLOWS.stop_confirmed(row['id'])
             except (OSError, ValueError, KeyError) as exc:failures.append({'id': row['id'], 'error': str(exc)})
-        for row in app.TERMINALS.list():
-            if row.get('exit_code') is None:
-                try:app.stop_terminal(app.TERMINALS.get(row['id']))
-                except (OSError, ValueError) as exc:failures.append({'id': row['id'], 'error': str(exc)})
         for path in tools:
             try:
                 item = json.loads(path.read_text())
                 if app.TOOL_RUNTIME.owned(item):app.TOOL_RUNTIME.stop(item['id'])
             except (OSError, ValueError, KeyError) as exc:failures.append({'id': path.stem, 'error': str(exc)})
-        # The supervisor still refuses to drain with live sessions; its client
-        # confirms exit and force-stops a resistant, authenticated idle owner.
+        # Shared supervisor teardown preserves its restore records. Per-terminal
+        # Stop is a user action and must not be applied implicitly during quit.
         if not failures:
             try:
-                for owner in app.TERMINALS.clients:owner.shutdown()
+                for owner in app.TERMINALS.clients:owner.shutdown(for_restart=True)
             except (OSError, ValueError) as exc:failures.append({'id': 'supervisor', 'error': str(exc)})
         if failures:
             return handler.send_json({'stopped': False, 'failed': failures, 'paused': True}, 409)

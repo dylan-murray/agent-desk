@@ -1,5 +1,5 @@
 'use strict';
-const {app, BrowserWindow, Menu, Tray, nativeImage, ipcMain, protocol, net, shell, dialog, session, screen, powerMonitor, clipboard} = require('electron');
+const {app, BrowserWindow, Menu, ipcMain, protocol, net, shell, dialog, session, screen, powerMonitor, clipboard} = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
@@ -19,8 +19,9 @@ protocol.registerSchemesAsPrivileged([
   {scheme: 'agent-tool', privileges: {standard: true, secure: true, supportFetchAPI: true, corsEnabled: true}},
 ]);
 const windows = new Set(), streams = new Map();
-let backend, mainWindow, tray, quitting = false, quitPending = false, recovering = null;
+let backend, mainWindow, quitting = false, quitPending = false, recovering = null;
 let workspaceLoaded = false, fixtureFailed = false;
+let paneFullscreen = false;
 let retryAllowed = true, quitRequested = false;
 let initialConfiguration = null;
 const authority = applicationAuthority(windows);
@@ -46,6 +47,9 @@ if (!app.requestSingleInstanceLock()) {app.quit();} else {
 }
 function show() {if (!mainWindow) return;if (mainWindow.isMinimized()) mainWindow.restore();mainWindow.show();mainWindow.focus();retries.now();}
 function requireFrame(event) {if (!trustedFrame(event, windows)) throw Error('Untrusted desktop caller');}
+function updateWindowButtons() {
+  if (process.platform === 'darwin' && mainWindow && !mainWindow.isDestroyed()) mainWindow.setWindowButtonVisibility(!paneFullscreen || mainWindow.isFullScreen());
+}
 async function boot() {
   powerMonitor.on('resume', () => retries.now());
   configureAbout(app, process.resourcesPath, path.join(profile.logs, 'build-info.json'));
@@ -84,11 +88,16 @@ async function boot() {
   const saveBounds = () => {if (!mainWindow.isMinimized() && !mainWindow.isFullScreen()) atomicJSON(path.join(dataRoot, 'window.json'), mainWindow.getNormalBounds());};
   mainWindow.on('resize', saveBounds);mainWindow.on('move', saveBounds);
   screen.on('display-removed', () => mainWindow.setBounds(restoreBounds(mainWindow.getNormalBounds(), screen.getAllDisplays())));
-  for (const event of ['enter-full-screen', 'leave-full-screen']) mainWindow.on(event, () => publish({fullscreen: mainWindow.isFullScreen()}));
+  for (const event of ['enter-full-screen', 'leave-full-screen']) mainWindow.on(event, () => {updateWindowButtons();publish({fullscreen: mainWindow.isFullScreen()});});
   mainWindow.once('ready-to-show', () => {show();markTiming('shellVisibleAt');});
   ipcMain.on('desk:workspace-ready', event => {requireFrame(event);if (state.connection === 'connected') markTiming('workspaceReadyAt');});
   ipcMain.handle('desk:state', event => {requireFrame(event);return state;});
   ipcMain.handle('desk:fullscreen', event => {requireFrame(event);const win = BrowserWindow.fromWebContents(event.sender);win.setFullScreen(!win.isFullScreen());});
+  ipcMain.on('desk:pane-fullscreen', (event, active) => {
+    requireFrame(event);
+    if (event.sender !== mainWindow.webContents || typeof active !== 'boolean') return;
+    paneFullscreen = active;updateWindowButtons();
+  });
   const menu = Menu.buildFromTemplate([
     {label: 'Agent Desk', submenu: [{role: 'about'}, {label: 'Show Agent Desk', click: show}, {type: 'separator'},
       {label: 'Retry Connection', click: () => void connect()},
@@ -103,9 +112,7 @@ async function boot() {
     {role: 'windowMenu'},
   ]);
   Menu.setApplicationMenu(menu);
-  const icon = nativeImage.createFromPath(path.join(__dirname, '../resources/trayTemplate.png'));icon.setTemplateImage(true);
   if (!app.isPackaged) app.dock?.setIcon(path.join(__dirname, '../resources/agent-desk.png'));
-  tray = new Tray(icon);tray.setToolTip('Agent Desk');tray.setContextMenu(Menu.buildFromTemplate([{label: 'Open Agent Desk', click: show}, {label: 'Quit Agent Desk', click: () => void requestQuit()}]));tray.on('click', show);
   ipcMain.on('desk:external-link', (event, value) => {if (trustedFrame(event, windows)) {const url=externalURL(value);if (url) void shell.openExternal(url);}});
   ipcMain.on('desk:stream-open', (event, id) => {
     try {
@@ -134,7 +141,10 @@ function registerWindow(win, workspace) {
   wc.on('will-navigate', event => {if (!event.url.startsWith(ORIGIN + '/')) event.preventDefault();});
   wc.on('will-frame-navigate', event => {if (!event.isMainFrame && event.url.startsWith('agent-desk:')) event.preventDefault();});
   wc.on('will-redirect', event => {if (event.isMainFrame ? !event.url.startsWith(ORIGIN + '/') : event.url.startsWith('agent-desk:')) event.preventDefault();});
-  wc.on('did-start-navigation', event => {if (event.isMainFrame && !event.isSameDocument) {streams.get(wc.id)?.close();streams.delete(wc.id);}});
+  wc.on('did-start-navigation', event => {if (event.isMainFrame && !event.isSameDocument) {
+    streams.get(wc.id)?.close();streams.delete(wc.id);
+    if (wc === mainWindow?.webContents) {paneFullscreen = false;updateWindowButtons();}
+  }});
   wc.on('destroyed', () => {windows.delete(wc.id);streams.get(wc.id)?.close();streams.delete(wc.id);});
   wc.setWindowOpenHandler(({url}) => {
     if (url.startsWith(ORIGIN + '/inbox-document.html?')) {

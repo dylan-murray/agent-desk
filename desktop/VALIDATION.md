@@ -134,3 +134,35 @@ Verified: the new storage regressions and the extended real Electron smoke check
 The actual publishing step order was replayed with a clean tagged fixture repository, a fictional DMG/checksum download and mocked GitHub calls. It reached publication after validation and checksum verification; dirty source and modified DMG bytes remained rejected. No tag or GitHub release was created. Packaging and DMG generation were not changed or rerun.
 
 Fixture screenshots `agent-desk-web-pane-before-restart.png`, `agent-desk-web-pane-restored-1280.png` and `agent-desk-web-pane-restored-480.png` were written to the system temporary evidence directory. The restored desktop and narrow screenshots were visually inspected. User acceptance remains pending; no annotations were accepted or rejected.
+
+## Extra menu bar icon removal (2026-10-25)
+
+Implemented: removed the extra menu bar icon, its artwork and artwork generation. The Dock reopens the hidden window; the standard Agent Desk menu retains recovery, diagnostics and Quit. Updated the desktop README and user guide.
+
+Verified with disposable profiles and fictional sessions: all 36 desktop unit checks passed; the real Electron startup check covered 1280, 520 and 480 pixels and verified that emitting the Dock activation event reopens the hidden window with the same document. Native quit checks passed for Cancel, Keep Running, Stop Work and Quit, and idle saved coordinators. The initial sandboxed unit run was blocked by socket/process permissions; the permitted rerun passed.
+
+Physical Dock interaction and user acceptance remain pending. No installed app or user profile was changed; packaging was not rerun.
+
+## Sessions after quitting and reopening (2026-10-25)
+
+Implemented: desktop shutdown uses the shared supervisor teardown instead of invoking per-terminal Stop. Native conversation IDs are captured before CLI exit, and the existing teardown preserves terminal restore records. Reopening uses the shared restore behavior and original IDs, names, folders and saved panes. The web app's persistence format and session rules are unchanged. Runtime-pruning changes and their fixtures/documentation were removed; only menu icon removal and this stop/start fix remain.
+
+Verified: the new desktop shutdown regression failed before the fix because the saved terminal list became empty. After the fix, focused Python checks passed across terminal restoration, desktop transport/shutdown, supervisor recovery, terminals and coordinator runtime. All 36 remaining desktop unit checks passed after removing pruning. The real Electron native-quit fixture confirmed process exit, restored the saved pane and renamed terminal at 1280px and 480px, accepted keyboard input after reopening, and kept explicitly stopped terminals closed on the next launch. Fictional Claude/Codex fixtures verified exact conversation IDs captured during supervisor shutdown and resumed after replacement.
+
+Evidence: `agent-desk-session-before-quit.png` and `agent-desk-session-restored-{1280,480}.png` in `AGENT_DESK_EVIDENCE_DIR` or the system temporary directory. The restored wide and narrow screenshots were visually inspected. All checks used disposable profiles and fictional sessions. The installed app was not rebuilt or replaced, and live user data was not inspected or changed. Implementation and verification are complete; user acceptance remains pending.
+
+## Desktop quit checkpoint review fixes (2026-10-25)
+
+Implemented: desktop quit opts into native conversation discovery for live coordinator workers after planner shutdown, using the existing mailbox and SQLite records without cancelling unfinished assignments. Lookup and database errors leave shutdown incomplete. Supervisor capture, save and timeout failures no longer enter the desktop force-stop fallback. A failed checkpoint reply restores the supervisor's availability and persistence so the same live sessions can be retried. Forced cleanup after an acknowledged checkpoint remains supported. Default web checkpointing and backend restart behavior are unchanged.
+
+Verified: the new regressions failed before the fixes. Relevant Python checks passed across coordinator runtime (62 existing checks plus the new SQLite-failure check), desktop transport/shutdown (14), terminal restoration (12), and supervisor/web backend restart (11). Fixtures covered discoverable worker IDs not yet reported to the mailbox, preserved unfinished assignments, lookup failures/timeouts, SQLite and JSON save failures, failed replies, unchanged live process identities, successful retry, and forced cleanup after acknowledgment. All 36 desktop unit checks passed. The extended native quit check confirmed that a real save failure keeps the app visible and its terminal alive, then retry exits and reopening restores the same session at 1280px and 480px. Explicitly stopped sessions stayed closed.
+
+All checks used disposable profiles and fictional sessions. The installed app/profile was not replaced and packaging was not rerun. User acceptance remains pending.
+
+## Expanded-pane native window controls (2026-10-25)
+
+Implemented: an expanded pane in a regular macOS window hides the native traffic lights. Escape, collapsing/closing the pane, leaving Sessions and document navigation restore the controls. Native whole-window fullscreen keeps its existing behavior; leaving native fullscreen while a pane remains expanded hides the controls again. This is confined to the desktop bridge and shell.
+
+Verified: the real Electron smoke fixture first reproduced all three AppKit buttons remaining visible over an expanded pane at 1280px and 480px. After the fix, a fixture-only Node-API/AppKit inspector verified their actual hidden state and restoration across Escape, page switches, reload, pane close and native fullscreen transitions. The complete native smoke check passed, including backend crash recovery, tool feedback and cold-start web-pane restoration. A browser-only header check passed at desktop/narrow widths and retained browser fullscreen. An intermediate native run hit a startup disconnect, and another caught a load/reload timing race; the final isolated run passed after the fixture waited for full document loading before navigation.
+
+Before/after pane-content screenshots `agent-desk-pane-fullscreen-{1280,480}[-before].png` were saved under `AGENT_DESK_EVIDENCE_DIR` or the system temporary directory. Content screenshots exclude native window controls; the AppKit inspector verified those separately. The wide and narrow content screenshots were visually inspected. No live sessions or installed user profile were used. Implementation and verification are complete; user acceptance remains pending.

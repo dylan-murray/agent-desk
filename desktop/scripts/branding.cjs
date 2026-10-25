@@ -26,10 +26,6 @@ const {chromium} = require('../../node_modules/playwright');
       if(size>=32) fs.writeFileSync(path.join(iconset,`icon_${size/2}x${size/2}@2x.png`),png);
       if(size===512) fs.writeFileSync(path.join(folder,'agent-desk.png'),png);
     }
-    for(const scale of [1,2]) {
-      const png = await rasterize(18*scale, mark.replace('fill="url(#ad-g)"','fill="#000"'));
-      fs.writeFileSync(path.join(folder,`trayTemplate${scale===2?'@2x':''}.png`),png);
-    }
     execFileSync('/usr/bin/iconutil',['-c','icns',iconset,'-o',path.join(folder,'agent-desk.icns')]);
   } finally {await browser.close();}
 })();

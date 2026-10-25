@@ -46,9 +46,13 @@ Desktop diagnostic logs rotate at 5 MiB and daily, expire after 14 days, and hav
 
 ## Closing, quitting, and recovery
 
-Closing the window hides it; agents and schedules keep running. Reopen it from the Dock or menu bar. Cmd+Q offers Keep Running, Stop Work and Quit, or Cancel while local terminals, tools, jobs, enabled schedules, coordinator planning, queued turns or deliveries, or active PR monitors exist. Idle saved coordinators alone do not trigger confirmation.
+Closing the window hides it; agents and schedules keep running. Reopen it from the Dock. The app uses no extra menu bar icon; the standard Agent Desk menu provides diagnostics, recovery controls and Quit. Cmd+Q offers Keep Running, Stop Work and Quit, or Cancel while local terminals, tools, jobs, enabled schedules, coordinator planning, queued turns or deliveries, or active PR monitors exist. Idle saved coordinators alone do not trigger confirmation.
 
 Stop Work and Quit blocks new launches and scheduling, waits for tool launches already underway, cancels local planner turns, stops managed workflow workers and their command children, stops managed terminals and tools, and drains the supervisor and backend. Processes get a short graceful-stop timeout, followed by forced cleanup of verified owners without another prompt. Success requires confirmed exit. It leaves unrelated and remote work running. After a confirmed shutdown, reopening enables launches and scheduling normally. An unconfirmed stop keeps the app open and records an incomplete shutdown; reopening preserves that pause until recovery. Same-build crash recovery reconnects to existing owners without replacing live terminals.
+
+Desktop quit uses the shared terminal supervisor's existing teardown and restore behavior. Session records survive stopping and reopening the app: agents resume captured Claude/Codex conversations, shells reopen in the same folder, and other commands open a shell instead of running again. Previous terminal scrollback is not saved. Coordinator conversations and saved worker metadata remain in SQLite; standalone terminal restore records use `data/terminal-sessions-WORKSPACE_ID.json`.
+
+Before stopping terminals, desktop quit discovers and saves coordinator workers' exact conversation IDs without cancelling their assignments. If conversation lookup or saving fails, shutdown remains incomplete and the terminals keep running. Retry **Finish Previous Shutdown** after resolving the error. Forced terminal cleanup starts only after the supervisor confirms its session checkpoint succeeded.
 
 Temporary connection failures retry automatically after 1, 2, 5, 10, then 30 seconds between attempts, capped at 30 seconds until recovery. Returning to the app or waking the computer retries immediately when disconnected. The existing Retry button and Retry Connection menu item can also start an attempt immediately. Authentication, incompatible runtime/connection metadata, and setup failures require manual recovery. Retries pause during quit/shutdown and remain stopped after an incomplete shutdown. Use the Agent Desk menu to finish a shutdown, resume scheduling, or open local diagnostics. A live but unreachable owner is not replaced. Force Stop Backend requires a native confirmation and verified process identity; it leaves the terminal supervisor running. Never remove a live socket directory to recover a workspace.
 
@@ -161,6 +165,8 @@ Ordinary API requests preserve methods, query strings, application headers, byte
 After the initial workspace load, automatic or manual retries reconnect the existing document. Drafts and live terminals stay in place; disconnected mutations fail without being queued or replayed. Concurrent retries share one attempt. Closing hides the window; quitting during preparation prevents a later backend launch.
 
 Traffic lights and the full-size logo share a 60px header aligned with the workspace toolbar. Native 14 × 16px button frames sit 14px from the left and 22px from the top, with a 20px gap before the logo. Empty header space drags the window; the logo returns to Sessions. Fullscreen centers the logo within the sidebar. Narrow windows keep the same control spacing on their own header row. Desktop pane selection, geometry and web-page names and addresses persist across app restarts; closing a web pane removes its saved page. Window position and normal bounds are clamped to available displays.
+
+Expanding one pane to fill a regular window hides the traffic lights so they do not overlap its title. Escape, collapsing or closing that pane, and leaving Sessions restore the controls. The whole window's native fullscreen behavior is preserved.
 
 Additional focused checks:
 

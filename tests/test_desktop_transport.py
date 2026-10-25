@@ -131,6 +131,61 @@ class DesktopIntegrationTests(unittest.TestCase):
         code, result = self.request('/api/terminals/launch', {'cwd': str(self.root), 'argv': ['/bin/sh']})
         self.assertEqual(code, 200, result)
 
+    def test_quit_reopen_restores_terminals_but_not_explicit_stops(self):
+        def launch(name):
+            code, item = self.request('/api/terminals/launch', {'cwd': str(self.root), 'argv': ['/bin/sh'], 'name': name})
+            self.assertEqual(code, 200, item)
+            return item['id']
+
+        kept = launch('Fictional saved shell')
+        closed = launch('Fictional closed shell')
+        self.assertEqual(self.request('/api/terminals/rename', {'id': kept, 'name': 'Renamed saved shell'})[0], 200)
+        self.assertEqual(self.request('/api/terminals/stop', {'id': closed})[0], 200)
+        for _ in range(2):
+            code, result = self.request('/api/desktop/shutdown', {})
+            self.assertEqual(code, 200, result)
+            self.processes[-1].wait(timeout=15)
+            records = json.loads((self.data / f'terminal-sessions-{self.workspace}.json').read_text())['sessions']
+            self.assertEqual([row['id'] for row in records], [kept])
+            self.start()
+            rows = self.request('/api/desktop/status')[1]['sessions']
+            self.assertEqual([row['id'] for row in rows], [kept])
+            self.assertEqual(rows[0]['display_name'], 'Renamed saved shell')
+            self.assertEqual(rows[0]['cwd'], str(self.root))
+            self.assertEqual(rows[0]['restored']['detail'], 'started a new shell in the same folder')
+            data = base64.b64encode(b"printf 'reopened-%s\\n' shell\n").decode()
+            self.assertEqual(self.request('/api/terminals/input', {'id': kept, 'data': data})[0], 200)
+            self.until(lambda: 'reopened-shell' in base64.b64decode(self.request('/api/terminals/output?id='+kept+'&cursor=0')[1]['data']).decode(errors='replace'))
+        self.assertEqual(self.request('/api/terminals/stop', {'id': kept})[0], 200)
+        self.assertEqual(json.loads((self.data / f'terminal-sessions-{self.workspace}.json').read_text())['sessions'], [])
+
+    def test_checkpoint_storage_failure_leaves_shutdown_incomplete_and_retryable(self):
+        from agent_desk.terminal_supervisor import SupervisorClient
+        code,shell=self.request('/api/terminals/launch',{'cwd':str(self.root),'argv':['/bin/sh'],'name':'Fictional checkpoint survivor'})
+        self.assertEqual(code,200,shell)
+        with patch.dict(os.environ,self.env):owner=SupervisorClient(self.data,self.workspace,start=False)
+        supervisor_pid=owner.call('hello')['pid'];terminal_pid=owner.get(shell['id']).process.pid
+        saved=self.data/f'terminal-sessions-{self.workspace}.json'
+        blocked=saved.with_name(saved.name+'.tmp');blocked.mkdir()
+        try:
+            code,result=self.request('/api/desktop/shutdown',{})
+            self.assertEqual(code,409,result);self.assertFalse(result['stopped'])
+            self.assertIn('save terminal sessions',result['failed'][0]['error'])
+            self.assertIsNone(self.processes[-1].poll())
+            self.assertTrue(self.request('/api/desktop/status')[1]['paused'])
+            self.assertEqual(owner.call('hello')['pid'],supervisor_pid)
+            self.assertEqual(owner.get(shell['id']).process.pid,terminal_pid)
+            self.assertIsNone(owner.get(shell['id']).process.poll())
+            self.assertEqual([row['id'] for row in json.loads(saved.read_text())['sessions']],[shell['id']])
+            self.assertEqual(json.loads((self.data/'desktop-shutdown.json').read_text())['state'],'incomplete')
+        finally:blocked.rmdir()
+        self.assertEqual(self.request('/api/desktop/shutdown',{})[0],200)
+        self.processes[-1].wait(timeout=15)
+        self.start()
+        status=self.request('/api/desktop/status')[1]
+        self.assertFalse(status['paused'])
+        self.assertEqual([row['id'] for row in status['sessions']],[shell['id']])
+
     def test_surviving_terminal_duplicate_owner_and_helper_requests(self):
         code, launched = self.request('/api/terminals/launch', {'cwd': str(self.root), 'argv': ['/bin/sh'], 'name': 'Desktop fixture'})
         self.assertEqual(code, 200, launched)

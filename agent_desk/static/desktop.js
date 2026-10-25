@@ -30,6 +30,18 @@
     }
     document.getElementById('app-fullscreen').hidden = false;
     document.getElementById('app-fullscreen').onclick = () => bridge.toggleFullscreen();
+    if (bridge.platform === 'darwin') {
+      const workspace = document.getElementById('terminal'), page = document.getElementById('agents-page');
+      let expanded;
+      const syncWindowButtons = () => {
+        const active = workspace.classList.contains('has-fullscreen') && !page.classList.contains('hidden');
+        if (expanded !== active) {expanded = active;bridge.setPaneFullscreen(active);}
+      };
+      const observer = new MutationObserver(syncWindowButtons);
+      observer.observe(workspace, {attributes: true, attributeFilter: ['class']});
+      observer.observe(page, {attributes: true, attributeFilter: ['class']});
+      syncWindowButtons();
+    }
     brand?.addEventListener('click', event => {event.preventDefault();switchPage('agents');});
     notice = document.createElement('div');notice.className = 'desktop-connection';notice.hidden = true;
     text = document.createElement('span');text.setAttribute('role','status');text.setAttribute('aria-live','polite');

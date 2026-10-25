@@ -27,7 +27,7 @@ from agent_desk.worker_screen import WorkerNotReady
 VERSION = 1
 MAX_MESSAGE = 4 * 1024 * 1024
 # Additive operations a client must not assume: an older supervisor outlives backend updates.
-FEATURES = ('wait_output',)
+FEATURES = ('wait_output', 'shutdown_for_restart')
 # Below both ends' 30 second socket timeout.
 MAX_WAIT = 20
 
@@ -145,10 +145,22 @@ class Handler(socketserver.StreamRequestHandler):
                 result = list(manager.child_pids())
             elif operation == 'shutdown':
                 # Never turn a backend update into an implicit "stop all".
-                with self.server.lifecycle_lock, manager.lock:
-                    if any(s.process.poll() is None for s in manager.sessions.values()):
-                        raise ValueError('Terminal supervisor still has running sessions; stop them explicitly first')
-                    self.server.draining = True
+                with self.server.lifecycle_lock:
+                    for_restart = request.get('for_restart') is True
+                    if for_restart:
+                        try:
+                            manager.capture_conversations()
+                            manager.persist()
+                        except (OSError, subprocess.SubprocessError) as error:
+                            raise ValueError('Could not capture or save terminal sessions; shutdown remains paused: '+str(error)) from error
+                        # Use the shared teardown/restore behavior. Exit callbacks
+                        # must not turn app shutdown into explicit terminal stops.
+                        with manager.store_lock:
+                            manager.closing = True
+                    with manager.lock:
+                        if not for_restart and any(s.process.poll() is None for s in manager.sessions.values()):
+                            raise ValueError('Terminal supervisor still has running sessions; stop them explicitly first')
+                        self.server.draining = True
                 result = None
             else:
                 session = manager.get(request.get('id'))
@@ -194,7 +206,17 @@ class Handler(socketserver.StreamRequestHandler):
                     result = None
                 else:
                     raise ValueError('Unknown terminal supervisor operation')
-            write_message(self.wfile, {'result': result})
+            try:
+                write_message(self.wfile, {'result': result})
+            except OSError:
+                if operation == 'shutdown' and request.get('for_restart') is True:
+                    # A failed acknowledgment leaves this owner available for
+                    # retry, including persistence of any intervening exits.
+                    with self.server.lifecycle_lock:
+                        with manager.store_lock:manager.closing = False
+                        self.server.draining = False
+                        manager.persist()
+                raise
             if operation == 'shutdown':
                 threading.Thread(target=self.server.shutdown, daemon=True).start()
         except (OSError, ValueError, TypeError, KeyError) as error:
@@ -450,13 +472,19 @@ class SupervisorClient:
     def close(self):
         """Detach only. Stopping sessions always requires an explicit stop."""
 
-    def shutdown(self):
+    def shutdown(self, for_restart=False):
         from agent_desk.managed_processes import OwnedProcesses
         pid = self.call('hello', socket_timeout=2)['pid']  # authenticated over the private socket
         owned = OwnedProcesses(pid)
         try:
-            result = self.call('shutdown', socket_timeout=2)  # refuses if any session is still alive
+            # Ordinary supervisor shutdown still refuses live sessions. Only
+            # full desktop shutdown requests the shared teardown with restore.
+            result = self.call('shutdown', socket_timeout=10 if for_restart else 2,
+                               **({'for_restart': True} if for_restart else {}))
         except OSError:
+            # Desktop teardown needs a confirmed checkpoint before any forced
+            # cleanup. A lost reply or capture failure must remain incomplete.
+            if for_restart:raise
             # A verified owner that stops responding still belongs to this
             # explicit shutdown. ValueError (live sessions) never takes this path.
             owned.stop()

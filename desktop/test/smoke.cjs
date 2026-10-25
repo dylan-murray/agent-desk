@@ -22,8 +22,9 @@ let electron, manager, electronLog = '';
   // Main-process errors must fail CI instead of waiting on a native error box.
   await electron.evaluate(({app})=>process.prependListener('uncaughtException',error=>{console.error(error.stack);app.exit(1);}));
   let page = await electron.firstWindow();page.setDefaultTimeout(10000);page.on('console',message=>{if(message.type()==='error')console.log('Renderer error:',message.text());});
-  const errors = [];page.on('pageerror', error => errors.push(error.message));
+  const errors = [];const pageError=error=>{errors.push(error.message);console.error('Renderer exception:',error.stack);};page.on('pageerror',pageError);
   await page.waitForFunction(() => document.querySelector('#sync-status')?.textContent.includes('Connected'), {timeout: 30000});
+  await page.waitForLoadState('load');
   console.log('Connected desktop workspace');
   assert.equal(await page.evaluate(() => typeof window.require), 'undefined');
   assert.equal(await page.evaluate(async()=>(await fetch('/api/desktop/status')).status),403,'Lifecycle authority stays in the native menu');
@@ -100,6 +101,37 @@ let electron, manager, electronLog = '';
   assert.equal(await page.locator('#agents-page').isVisible(),true,'Logo returns to Sessions');
   assert.equal(await page.evaluate(()=>window.fixtureIdentity),identity,'Logo navigation preserves the document');
   await page.screenshot({path: path.join(evidence, 'agent-desk-desktop-wide.png')});
+  const addon=path.join(fixture,'window-buttons.node'),include=path.resolve(fs.realpathSync(process.execPath),'../../include/node');
+  execFileSync('/usr/bin/clang',['-fobjc-arc','-bundle','-undefined','dynamic_lookup','-framework','AppKit','-I',include,path.join(__dirname,'native-window-buttons.m'),'-o',addon],{stdio:'pipe'});
+  await electron.evaluate((_,addon)=>{const mod={exports:{}};process.dlopen(mod,addon);global.windowButtonsFixture=mod.exports;},addon);
+  const buttonsHidden=()=>electron.evaluate(({BrowserWindow})=>global.windowButtonsFixture.hidden(BrowserWindow.getAllWindows()[0].getNativeWindowHandle()));
+  async function checkButtons(hidden) {
+    for(let i=0;i<50;i++){
+      if((await buttonsHidden()).every(value=>value===hidden))return;
+      await new Promise(resolve=>setTimeout(resolve,20));
+    }
+    assert.deepEqual(await buttonsHidden(),[hidden,hidden,hidden]);
+  }
+  assert.deepEqual(await buttonsHidden(),[false,false,false]);
+  const expandedButtons=[];
+  for(const width of [1280,480]){
+    await electron.evaluate(({BrowserWindow},width)=>BrowserWindow.getAllWindows()[0].setSize(width,800),width);
+    await page.waitForFunction(width=>innerWidth===width,width);
+    await page.waitForFunction(width=>document.querySelector('.pane-main')?.classList.contains('dock-bottom')===(width<=760),width);
+    await page.locator(`[data-pane-id="${terminal.id}"] .pane-expand`).click();
+    await page.waitForSelector('.pane-fullscreen');
+    assert.equal(await electron.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].isFullScreen()),false);
+    await checkButtons(true);
+    await page.screenshot({path:path.join(evidence,`agent-desk-pane-fullscreen-${width}.png`)});
+    expandedButtons.push(await buttonsHidden());
+    if(width===1280){
+      await page.evaluate(()=>switchPage('settings'));await checkButtons(false);
+      await page.evaluate(()=>switchPage('agents'));await checkButtons(true);
+    }
+    await page.keyboard.press('Escape');await page.waitForFunction(()=>!document.querySelector('.pane-fullscreen'));
+    await checkButtons(false);
+  }
+  assert.deepEqual(expandedButtons,[[true,true,true],[true,true,true]],'Expanded panes hide all three native buttons at desktop and narrow widths');
   for (const width of [1024,761]) {
     await electron.evaluate(({BrowserWindow},width)=>BrowserWindow.getAllWindows()[0].setSize(width,800),width);
     await page.waitForFunction(width=>innerWidth===width,width);
@@ -119,8 +151,12 @@ let electron, manager, electronLog = '';
   await page.waitForFunction(()=>document.querySelector('#app-fullscreen').getAttribute('aria-pressed')==='true');
   await checkHeader(true);
   await page.screenshot({path:path.join(evidence,'agent-desk-desktop-fullscreen.png')});
+  await page.locator(`[data-pane-id="${terminal.id}"] .pane-expand`).click();
+  await page.waitForSelector('.pane-fullscreen');
   await electron.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setFullScreen(false));
   await page.waitForFunction(()=>document.querySelector('#app-fullscreen').getAttribute('aria-pressed')==='false');
+  await checkButtons(true);
+  await page.keyboard.press('Escape');await page.waitForFunction(()=>!document.querySelector('.pane-fullscreen'));await checkButtons(false);
   await checkHeader();
   const persisted=await page.evaluate(tool=>{
     openWebPage(tool.url,'Saved fixture web pane');
@@ -141,8 +177,10 @@ let electron, manager, electronLog = '';
   const exit=new Promise(resolve=>electron.process().once('exit',resolve));
   await electron.evaluate(({app})=>app.exit(0));await exit;
   electron=await _electron.launch({executablePath:require('../node_modules/electron'),args:[path.join(root,'desktop')],env,timeout:30000});
-  page=await electron.firstWindow();page.setDefaultTimeout(10000);page.on('pageerror',error=>errors.push(error.message));
+  page=await electron.firstWindow();page.setDefaultTimeout(10000);page.on('pageerror',pageError);
+  await electron.evaluate((_,addon)=>{const mod={exports:{}};process.dlopen(mod,addon);global.windowButtonsFixture=mod.exports;},addon);
   await page.waitForFunction(()=>document.querySelector('#sync-status')?.textContent.includes('Connected'));
+  await page.waitForLoadState('load');
   assert.equal(await page.evaluate(()=>sessionStorage.getItem('agent-desk-web-pages')),null,'A cold window must not reuse the previous session records');
   assert.deepEqual(await page.evaluate(()=>[...webPages.values()]),persisted.pages);
   assert.deepEqual(await page.evaluate(()=>openPaneIds),persisted.panes);
@@ -156,13 +194,17 @@ let electron, manager, electronLog = '';
     await restored.scrollIntoViewIfNeeded();await checkHeader();
     await page.screenshot({path:path.join(evidence,`agent-desk-web-pane-restored-${width}.png`)});
   }
-  await restored.locator('.pane-close').click();
+  await restored.locator('.pane-expand').click();await checkButtons(true);
+  await page.reload();await page.waitForFunction(()=>document.querySelector('#sync-status')?.textContent.includes('Connected'));
+  await checkButtons(false);
+  await restored.locator('.pane-expand').click();await checkButtons(true);
+  await restored.locator('.pane-close').click();await checkButtons(false);
   await page.reload();
   await page.waitForFunction(()=>document.querySelector('#sync-status')?.textContent.includes('Connected'));
   assert.deepEqual(await page.evaluate(()=>[...webPages.values()]),[],'Closing the restored web pane must remove its saved record');
   assert.deepEqual(errors, []);
   await manager.shutdown();
-  console.log('PASS: desktop launch, report windows, fixture PTY streaming, backend crash recovery, isolated visual tool feedback, responsive layout, cold-start web pane/geometry restoration, closing restored panes, and shutdown.');
+  console.log('PASS: desktop launch, report windows, fixture PTY streaming, backend crash recovery, isolated visual tool feedback, responsive layout, pane fullscreen hiding/restoring native buttons across Escape/navigation/reload/close/native fullscreen, cold-start web pane/geometry restoration, closing restored panes, and shutdown.');
 })().catch(error => {console.error(error);console.error(electronLog.slice(-8000));if(fs.existsSync(path.join(profile,'logs/desktop-backend.log'))) console.error(fs.readFileSync(path.join(profile,'logs/desktop-backend.log'),'utf8').slice(-8000));process.exitCode=1;}).finally(async () => {
   if(manager)try{await manager.shutdown();}catch{}
   if(electron)try{await electron.evaluate(({app})=>app.exit(0));}catch{}

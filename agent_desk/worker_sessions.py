@@ -72,11 +72,15 @@ class WorkerSessions:
             db.execute('INSERT INTO worker_registry VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(worker) DO UPDATE SET session_id=COALESCE(excluded.session_id,worker_registry.session_id),metadata=excluded.metadata',
                        (session.id,session.parent_id,session.name,session.cwd,profile,identity,time.time(),metadata))
 
-    def checkpoint_workers(self):
+    def checkpoint_workers(self, resolve_native=False):
         with self.db() as db:coordinators={r[0] for r in db.execute('SELECT id FROM coordinators')}
         for worker in self.terminals.list():
             if worker.get('parent_id') in coordinators:
-                self.remember_worker(self.terminals.get(worker['id']))
+                session=self.terminals.get(worker['id'])
+                # Desktop quit ends the PTYs; a web backend close only detaches.
+                if resolve_native and worker['exit_code'] is None:
+                    self.resolve_worker_session(session,strict=True)
+                self.remember_worker(session)
 
     def recover_workers(self):
         live={w['id'] for w in self.terminals.list()}
@@ -131,7 +135,7 @@ class WorkerSessions:
                                    session_id=self.mailbox.conversation(self.desk,worker['id']),result=tasks[-1]['result'][:6000]))
         return result
 
-    def resolve_worker_session(self, session):
+    def resolve_worker_session(self, session, strict=False):
         identity=self.mailbox.conversation(self.desk,session.id)
         if identity:return identity
         with self.db() as db:
@@ -147,7 +151,10 @@ class WorkerSessions:
                 with self.db() as db:attached=db.execute('SELECT 1 FROM attached_workers WHERE worker=? AND coordinator=?',(session.id,session.parent_id)).fetchone()
                 if not attached:continue
             try:identity=find_conversation(profile,task['id'])
-            except (OSError,subprocess.TimeoutExpired):return None
+            except (OSError,subprocess.TimeoutExpired) as error:
+                if strict:
+                    raise ValueError('Could not capture conversation for worker '+session.id+'; shutdown remains paused') from error
+                return None
             if identity:
                 self.mailbox.remember_conversation(self.desk,task['id'],identity,harness_of(profile))
                 self.remember_worker(session)

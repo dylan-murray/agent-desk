@@ -46,7 +46,11 @@ let electron;
  await page.evaluate(()=>Promise.all([agentDeskDesktop.recover('retry'),agentDeskDesktop.recover('retry')]));
  await page.waitForFunction(async()=>(await agentDeskDesktop.snapshot()).connection==='connected');
  assert.equal(await page.evaluate(()=>window.testIdentity),identity);
- await electron.evaluate(({BrowserWindow})=>{const win=BrowserWindow.getAllWindows()[0];win.close();win.show();});
+ await electron.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].close());
+ assert.equal(await electron.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].isVisible()),false);
+ // Dock activation must reopen the hidden window without a menu bar shortcut.
+ await electron.evaluate(({app})=>app.emit('activate'));
+ assert.equal(await electron.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].isVisible()),true);
  assert.equal(await page.evaluate(()=>window.testIdentity),identity);
  console.log(JSON.stringify({loadingVisibleMs:visible,workspaceMs:Date.now()-start,injectedDelayMs:12000}));
  await electron.evaluate(({Menu})=>Menu.getApplicationMenu().items[0].submenu.items.find(item=>item.label==='Quit Agent Desk').click());
