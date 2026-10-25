@@ -1,12 +1,12 @@
 # Agent Desk for macOS
 
-The desktop app targets Apple Silicon and macOS 14+. It bundles Python and Node; install and authenticate your agent CLIs separately. The normal browser command, `python3 -m agent_desk`, remains supported with its localhost HTTP/WebSocket server.
+The desktop app targets Apple Silicon and macOS 14+. Packaged builds bundle Python and Node; source development uses your local interpreters. Install and authenticate your agent CLIs separately. The normal browser command, `python3 -m agent_desk`, remains supported with its localhost HTTP/WebSocket server.
 
 Desktop HTTP requests use native `fetch()` through `agent-desk://app` and a private Unix socket. Terminal events use one Electron message-port adapter over the existing socket transport. Agent Desk and compatible managed visual tools do not need TCP listening ports. Agent CLIs, login callbacks, MCP integrations, and development servers you run may use ports independently.
 
 ## Development
 
-Use Python 3.11+ and Node 22.12+. From the checkout:
+Use Python 3.11+ and Node 22.12+. For the first launch, start in the repository root:
 
 ```sh
 npm ci
@@ -16,7 +16,15 @@ npx install-electron --no
 npm start
 ```
 
-`npm start` prepares a cached, locally signed development bundle named Agent Desk Dev with its own Dock label and profile. It still loads the current checkout, and Forge’s restart command remains available. The bundle is rebuilt when Electron or the icon changes; `node_modules` and the installed app are not modified.
+After setup, launch from the repository root with:
+
+```sh
+npm --prefix desktop start
+```
+
+This runs the same command as `npm start` inside `desktop/`. The remaining npm commands in this guide run from `desktop/`.
+
+The start command prepares a cached, locally signed development bundle named Agent Desk Dev with its own Dock label and profile. It still loads the current checkout, and Forge’s restart command remains available. The bundle is rebuilt when Electron or the icon changes; `node_modules` and the installed app are not modified.
 
 About shows **Version 0.1.0** (using the shared version from `../pyproject.toml`) with a separate **Development build · <commit>** or **Release build · <commit>** line. Running from source always shows Development build, including at a release-tagged commit. Full metadata, including the UTC build date and uncommitted-change flag, is saved to `logs/build-info.json`, available through **Agent Desk → Open Local Diagnostics**. Desktop source package manifests deliberately omit a separate version; packaging derives it from the project version.
 

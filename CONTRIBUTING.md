@@ -19,7 +19,13 @@ Set `AGENT_DESK_DATA_DIR` to a temporary directory when running a separate devel
 
 ## Desktop development
 
-Agent Desk also has a macOS desktop app. See [desktop setup](desktop/README.md) for Apple Silicon and macOS 14+ requirements, bundled runtimes, isolated checks, and signing. Use the browser or desktop app for development; browser commands are below. Source/debug apps default to the separate Agent Desk Dev profile; packaged apps use Agent Desk. `AGENT_DESK_PROFILE_DIR` overrides either default. Installed runtime code lives in `<profile>/runtime/`; leave legacy hashed `runtimes/` directories untouched. Finish Stop Work and Quit before updating the app or restarting changed source. The launcher refuses changed runtime code while managed owners remain; same-build crash recovery is unchanged. Desktop checks use fixture sessions and must never point at live data.
+Desktop source development requires Apple Silicon, macOS 14+, Python 3.11+, and Node.js 22.12+. Complete the dependency installation in [desktop setup](desktop/README.md#development), then launch from the repository root:
+
+```sh
+npm --prefix desktop start
+```
+
+See [desktop contributor instructions](desktop/AGENTS.md) for desktop changes, checks, and packaging. Source/debug apps default to the separate Agent Desk Dev profile and use local Python and Node; packaged apps use Agent Desk and bundle both runtimes. `AGENT_DESK_PROFILE_DIR` overrides either default. Installed runtime code lives in `<profile>/runtime/`; leave legacy hashed `runtimes/` directories untouched. Finish Stop Work and Quit before updating the app or restarting changed source. The launcher refuses changed runtime code while managed owners remain; same-build crash recovery is unchanged. Desktop checks use fixture sessions and must never point at live data.
 
 ## Versioning
 

@@ -4,7 +4,7 @@
     <img src="docs/images/wordmark-light.svg" alt="Agent Desk" width="260">
   </picture>
   <br>
-  Run, coordinate, and review coding agents from one browser tab
+  Run, coordinate, and review coding agents in your browser or on macOS
 </h4>
 
 <p align="center">
@@ -48,6 +48,8 @@ prerequisites, starts Agent Desk, and adds your Claude and Codex accounts.
 
 To do it by hand:
 
+### Browser
+
 ```sh
 git clone https://github.com/dylan-murray/agent-desk.git
 cd agent-desk
@@ -62,7 +64,9 @@ Using more than one Claude, Codex, Grok, OpenCode or Pi login, or more than one 
 
 The browser server only listens on 127.0.0.1. It saves its state in `data/`, or wherever `AGENT_DESK_DATA_DIR` points.
 
-Agent Desk also has a macOS desktop app. See [desktop setup](desktop/README.md) for local Apple Silicon builds on macOS 14+. Use Agent Desk in your browser or in the desktop app.
+### macOS desktop
+
+Download the macOS desktop app from [Releases](https://github.com/dylan-murray/agent-desk/releases).
 
 ## 📚 Docs
 

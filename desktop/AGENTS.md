@@ -2,6 +2,8 @@
 
 Read [README.md](README.md) for setup, packaging, release tags, signing, and checks. The repository's [contributor instructions](../CONTRIBUTING.md) and root `AGENTS.md` also apply. [VALIDATION.md](VALIDATION.md) records verification evidence and outstanding acceptance; it is not the setup guide.
 
+After dependency setup, launch from the repository root with `npm --prefix desktop start`, or run `npm start` from this folder.
+
 - Keep Electron shell, native lifecycle, and packaging code here. Shared application behavior belongs in `../agent_desk/`; keep browser mode working.
 - `[project].version` in `../pyproject.toml` is the only maintained app version. Do not add an independent version to desktop package manifests. Many commits may share a version; release tags use `desktop-MAJOR.MINOR.PATCH`, without `v`, and must match the project version.
 - Release identity and Apple signing are separate. Only a validated desktop tag push produces release metadata. `AGENT_DESK_APPLE_SIGNING=1` enables Developer ID signing/notarization; it does not publish a release. Keep credentials outside Git.
