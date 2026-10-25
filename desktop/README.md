@@ -1,12 +1,12 @@
 # Agent Desk for macOS
 
-The desktop app targets Apple Silicon and macOS 14+. Packaged builds bundle Python and Node; source development uses your local interpreters. Install and authenticate your agent CLIs separately. The normal browser command, `python3 -m agent_desk`, remains supported with its localhost HTTP/WebSocket server.
+The desktop app targets Apple Silicon and macOS 14+. Packaged builds bundle Python and Node 24; source development uses your local interpreters. Install and authenticate your agent CLIs separately. The normal browser command, `python3 -m agent_desk`, remains supported with its localhost HTTP/WebSocket server.
 
 Desktop HTTP requests use native `fetch()` through `agent-desk://app` and a private Unix socket. Terminal events use one Electron message-port adapter over the existing socket transport. Agent Desk and compatible managed visual tools do not need TCP listening ports. Agent CLIs, login callbacks, MCP integrations, and development servers you run may use ports independently.
 
 ## Development
 
-Use Python 3.11+ and Node 22.12+. For the first launch, start in the repository root:
+Use Python 3.11+ and Node 24, matching desktop CI and the bundled Node runtime. For the first launch, start in the repository root:
 
 ```sh
 npm ci

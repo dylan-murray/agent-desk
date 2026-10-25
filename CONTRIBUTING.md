@@ -19,7 +19,7 @@ Set `AGENT_DESK_DATA_DIR` to a temporary directory when running a separate devel
 
 ## Desktop development
 
-Desktop source development requires Apple Silicon, macOS 14+, Python 3.11+, and Node.js 22.12+. Complete the dependency installation in [desktop setup](desktop/README.md#development), then launch from the repository root:
+Desktop source development uses Apple Silicon, macOS 14+, Python 3.11+, and Node.js 24, matching desktop CI and the bundled Node runtime. Complete the dependency installation in [desktop setup](desktop/README.md#development), then launch from the repository root:
 
 ```sh
 npm --prefix desktop start

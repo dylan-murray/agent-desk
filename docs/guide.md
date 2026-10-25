@@ -673,13 +673,13 @@ Each new run saves its exact automation instructions and triggering event, uses 
 
 ## macOS desktop app
 
-Agent Desk also has a macOS desktop app for Apple Silicon on macOS 14+. For source development, use Python 3.11+ and Node.js 22.12+, and complete the dependency installation in [desktop setup](../desktop/README.md#development). Then launch from the repository root:
+Agent Desk also has a macOS desktop app for Apple Silicon on macOS 14+. For source development, use Python 3.11+ and Node.js 24, matching desktop CI and the bundled Node runtime, and complete the dependency installation in [desktop setup](../desktop/README.md#development). Then launch from the repository root:
 
 ```sh
 npm --prefix desktop start
 ```
 
-Packaged desktop builds bundle Python and Node. Desktop mode uses Unix sockets instead of a localhost listener; browser mode starts with `python3 -m agent_desk`. Installed apps default to `~/Library/Application Support/Agent Desk`; source/debug apps use `~/Library/Application Support/Agent Desk Dev`. Persistent state lives in `data/`, with separate `browser/`, `runtime/`, and `logs/` folders. Legacy hashed `runtimes/` directories are left untouched. Set `AGENT_DESK_PROFILE_DIR` to select another desktop profile. Desktop diagnostic logs expire after 14 days, rotate at 5 MiB and daily, and share a 50 MiB budget; cleanup runs on backend startup and while logging. Session history and terminal/tool output are retained separately. Agent CLIs are installed and authenticated separately; their integrations and your development servers may still use ports.
+Packaged desktop builds bundle Python and Node 24. Desktop mode uses Unix sockets instead of a localhost listener; browser mode starts with `python3 -m agent_desk`. Installed apps default to `~/Library/Application Support/Agent Desk`; source/debug apps use `~/Library/Application Support/Agent Desk Dev`. Persistent state lives in `data/`, with separate `browser/`, `runtime/`, and `logs/` folders. Legacy hashed `runtimes/` directories are left untouched. Set `AGENT_DESK_PROFILE_DIR` to select another desktop profile. Desktop diagnostic logs expire after 14 days, rotate at 5 MiB and daily, and share a 50 MiB budget; cleanup runs on backend startup and while logging. Session history and terminal/tool output are retained separately. Agent CLIs are installed and authenticated separately; their integrations and your development servers may still use ports.
 
 The desktop traffic lights and logo share a compact header aligned with the workspace toolbar. Drag empty header space to move the window, or click the logo to return to Sessions. In fullscreen, the logo centers within the sidebar.
 
