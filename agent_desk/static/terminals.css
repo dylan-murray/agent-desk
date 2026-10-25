@@ -319,7 +319,7 @@ body.annotating .web-pane-frame{pointer-events:none}
    visible height and places each pane with grid-area. Rows past one screen scroll. */
 .workspace-empty{grid-column:1/-1;grid-row:1/span 12}
 /* The extra right padding keeps the resize strip of a right-hand pane inside the scroller. */
-.terminal-workspace.pane-overflow{overflow-y:auto;overflow-x:hidden;scrollbar-width:thin;padding-right:6px;margin-right:-6px}
+.terminal-workspace.pane-overflow{overflow-y:auto;overflow-x:hidden;scrollbar-width:thin;padding-right:6px;margin-right:-6px;padding-bottom:24px;scroll-padding-bottom:24px}
 .pane-edges{position:relative;z-index:4;pointer-events:none;min-width:0;min-height:0}
 .pane-resize{position:absolute;padding:0;border:0;background:none;pointer-events:auto;touch-action:none}
 .pane-resize[data-edge=e]{top:14px;bottom:14px;right:-9px;width:8px;cursor:ew-resize}
