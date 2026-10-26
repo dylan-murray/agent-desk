@@ -78,6 +78,10 @@ jobs:
         working-directory: desktop
         env:
           AGENT_DESK_EVIDENCE_DIR: ${{ runner.temp }}
+      - run: npm run test:development-workflow
+        working-directory: desktop
+        env:
+          AGENT_DESK_EVIDENCE_DIR: ${{ runner.temp }}
       - run: npm run package
         working-directory: desktop
       - run: npm run test:packaged

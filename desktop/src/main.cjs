@@ -9,7 +9,7 @@ const {Backend, privateJSON, atomicJSON} = require('./backend.cjs');
 const {trustedFrame, assetPath, externalURL, toolCSP, CSP, ORIGIN, MAX_BODY} = require('./security.cjs');
 const {applicationRoute, applicationAuthority, forward} = require('./http.cjs');
 const {openStream} = require('./streams.cjs');
-const {prepareRuntime} = require('./runtime.cjs');
+const {prepareRuntime, managedProcesses} = require('./runtime.cjs');
 const {restoreBounds} = require('./window-state.cjs');
 const {createProfile} = require('./profile.cjs');
 const {configureAbout} = require('./about.cjs');
@@ -19,6 +19,8 @@ protocol.registerSchemesAsPrivileged([
   {scheme: 'agent-tool', privileges: {standard: true, secure: true, supportFetchAPI: true, corsEnabled: true}},
 ]);
 const windows = new Set(), streams = new Map();
+// Popped-out tool windows: webContents ID -> the one agent-tool origin each may load.
+const toolWindows = new Map();
 let backend, mainWindow, quitting = false, quitPending = false, recovering = null;
 let workspaceLoaded = false, fixtureFailed = false;
 let paneFullscreen = false;
@@ -70,7 +72,8 @@ async function boot() {
     const frame=details.frame;
     const sameTool=details.initiatorOrigin===origin || frame?.url.startsWith(origin+'/');
     const navigation=details.method==='GET' && details.resourceType==='subFrame' && windows.has(details.webContentsId) && (details.initiatorOrigin===ORIGIN || frame?.parent?.url.startsWith(ORIGIN+'/'));
-    if (!sameTool && !navigation) return callback({cancel:true});
+    const popout=details.method==='GET' && details.resourceType==='mainFrame' && toolWindows.get(details.webContentsId)===origin;
+    if (!sameTool && !navigation && !popout) return callback({cancel:true});
     callback({requestHeaders:{...details.requestHeaders,'X-Agent-Desk-Tool-Bridge':toolBridgeProof}});
   });
   protocolFor(appSession, app.isPackaged ? path.join(process.resourcesPath, 'shell') : path.resolve(__dirname, '../..'));
@@ -92,6 +95,7 @@ async function boot() {
   mainWindow.once('ready-to-show', () => {show();markTiming('shellVisibleAt');});
   ipcMain.on('desk:workspace-ready', event => {requireFrame(event);if (state.connection === 'connected') markTiming('workspaceReadyAt');});
   ipcMain.handle('desk:state', event => {requireFrame(event);return state;});
+  ipcMain.handle('desk:open-tool', (event, value) => {requireFrame(event);return openTool(value);});
   ipcMain.handle('desk:fullscreen', event => {requireFrame(event);const win = BrowserWindow.fromWebContents(event.sender);win.setFullScreen(!win.isFullScreen());});
   ipcMain.on('desk:pane-fullscreen', (event, active) => {
     requireFrame(event);
@@ -104,6 +108,8 @@ async function boot() {
       {label: 'Resume Scheduling and Launches', click: () => void resume()},
       {label: 'Finish Previous Shutdown', click: () => void finishShutdown()},
       {label: 'Force Stop Backend…', click: () => void forceBackend()},
+      // Source runs load Python changes only in a new backend; terminals stay with the supervisor.
+      ...app.isPackaged ? [] : [{label: 'Restart Backend', click: () => void restartBackend()}],
       {label: 'Open Local Diagnostics', click: () => shell.openPath(profile.logs)},
       {label: 'Releases…', click: () => shell.openExternal('https://github.com/dylan-murray/agent-desk/releases')},
       {type: 'separator'}, {label: 'Quit Agent Desk', accelerator: 'CmdOrCtrl+Q', click: () => void requestQuit()}]},
@@ -154,6 +160,30 @@ function registerWindow(win, workspace) {
 
     return {action: 'deny'};
   });
+}
+async function openTool(value) {
+  const url = new URL(typeof value === 'string' ? value : '');
+  if (url.protocol !== 'agent-tool:' || !/^t[a-f0-9]{32}$/.test(url.hostname) || url.username || url.password || url.port) throw Error('Not a desktop tool address');
+  const origin = 'agent-tool://' + url.hostname;
+  if (state.connection !== 'connected') throw Error('Workspace is not connected.');
+  const registry = await backend.request({path: '/api/desktop/tools'});
+  if (registry.status !== 200 || !JSON.parse(Buffer.from(registry.body, 'base64')).tools.some(tool => tool.url === origin)) throw Error('This tool is no longer running.');
+  for (const [id, allowed] of toolWindows) {
+    const existing = BrowserWindow.fromWebContents(require('electron').webContents.fromId(id));
+    if (allowed === origin && existing) {existing.show();existing.focus();return;}
+  }
+  // No preload: the tool gets no desk bridge, application authority or native IPC.
+  const win = new BrowserWindow({width: 1100, height: 800, minWidth: 480, minHeight: 400, title: 'Agent Desk tool',
+    webPreferences: {session: mainWindow.webContents.session, sandbox: true, contextIsolation: true, nodeIntegration: false, nodeIntegrationInSubFrames: false, webviewTag: false, webSecurity: true}});
+  const wc = win.webContents;toolWindows.set(wc.id, origin);
+  const own = target => target.startsWith(origin + '/');
+  wc.on('will-attach-webview', event => event.preventDefault());
+  wc.on('will-navigate', event => {if (!own(event.url)) event.preventDefault();});
+  wc.on('will-redirect', event => {if (event.isMainFrame ? !own(event.url) : event.url.startsWith('agent-desk:')) event.preventDefault();});
+  wc.on('will-frame-navigate', event => {if (!event.isMainFrame && event.url.startsWith('agent-desk:')) event.preventDefault();});
+  wc.on('destroyed', () => toolWindows.delete(wc.id));
+  wc.setWindowOpenHandler(() => ({action: 'deny'}));
+  try {await win.loadURL(url.href);} catch {if (!win.isDestroyed()) win.destroy();throw Error('Could not open the tool.');}
 }
 function protocolFor(appSession, source) {
   appSession.protocol.handle('agent-desk', async request => {
@@ -268,10 +298,21 @@ function connect() {
 async function resume() {
   try {await backend.resume();publish({paused: false});} catch (error) {dialog.showErrorBox('Could not resume', error.message);}
 }
+// Status from a reachable backend, or null when nothing managed is running.
+// A dead backend under surviving owners is restarted so they can be stopped;
+// it attaches to them, as crash recovery does. Unknown states never quit.
+async function managedBackend() {
+  try {return await backend.status();} catch (error) {
+    const running = managedProcesses(profile);
+    if (running.some(item => item.backend)) throw error;
+    if (!running.length) return null;
+    return backend.start(() => quitting);
+  }
+}
 async function finishShutdown() {
   if (quitPending) return;quitPending = true;
   retryAllowed = false;retries.clear();
-  try {await backend.shutdown();quitting = true;app.quit();}
+  try {if (backend && await managedBackend()) await backend.shutdown();quitting = true;app.quit();}
   catch (error) {dialog.showErrorBox('Previous shutdown is incomplete', error.message);show();}
   finally {quitPending = false;}
 }
@@ -280,9 +321,9 @@ async function requestQuit() {
   quitRequested = true;retries.clear();
   try {
     if (recovering) {quitting = true;await recovering;quitting = false;}
-    if (!backend || !backend.child && !backend.record) {quitting = true;app.quit();return;}
-    const status = await backend.status();
-    if (status.active) {
+    if (!backend) {quitting = true;app.quit();return;}
+    const status = await managedBackend();
+    if (status?.active) {
       const activity = status.coordinators;
       const answer = await dialog.showMessageBox(mainWindow, {type: 'question', message: 'Work is still running', detail: `${status.sessions.length} local terminals, ${status.tools.length} tools, ${status.executions.length} jobs, ${status.schedules} enabled schedules. ${activity.planning} coordinators planning, ${activity.queued_turns} queued coordinator turns, ${activity.queued_deliveries} queued deliveries, ${activity.monitors} active PR monitors. Remote work and unrelated processes will remain running.`, buttons: ['Keep Running', 'Stop Work and Quit', 'Cancel'], defaultId: 0, cancelId: 2});
       if (answer.response === 0) {mainWindow.hide();return;}
@@ -292,15 +333,33 @@ async function requestQuit() {
   } catch (error) {retryAllowed = false;publish({connection: 'failed', error: 'Could not confirm shutdown. Use the Agent Desk menu to recover.'});show();}
   finally {quitRequested = false;retries.schedule();}
 }
+function verifiedBackendPid() {
+  backend.loadRecord();
+  const {execFileSync} = require('node:child_process');
+  const record = backend.record;
+  const command = execFileSync('/bin/ps', ['-p', String(record.pid), '-o', 'command='], {encoding: 'utf8'}).trim();
+  const birth = execFileSync('/bin/ps', ['-p', String(record.pid), '-o', 'lstart='], {encoding: 'utf8'}).trim();
+  if (!record.process_start || birth !== record.process_start || !command.includes('-m agent_desk.desktop_backend --workspace-id ' + backend.workspace)) throw Error('Process identity could not be verified. No process was signalled.');
+  return record.pid;
+}
+async function restartBackend() {
+  try {
+    if (!backend || quitting || quitPending || quitRequested) return;
+    const pid = verifiedBackendPid();
+    process.kill(pid, 'SIGTERM');
+    const deadline = Date.now() + 15000;
+    for (;;) {
+      try {process.kill(pid, 0);} catch (error) {if (error.code === 'ESRCH') break;throw error;}
+      if (Date.now() > deadline) throw Error('The backend has not exited. Use Force Stop Backend… if it is unresponsive.');
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    disconnected();return connect();
+  } catch (error) {dialog.showErrorBox('Could not restart the backend', error.message);}
+}
 async function forceBackend() {
   try {
-    backend.loadRecord();
-    const {execFileSync} = require('node:child_process');
-    const record = backend.record;
-    const command = execFileSync('/bin/ps', ['-p', String(record.pid), '-o', 'command='], {encoding: 'utf8'}).trim();
-    const birth = execFileSync('/bin/ps', ['-p', String(record.pid), '-o', 'lstart='], {encoding: 'utf8'}).trim();
-    if (!record.process_start || birth !== record.process_start || !command.includes('-m agent_desk.desktop_backend --workspace-id ' + backend.workspace)) throw Error('Process identity could not be verified. No process was signalled.');
+    const pid = verifiedBackendPid();
     const answer = await dialog.showMessageBox(mainWindow, {type: 'warning', message: 'Force stop the unresponsive backend?', detail: 'Its terminal supervisor and agents will remain running. In-flight backend operations may be interrupted. Reconnect afterward to recover the workspace.', buttons: ['Cancel', 'Force Stop Backend'], defaultId: 0, cancelId: 0});
-    if (answer.response === 1) {process.kill(record.pid, 'SIGKILL');disconnected();return {stopped: true};}
+    if (answer.response === 1) {process.kill(pid, 'SIGKILL');disconnected();return {stopped: true};}
   } catch (error) {dialog.showErrorBox('Could not force stop', error.message);}
 }

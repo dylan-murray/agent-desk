@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld('agentDeskDesktop', {
   toggleFullscreen: () => ipcRenderer.invoke('desk:fullscreen'),
   setPaneFullscreen: active => ipcRenderer.send('desk:pane-fullscreen', active),
   copyText: text => ipcRenderer.invoke('desk:copy-text', text),
+  openTool: url => ipcRenderer.invoke('desk:open-tool', url),
   subscribe: callback => {const listener = (_event, state) => callback(state);ipcRenderer.on('desk:state', listener);return () => ipcRenderer.removeListener('desk:state', listener);},
   recover: action => ipcRenderer.invoke('desk:recover', action),
   stream: callback => {

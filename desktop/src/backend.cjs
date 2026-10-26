@@ -33,10 +33,11 @@ function cleanEnvironment(original) {
   return env;
 }
 class Backend {
-  constructor({dataDir, logDir, source, python, node, sourceIdentity, env = process.env}) {
+  constructor({dataDir, logDir, source, python, node, development = false, env = process.env}) {
     this.dataDir = fs.realpathSync(privateDirectory(path.resolve(dataDir)));
     this.source = source;this.python = python;this.node = node;this.originalEnv = env;
-    this.sourceIdentity = sourceIdentity;
+    // Source runs enable development tools (annotations) as the browser does by default.
+    this.development = development;
     this.logDir = path.resolve(logDir || path.join(this.dataDir, '..', 'logs'));
     const identityFile = path.join(this.dataDir, 'desktop-profile.json');
     if (!fs.existsSync(identityFile)) atomicJSON(identityFile, {workspace: crypto.randomBytes(16).toString('hex')});
@@ -88,9 +89,6 @@ class Backend {
     return value;
   }
   async start(cancelled = () => false) {
-    if (this.sourceIdentity && require('./runtime.cjs').sourceIdentity(this.source) !== this.sourceIdentity) {
-      throw Object.assign(Error('Source code changed. Finish Stop Work and Quit, then restart Agent Desk Dev.'), {retryable: false});
-    }
     try {this.loadRecord();return await this.status();} catch (error) {
       if (error.retryable === false) throw error;
       if (this.record) {
@@ -120,7 +118,7 @@ class Backend {
     const log = openBootstrapLog(this.logDir);
     let spawnError;
     try {
-      this.child = spawn(this.python, ['-s', '-m', 'agent_desk.desktop_backend', '--workspace-id', this.workspace, '--production'], {cwd: this.source, env, detached: true, stdio: ['ignore', log, log]});
+      this.child = spawn(this.python, ['-s', '-m', 'agent_desk.desktop_backend', '--workspace-id', this.workspace, ...this.development ? [] : ['--production']], {cwd: this.source, env, detached: true, stdio: ['ignore', log, log]});
       this.child.on('error', error => {spawnError = error;});this.child.unref();
     } finally {fs.closeSync(log);}
     const deadline = Date.now() + 20000;

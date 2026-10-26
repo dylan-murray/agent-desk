@@ -166,3 +166,30 @@ Implemented: an expanded pane in a regular macOS window hides the native traffic
 Verified: the real Electron smoke fixture first reproduced all three AppKit buttons remaining visible over an expanded pane at 1280px and 480px. After the fix, a fixture-only Node-API/AppKit inspector verified their actual hidden state and restoration across Escape, page switches, reload, pane close and native fullscreen transitions. The complete native smoke check passed, including backend crash recovery, tool feedback and cold-start web-pane restoration. A browser-only header check passed at desktop/narrow widths and retained browser fullscreen. An intermediate native run hit a startup disconnect, and another caught a load/reload timing race; the final isolated run passed after the fixture waited for full document loading before navigation.
 
 Before/after pane-content screenshots `agent-desk-pane-fullscreen-{1280,480}[-before].png` were saved under `AGENT_DESK_EVIDENCE_DIR` or the system temporary directory. Content screenshots exclude native window controls; the AppKit inspector verified those separately. The wide and narrow content screenshots were visually inspected. No live sessions or installed user profile were used. Implementation and verification are complete; user acceptance remains pending.
+
+## Development workflow, failed-start quit and tool pop-out fixes (2026-10-26)
+
+Requested in review of PR #18: does the browser development workflow still work, do annotation-driven edits reach the Electron app, does Electron need compiling, and can Electron use the annotation tool. Review findings fixed in the same change: Quit after a failed backend start, source edits stranding sessions after a backend crash, and the denied tool pop-out.
+
+Implemented:
+
+- Quit and Finish Previous Shutdown distinguish a backend that is unreachable but alive (unchanged: stays open) from one that is gone. With no managed backend, supervisor, tool or worker processes left for the profile, the app exits. With survivors, it restarts the backend (which reattaches) so Stop Work and Quit can stop them; if that fails the app stays open.
+- Source runs drop the source-fingerprint barriers and follow browser mode: static files load fresh on View → Reload, **Agent Desk → Restart Backend** (source runs only) gracefully restarts a verified backend under the surviving supervisor, and Retry after a broken backend edit reconnects to the same terminals. Supervisor changes still need Stop Work and Quit. Packaged runtime integrity and update guards are unchanged.
+- Source runs start the backend without `--production`, enabling the existing annotation launcher, Feedback page and Send to agent. Notes save to the desktop profile's `data/feedback.json`. Installed apps stay production.
+- A docked tool's pop-out opens through a registered-desk-frame IPC call into a separate sandboxed window with no preload, limited to that tool's registered `agent-tool://` origin. Tool content cannot open windows or navigate elsewhere. Browser mode keeps "Open in a browser tab".
+
+Verified locally (Apple Silicon, disposable profiles, fictional sessions; `AGENT_DESK_PYTHON` set to Python 3.14 because the default shell `python3` here is 3.10):
+
+| Check | Result |
+| --- | --- |
+| Desktop Node suite | 37 passed |
+| Root Node suite | 34 passed |
+| Full Python suite | 442 tests, OK; one optional browser check skipped |
+| `test:development-workflow` (new, real Electron) | Quit exits after an exited or missing interpreter; annotations save/reload/edit/delete/send in the profile at 1280 and 480px with the checkout `data/` untouched; Restart Backend keeps terminal and document; post-edit crash refuses an orphaning Quit, then Retry reconnects; pop-out has no bridge or desk API, cannot open windows or navigate to the desk, reloads, closes, refocuses, rejects unregistered tools |
+| Existing Electron fixtures | startup, transport, quit-preparation, quit, backend-lifecycle, webhooks and smoke passed |
+| Browser mode (isolated server) | `development: true` unchanged; pane-docks, web-panes, annotation-modals/launcher-move/regions/batch, feedback-startup and feedback-followup passed |
+| Local package | `test:packaged` passed, now asserting production config and a disabled feedback API |
+
+Before evidence on the unchanged PR #18 source: Quit after a failed start left the window open with "Could not confirm shutdown"; source Electron had `development: false` with no visible launcher; the pop-out button opened no window. The same scenario after the change exits, shows the launcher, and opens one tool window. Screenshots are local only (some include locally discovered session names) and are not committed.
+
+Not verified: DMG build, Developer ID signing, physical clicks on native menus outside Playwright, and long-running sessions with real agent CLIs. User acceptance is pending.

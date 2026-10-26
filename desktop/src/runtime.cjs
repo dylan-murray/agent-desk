@@ -25,20 +25,9 @@ function verifyRuntime(folder, manifest) {
   }
   walk(root);
 }
-function sourceIdentity(source) {
-  const hash = crypto.createHash('sha256');
-  function walk(relative) {
-    const file = path.join(source, relative), info = fs.statSync(file);
-    if (info.isDirectory()) {
-      for (const name of fs.readdirSync(file).sort()) {
-        if (!name.startsWith('.') && !['__pycache__', 'node_modules', 'out'].includes(name)) walk(path.join(relative, name));
-      }
-    } else {hash.update(relative);hash.update(fs.readFileSync(file));}
-  }
-  for (const relative of ['agent_desk', 'scripts', 'desktop/src', 'desktop/resources', 'desktop/package.json', 'desktop/forge.config.cjs', 'pyproject.toml']) walk(relative);
-  return hash.digest('hex');
-}
-function requireStopped(profile) {
+// Live managed processes for this profile: its backend, terminal supervisor,
+// tool servers and workflow workers. Zombies and stopped records do not count.
+function managedProcesses(profile) {
   const pids = new Set();
   function record(file) {
     try {const item = privateJSON(file);if (!item.stopped && Number.isSafeInteger(item.pid)) pids.add(item.pid);}
@@ -51,16 +40,22 @@ function requireStopped(profile) {
   if (fs.existsSync(tools)) for (const name of fs.readdirSync(tools)) if (name.endsWith('.json')) record(path.join(tools, name));
   let workspace;
   try {workspace = privateJSON(path.join(profile.data, 'desktop-profile.json')).workspace;} catch (error) {if (error.code !== 'ENOENT') throw error;}
+  // The backend passes the resolved data path to its children (/tmp is /private/tmp).
+  const folders = [...new Set([profile.data, fs.realpathSync(profile.data)])];
   const processes = execFileSync('/bin/ps', ['-axo', 'pid=,stat=,command='], {encoding: 'utf8', maxBuffer: 16 * 1024 * 1024});
+  const found = [];
   for (const line of processes.trim().split('\n')) {
     const match = line.trim().match(/^(\d+)\s+(\S+)\s+(.*)$/);
     if (!match || match[2].startsWith('Z')) continue;
     const pid = Number(match[1]), command = match[3];
-    if (pids.has(pid) || workspace && command.includes('agent_desk.desktop_backend --workspace-id ' + workspace) ||
-        command.includes(profile.data) && /agent_desk\.terminal_supervisor|workflow_worker\.py|serve_skill_ui\.py/.test(command)) {
-      throw Object.assign(Error('Finish Stop Work and Quit in the previous app before updating or restarting changed code. Managed processes are still running (PID ' + pid + ').'), {retryable: false});
-    }
+    const backend = !!workspace && command.includes('agent_desk.desktop_backend --workspace-id ' + workspace);
+    if (backend || pids.has(pid) || folders.some(folder => command.includes(folder)) && /agent_desk\.terminal_supervisor|workflow_worker\.py|serve_skill_ui\.py/.test(command)) found.push({pid, backend});
   }
+  return found;
+}
+function requireStopped(profile) {
+  const [running] = managedProcesses(profile);
+  if (running) throw Object.assign(Error('Finish Stop Work and Quit in the previous app before updating or restarting changed code. Managed processes are still running (PID ' + running.pid + ').'), {retryable: false});
 }
 function stageRuntime(bundled, profile, manifest, progress = () => {}) {
   const target = profile.runtime;
@@ -88,12 +83,13 @@ async function runtime(app, progress = () => {}) {
   let previous;
   try {previous = privateJSON(stamp);} catch (error) {if (error.code !== 'ENOENT') throw error;}
   if (!app.isPackaged) {
-    const source = path.resolve(__dirname, '../..'), identity = sourceIdentity(source);
-    if (previous?.identity !== identity) requireStopped(profile);
+    // Source runs follow the browser contract: static files load fresh on reload,
+    // a restarted backend attaches to the surviving supervisor, and supervisor
+    // code changes need Stop Work and Quit. Packaged runtimes keep the guards below.
+    const source = path.resolve(__dirname, '../..');
     const node = process.env.AGENT_DESK_NODE || execFileSync('/usr/bin/which', ['node'], {encoding: 'utf8'}).trim();
     const python = process.env.AGENT_DESK_PYTHON || execFileSync('/usr/bin/which', ['python3'], {encoding: 'utf8'}).trim();
-    atomicJSON(stamp, {identity});
-    return {source, python, node, sourceIdentity: identity};
+    return {source, python, node, development: true};
   }
   const bundled = path.join(app.resourcesPath || process.resourcesPath, 'runtime');
   const manifest = JSON.parse(fs.readFileSync(path.join(bundled, 'manifest.json'), 'utf8'));
@@ -108,7 +104,7 @@ async function runtime(app, progress = () => {}) {
   atomicJSON(stamp, {identity});
   return {source: path.join(target, 'app'), python: path.join(target, 'python/bin/python3'), node: path.join(target, 'node/bin/node')};
 }
-module.exports = {runtime, verifyRuntime, stageRuntime, requireStopped, sourceIdentity};
+module.exports = {runtime, verifyRuntime, stageRuntime, requireStopped, managedProcesses};
 
 // Hashing, copying and signature verification never block Electron's UI thread.
 function prepareRuntime(app, progress) {
