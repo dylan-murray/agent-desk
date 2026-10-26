@@ -11,7 +11,7 @@ const {applicationRoute, applicationAuthority, forward} = require('./http.cjs');
 const {openStream} = require('./streams.cjs');
 const {prepareRuntime, managedProcesses} = require('./runtime.cjs');
 const {restoreBounds} = require('./window-state.cjs');
-const {createProfile} = require('./profile.cjs');
+const {createProfile, browserWorkspacePort, workspaceChoice, saveWorkspaceChoice} = require('./profile.cjs');
 const {configureAbout} = require('./about.cjs');
 const {reconnect, retryable} = require('./reconnect.cjs');
 protocol.registerSchemesAsPrivileged([
@@ -36,6 +36,7 @@ app.setName(app.isPackaged ? 'Agent Desk' : 'Agent Desk Dev');
 const fixture = !app.isPackaged && process.env.AGENT_DESK_DESKTOP_TEST === '1';
 const profile = createProfile(app.getPath('appData'), process.env, app.isPackaged);
 const dataRoot = profile.data;
+const workspace = workspaceChoice(profile);
 app.setPath('userData',profile.browser);
 if (!app.requestSingleInstanceLock()) {app.quit();} else {
   app.on('second-instance', () => show());
@@ -111,6 +112,9 @@ async function boot() {
       // Source runs load Python changes only in a new backend; terminals stay with the supervisor.
       ...app.isPackaged ? [] : [{label: 'Restart Backend', click: () => void restartBackend()}],
       {label: 'Open Local Diagnostics', click: () => shell.openPath(profile.logs)},
+      {type: 'separator'},
+      {label: 'Open Browser Workspace…', click: () => void openBrowserWorkspace()},
+      {label: 'Use Desktop Workspace', enabled: !!workspace.port, click: () => void switchWorkspace(null, 'Agent Desk will reopen on its own desktop workspace. Terminals in the browser workspace keep running; start the browser app again to use them there.')},
       {label: 'Releases…', click: () => shell.openExternal('https://github.com/dylan-murray/agent-desk/releases')},
       {type: 'separator'}, {label: 'Quit Agent Desk', accelerator: 'CmdOrCtrl+Q', click: () => void requestQuit()}]},
     {label: 'Edit', submenu: [{role: 'undo'}, {role: 'redo'}, {type: 'separator'}, {role: 'cut'}, {role: 'copy'}, {role: 'paste'}, {role: 'selectAll'}]},
@@ -265,7 +269,11 @@ function connect() {
         const resolved = await prepareRuntime(app, stage => publish({stage, since: Date.now()}));
         if (quitting) return;
         markTiming('runtimeReadyAt');
-        backend = new Backend({dataDir: dataRoot, logDir: profile.logs, ...resolved});
+        if (workspace.port && !fs.existsSync(workspace.data)) {
+          const message = `The browser workspace folder ${workspace.data} no longer exists. Choose another with Agent Desk → Open Browser Workspace…, or return to Use Desktop Workspace.`;
+          throw Object.assign(Error(message), {retryable: false, userMessage: message});
+        }
+        backend = new Backend({dataDir: workspace.data, browserPort: workspace.port, logDir: profile.logs, ...resolved});
       }
       if (quitting) return;
       publish({stage: 'opening', since: Date.now()});
@@ -289,7 +297,7 @@ function connect() {
       return {connected: true};
     } catch (cause) {
       retryAllowed = !!backend && retryable(cause);
-      const error = state.stage === 'setup' || state.stage === 'preparing' ? 'Could not set up Agent Desk. Please try again.' : retryAllowed ? 'Could not connect to your workspace. Retrying automatically…' : 'Could not open your workspace. Please try again.';
+      const error = cause.userMessage || (state.stage === 'setup' || state.stage === 'preparing' ? 'Could not set up Agent Desk. Please try again.' : retryAllowed ? 'Could not connect to your workspace. Retrying automatically…' : 'Could not open your workspace. Please try again.');
       publish({connection: 'failed', error});return {connected: false, error};
     } finally {recovering = null;retries.schedule();}
   })();
@@ -303,7 +311,7 @@ async function resume() {
 // it attaches to them, as crash recovery does. Unknown states never quit.
 async function managedBackend() {
   try {return await backend.status();} catch (error) {
-    const running = managedProcesses(profile);
+    const running = managedProcesses({...profile, data: backend.dataDir});
     if (running.some(item => item.backend)) throw error;
     if (!running.length) return null;
     return backend.start(() => quitting);
@@ -333,6 +341,55 @@ async function requestQuit() {
   } catch (error) {retryAllowed = false;publish({connection: 'failed', error: 'Could not confirm shutdown. Use the Agent Desk menu to recover.'});show();}
   finally {quitRequested = false;retries.schedule();}
 }
+// A running browser Agent Desk's data folder, where the folder picker starts.
+function runningBrowserData() {
+  try {
+    const processes = require('node:child_process').execFileSync('/bin/ps', ['-axo', 'command='], {encoding: 'utf8', maxBuffer: 16 * 1024 * 1024});
+    const found = [...processes.matchAll(/agent_desk\.terminal_supervisor --data-dir (\S+) --port (\d+)$/gm)].filter(match => fs.existsSync(match[1]));
+    return (found.find(match => match[2] === '4310') || found[0])?.[1];
+  } catch {return undefined;}
+}
+async function openBrowserWorkspace() {
+  const result = await dialog.showOpenDialog(mainWindow, {title: 'Open Browser Workspace', message: 'Choose the data folder of the browser Agent Desk', buttonLabel: 'Open', defaultPath: runningBrowserData() || os.homedir(), properties: ['openDirectory']});
+  if (result.canceled || !result.filePaths[0]) return;
+  try {
+    const folder = fs.realpathSync(result.filePaths[0]);
+    if (folder === fs.realpathSync(profile.data)) return switchWorkspace(null, 'Agent Desk will reopen on its own desktop workspace.');
+    const port = browserWorkspacePort(folder);
+    const info = fs.statSync(folder);
+    if (info.uid !== process.getuid()) throw Error('This folder belongs to another user.');
+    if (info.mode & 0o077) {
+      const answer = await dialog.showMessageBox(mainWindow, {type: 'question', message: 'Make this folder private?', detail: `The desktop app only opens workspaces that other users cannot read, so ${folder} will become readable by you alone (chmod 700). The browser app keeps working.`, buttons: ['Make Private', 'Cancel'], defaultId: 0, cancelId: 1});
+      if (answer.response !== 0) return;
+      fs.chmodSync(folder, 0o700);
+    }
+    return switchWorkspace({data: folder, port}, `Agent Desk will reopen on the browser workspace in ${folder}, with its sessions, desks and coordinators. Its running terminals carry over. If the browser app is still running on port ${port}, stop it and the window connects on its own.`);
+  } catch (error) {dialog.showErrorBox('Could not open this workspace', error.message);}
+}
+// Switching stops only this backend, as Restart Backend does; terminals stay with their supervisor.
+async function switchWorkspace(choice, detail) {
+  try {
+    if (quitting || quitPending || quitRequested) return;
+    const answer = await dialog.showMessageBox(mainWindow, {type: 'question', message: 'Reopen Agent Desk?', detail, buttons: ['Reopen', 'Cancel'], defaultId: 0, cancelId: 1});
+    if (answer.response !== 0) return;
+    retryAllowed = false;retries.clear();
+    if (recovering) await recovering;
+    if (backend) await stopBackendProcess();
+    saveWorkspaceChoice(profile, choice);
+    quitting = true;app.relaunch();app.quit();
+  } catch (error) {retryAllowed = true;retries.schedule();dialog.showErrorBox('Could not switch workspaces', error.message);}
+}
+async function stopBackendProcess() {
+  let pid;
+  try {pid = verifiedBackendPid();} catch (error) {if (error.code === 'ENOENT') return;throw error;}
+  process.kill(pid, 'SIGTERM');
+  const deadline = Date.now() + 15000;
+  for (;;) {
+    try {process.kill(pid, 0);} catch (error) {if (error.code === 'ESRCH') return;throw error;}
+    if (Date.now() > deadline) throw Error('The backend has not exited. Use Force Stop Backend… if it is unresponsive.');
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+}
 function verifiedBackendPid() {
   backend.loadRecord();
   const {execFileSync} = require('node:child_process');
@@ -345,14 +402,7 @@ function verifiedBackendPid() {
 async function restartBackend() {
   try {
     if (!backend || quitting || quitPending || quitRequested) return;
-    const pid = verifiedBackendPid();
-    process.kill(pid, 'SIGTERM');
-    const deadline = Date.now() + 15000;
-    for (;;) {
-      try {process.kill(pid, 0);} catch (error) {if (error.code === 'ESRCH') break;throw error;}
-      if (Date.now() > deadline) throw Error('The backend has not exited. Use Force Stop Backend… if it is unresponsive.');
-      await new Promise(resolve => setTimeout(resolve, 100));
-    }
+    await stopBackendProcess();
     disconnected();return connect();
   } catch (error) {dialog.showErrorBox('Could not restart the backend', error.message);}
 }

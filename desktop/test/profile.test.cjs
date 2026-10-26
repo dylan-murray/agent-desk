@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test'), assert = require('node:assert/strict');
 const fs = require('node:fs'), path = require('node:path'), os = require('node:os');
-const {createProfile, profilePaths} = require('../src/profile.cjs');
+const {createProfile, profilePaths, browserWorkspacePort, workspaceChoice, saveWorkspaceChoice} = require('../src/profile.cjs');
 const {openBootstrapLog, RETENTION_MS, MAX_FILE_BYTES, MAX_TOTAL_BYTES} = require('../src/logs.cjs');
 
 test('desktop profile separates data, diagnostics, browser storage and runtimes from web data', t => {
@@ -16,6 +16,36 @@ test('desktop profile separates data, diagnostics, browser storage and runtimes 
   assert.equal(profilePaths(root,{}).root,path.join(root,'Agent Desk Dev'));
   assert.equal(profilePaths(root,{},true).root,path.join(root,'Agent Desk'));
   assert.equal(profilePaths(root,{AGENT_DESK_PROFILE_DIR:root},true).root,root);
+});
+
+test('a chosen browser workspace replaces the desktop data until the choice is cleared', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(),'ad-choice-'));
+  t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+  const profile = createProfile(root, {AGENT_DESK_PROFILE_DIR:path.join(root,'desktop')});
+  assert.deepEqual(workspaceChoice(profile),{data:profile.data,port:null});
+  saveWorkspaceChoice(profile,{data:path.join(root,'web-data'),port:4310});
+  assert.equal(fs.statSync(path.join(profile.root,'workspace.json')).mode & 0o777,0o600);
+  assert.deepEqual(workspaceChoice(profile),{data:path.join(root,'web-data'),port:4310});
+  saveWorkspaceChoice(profile,null);
+  assert.deepEqual(workspaceChoice(profile),{data:profile.data,port:null});
+  fs.writeFileSync(path.join(profile.root,'workspace.json'),JSON.stringify({data:'relative',port:4310}),{mode:0o600});
+  assert.deepEqual(workspaceChoice(profile),{data:profile.data,port:null});
+});
+
+test('browser workspace folders are recognized by their port-keyed state', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(),'ad-browser-'));
+  t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+  const folder = name => {const dir=path.join(root,name);fs.mkdirSync(dir);return dir;};
+  const main = folder('main');fs.writeFileSync(path.join(main,'terminal-sessions-4310.json'),'{}');fs.writeFileSync(path.join(main,'terminal-sessions-4391.json'),'{}');
+  assert.equal(browserWorkspacePort(main),4310);
+  const side = folder('side');fs.mkdirSync(path.join(side,'.supervisor-4400'));
+  assert.equal(browserWorkspacePort(side),4400);
+  const fresh = folder('fresh');fs.writeFileSync(path.join(fresh,'desks.json'),'{}');
+  assert.equal(browserWorkspacePort(fresh),4310);
+  const desktop = folder('desktop');fs.writeFileSync(path.join(desktop,'terminal-sessions-'+'ab'.repeat(16)+'.json'),'{}');
+  assert.throws(()=>browserWorkspacePort(desktop),/no browser Agent Desk sessions/);
+  const several = folder('several');fs.writeFileSync(path.join(several,'.terminal-owner-4400.json'),'{}');fs.writeFileSync(path.join(several,'.terminal-owner-4401.json'),'{}');
+  assert.throws(()=>browserWorkspacePort(several),/several browser workspaces/);
 });
 
 test('bootstrap diagnostics rotate, expire and stay within the shared size budget', t => {

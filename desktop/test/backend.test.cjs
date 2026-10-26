@@ -16,6 +16,16 @@ test('an unresponsive live backend is never replaced on reopen',async t=>{
   assert.equal(backend.child,undefined,'must not spawn a competing backend');
 });
 
+test('a browser workspace is not opened while its browser server still holds the port',async t=>{
+  const root=fs.mkdtempSync(path.join(process.platform==='darwin'?'/private/tmp':os.tmpdir(),'ad-browser-port-'));
+  const server=http.createServer((_request,response)=>response.end());
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  t.after(async()=>{await new Promise(resolve=>server.close(resolve));fs.rmSync(root,{recursive:true,force:true});});
+  const backend=new Backend({dataDir:path.join(root,'data'),browserPort:server.address().port,source:'unused',python:'must-not-spawn',node:process.execPath,env:{AGENT_DESK_SOCKET_ROOT:path.join(root,'s')}});
+  await assert.rejects(()=>backend.start(),error=>error.retryable===true&&/still running in the browser on port/.test(error.userMessage));
+  assert.equal(backend.child,undefined,'must not spawn a backend that cannot own the workspace');
+});
+
 test('an incompatible connection record is preserved for recovery',async t=>{
   const root=fs.mkdtempSync(path.join(process.platform==='darwin'?'/private/tmp':os.tmpdir(),'ad-record-'));
   t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
