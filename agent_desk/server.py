@@ -514,7 +514,8 @@ class Handler(SimpleHTTPRequestHandler):
             problem = websocket.upgrade_error(self.headers)
             if problem:
                 return self.send_json({'error': problem}, 426)
-            return TerminalStream(websocket.accept(self), TERMINALS, TERMINAL_TOKEN).serve()
+            # Local helpers, such as `agent-desk attach`, stream too, limited to what they may reach over HTTP.
+            return TerminalStream(websocket.accept(self), TERMINALS, TERMINAL_TOKEN, HELPER_TOKEN, self.helper_refusal).serve()
         if route == '/api/terminals/output':
             if not self.terminal_authorized():
                 return self.send_json({'error': 'Terminal authentication required'}, 403)
@@ -642,7 +643,13 @@ class Handler(SimpleHTTPRequestHandler):
 
     def pane_refusal(self, target, write=True):
         """Why this caller may not reach a session, or None. The page may reach all of them."""
-        if self.at_the_desk() or not isinstance(target, str):
+        if self.at_the_desk():
+            return None
+        return self.helper_refusal(target, write)
+
+    def helper_refusal(self, target, write=True):
+        """Why a local helper or an agent's tool may not reach a session, or None."""
+        if not isinstance(target, str):
             return None
         def parent_of(identity):
             try:

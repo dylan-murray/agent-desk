@@ -8,3 +8,4 @@
 | Setup by an agent, including accounts | [agent-desk-setup skill](skills/agent-desk-setup/SKILL.md) |
 | Product direction | [Workspace direction](docs/workspace-direction.md) |
 | Terminal streaming (WebSocket) | [Terminal streaming design and results](docs/terminal-streaming.md) |
+| iPhone app (SSH, Mosh, building and sideloading) | [iPhone app](ios/README.md) |

@@ -1,0 +1,5 @@
+// Copy to Signing.xcconfig (ignored by git) to install Agent Desk on your iPhone.
+// Your team ID is in Xcode → Settings → Accounts, or at developer.apple.com/account.
+DEVELOPMENT_TEAM = ABCDE12345
+// Bundle IDs are unique per team; use a reverse domain you own.
+AGENT_DESK_BUNDLE_ID = com.example.agentdesk
