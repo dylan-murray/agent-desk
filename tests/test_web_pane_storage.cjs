@@ -17,7 +17,7 @@ function document({desktop=false,local=storage(),session=storage()}={}){
     document:{addEventListener(){}},addEventListener(){},
     openPaneIds:[],PANE_LIMIT:16,paneViews:new Map(),paneStoreKey:()=> 'live',
     savePanes(){},switchPage(){},render(){}});
-  vm.runInContext('window=globalThis',context);
+  vm.runInContext('window=globalThis;openPaneBeside=id=>openPaneIds.push(id)',context);
   vm.runInContext(source,context);
   return code=>JSON.parse(JSON.stringify(vm.runInContext(code,context))??'null');
 }

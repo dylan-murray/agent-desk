@@ -43,7 +43,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       const node=await terminalRequest('/api/remote/attach',{...config,ticket:tested});
       dialog.close();save(config,el('ssh-label').value.trim()).catch(e=>toast('Connected, but saving failed: '+e.message));await refresh();await window.openRemoteCoordinator(node);return;
     }
-    const session=await terminalRequest('/api/remote/connect',{...config,ticket:tested,desk:activeDesk().id});save(config,el('ssh-label').value.trim()).catch(e=>toast('Connected, but saving failed: '+e.message));freshTerminalIds.add(session.id);demo=false;paneMode=paneStoreKey();agents.unshift({...session,project:'Remote SSH'});if(openPaneIds.length>=PANE_LIMIT)openPaneIds=openPaneIds.filter(id=>id!==selectedId).slice(0,PANE_LIMIT-1);openPaneIds.push(session.id);selectedId=session.id;savePanes();dialog.close();switchPage('agents');render();paneViews.get(session.id)?.node.scrollIntoView({block:'nearest'});}catch(e){status(e.message+' Test again before retrying.');}finally{controls(false);}};
+    const session=await terminalRequest('/api/remote/connect',{...config,ticket:tested,desk:activeDesk().id});save(config,el('ssh-label').value.trim()).catch(e=>toast('Connected, but saving failed: '+e.message));freshTerminalIds.add(session.id);demo=false;paneMode=paneStoreKey();agents.unshift({...session,project:'Remote SSH'});openPaneBeside(session.id);selectedId=session.id;savePanes();dialog.close();switchPage('agents');render();paneViews.get(session.id)?.node.scrollIntoView({block:'nearest'});}catch(e){status(e.message+' Test again before retrying.');}finally{controls(false);}};
 
   el('ssh-save').onclick=async()=>{
     const label=el('ssh-label').value.trim();

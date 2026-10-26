@@ -30,8 +30,7 @@ async function launchAgentSession({cwd,profile,name,prompt}){
   return session;
 }
 function showSessionPane(id){
-  if(openPaneIds.length>=PANE_LIMIT)openPaneIds=openPaneIds.filter(value=>value!==selectedId).slice(0,PANE_LIMIT-1);
-  openPaneIds.push(id);selectedId=id;savePanes();switchPage('agents');render();paneViews.get(id)?.node.scrollIntoView({block:'nearest'});
+  openPaneBeside(id);selectedId=id;savePanes();switchPage('agents');render();paneViews.get(id)?.node.scrollIntoView({block:'nearest'});
 }
 function rememberToolAgent(profile){try{localStorage.setItem('agent-desk-tool-agent',profile);}catch{}}
 
