@@ -1,7 +1,8 @@
 """Desktop transport boundaries and recovery with real, disposable local fixtures."""
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import closing
+from contextlib import ExitStack, closing
 import base64
+import http.server
 import json
 import os
 from pathlib import Path
@@ -12,6 +13,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from unittest.mock import patch
@@ -40,6 +42,46 @@ class IdentityTests(unittest.TestCase):
             root.rmdir();root.symlink_to(Path(folder))
             with patch.dict(os.environ, AGENT_DESK_SOCKET_ROOT=str(root)):
                 with self.assertRaises(PermissionError):runtime_directory(folder, 'a' * 32)
+
+
+class DesktopListenerTests(unittest.TestCase):
+    def test_reload_request_burst_does_not_refuse_configuration(self):
+        from agent_desk.desktop_backend import DesktopHTTPServer
+
+        configuration = b'window.AGENT_DESK_CONFIG={development:true,accounts:[]};'
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/javascript')
+                self.send_header('Content-Length', str(len(configuration)))
+                self.end_headers()
+                self.wfile.write(configuration)
+
+            def log_message(self, *_args):
+                pass
+
+        with tempfile.TemporaryDirectory(prefix='ad-burst-', dir='/private/tmp' if sys.platform == 'darwin' else None) as folder:
+            data = Path(folder) / 'data';data.mkdir(mode=0o700)
+            with patch.dict(os.environ, AGENT_DESK_SOCKET_ROOT=str(Path(folder) / 's')):
+                with DesktopHTTPServer(data, 'a' * 32, Handler) as server, ExitStack() as cleanup:
+                    # Queue a reload's parallel connections before the next accept
+                    # cycle. A full Unix listen queue refuses a healthy backend.
+                    clients = []
+                    for _ in range(32):
+                        client = cleanup.enter_context(closing(UnixHTTPConnection(server.socket_path, timeout=1)))
+                        client.connect()
+                        clients.append(client)
+                    worker = threading.Thread(target=server.serve_forever, kwargs={'poll_interval': .01}, daemon=True)
+                    worker.start()
+                    cleanup.callback(worker.join, 5)
+                    cleanup.callback(server.shutdown)
+                    for client in clients:
+                        client.request('GET', '/config.js')
+                    for client in clients:
+                        response = client.getresponse()
+                        self.assertEqual(response.status, 200)
+                        self.assertEqual(response.read(), configuration)
 
 
 class DesktopIntegrationTests(unittest.TestCase):

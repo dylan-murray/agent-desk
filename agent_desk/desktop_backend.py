@@ -18,6 +18,9 @@ from agent_desk.local_transport import (PROTOCOL, desk_url, private_directory,
 class DesktopHTTPServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
     daemon_threads = True
     allow_reuse_address = False
+    # Reload starts many parallel HTTP requests. The default five pending
+    # connections can overflow on macOS and report ECONNREFUSED while we are live.
+    request_queue_size = 128
 
     def __init__(self, data_dir, workspace, handler):
         self.workspace_key = workspace_key(workspace)
