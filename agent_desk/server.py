@@ -1107,11 +1107,22 @@ def main():
     parser.add_argument('--workspace-id', type=workspace_key, help='Desktop workspace ID; use a private Unix socket instead of TCP')
     parser.add_argument('--production', action='store_true', help='Hide development tools and disable the feedback API')
     parser.add_argument('--attach-only',action='store_true',help='Require an existing terminal supervisor; never create a replacement during a backend restart')
+    parser.add_argument('--browser-port', type=int, help="With --workspace-id: own the browser workspace on this port, sharing its terminals and state, and keep serving it there for agents and browser tabs")
     args = parser.parse_args()
-    key = args.workspace_id or args.port
+    if args.browser_port and not args.workspace_id:
+        parser.error('--browser-port requires --workspace-id')
+    key = args.browser_port or args.workspace_id or args.port
     if args.workspace_id and not isinstance(args.workspace_id, str):
         parser.error('Desktop workspace ID must be 32 lowercase hex characters')
+    browser = None
     if args.workspace_id:
+        if args.browser_port:
+            # Agents started by the browser desk call back on this port, and holding it
+            # keeps a browser server from owning the same workspace at the same time.
+            try:
+                browser = ThreadingHTTPServer(('127.0.0.1', args.browser_port), Handler)
+            except OSError as error:
+                raise SystemExit(f'Port {args.browser_port} is in use; stop the browser Agent Desk before opening its workspace here ({error})')
         os.environ['AGENT_DESK_WORKSPACE_ID'] = args.workspace_id
         from agent_desk.desktop_backend import DesktopHTTPServer
         server = DesktopHTTPServer(DATA_DIR, args.workspace_id, Handler)
@@ -1165,7 +1176,7 @@ def main():
         for error in result['errors']:
             print(f'Could not remove an agent-desk tool server registration: {error}', flush=True)
     # Only the main desk edits account configuration; test and side desks on other ports never do.
-    if not args.workspace_id and args.port == 4310:
+    if key == 4310:
         threading.Thread(target=retire_tool_registrations, daemon=True).start()
     desk_tokens.write_token('adapter', key, TOKEN)
     # Local helpers (agent_control, feedback forwarders) read this file; the
@@ -1174,6 +1185,9 @@ def main():
     if args.workspace_id:
         server.ready(__import__(__name__, fromlist=['']))
         print('Agent Desk desktop backend ready', flush=True)
+        if browser:
+            threading.Thread(target=browser.serve_forever, daemon=True).start()
+            print(f'Browser workspace → http://127.0.0.1:{args.browser_port}', flush=True)
     else:
         print(f'Agent Desk → http://127.0.0.1:{args.port}', flush=True)
         print(f'Adapter token (this run only): {TOKEN}', flush=True)
@@ -1187,6 +1201,9 @@ def main():
         WORKFLOWS.stopping.set()
         if not getattr(server, 'supervisor_drained', False):COORDINATORS.close()
         TERMINALS.close()
+        if browser:
+            browser.shutdown()
+            browser.server_close()
         server.server_close()
 
 

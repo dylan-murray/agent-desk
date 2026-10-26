@@ -429,3 +429,120 @@ class DesktopIntegrationTests(unittest.TestCase):
             return original(operation, **fields)
         with patch.object(owner, 'call', side_effect=call):owner.shutdown()
         self.assertNotIn(pid, processes())
+
+
+class BrowserWorkspaceTests(unittest.TestCase):
+    """The desktop backend can own a browser workspace and keep its live terminals."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix='ad-', dir='/private/tmp' if sys.platform == 'darwin' else None)
+        self.root = Path(self.temp.name).resolve();self.data = self.root / 'state';self.data.mkdir(mode=0o700)
+        with closing(__import__('socket').socket()) as probe:
+            probe.bind(('127.0.0.1', 0));self.port = probe.getsockname()[1]
+        self.workspace = secrets.token_hex(16)
+        self.browser_env = dict(os.environ, AGENT_DESK_DATA_DIR=str(self.data), SHELL='/bin/sh')
+        self.browser_env.pop('AGENT_DESK_WORKSPACE_ID', None)
+        self.env = dict(self.browser_env, AGENT_DESK_SOCKET_ROOT=str(self.root / 's'), AGENT_DESK_WORKSPACE_ID=self.workspace)
+        self.desktop = [self.workspace, '--browser-port', str(self.port)]
+        self.processes = [];self.log = (self.root / 'server.log').open('ab')
+
+    def tearDown(self):
+        for process in self.processes:
+            if process.poll() is None:process.terminate()
+            try:process.wait(timeout=10)
+            except subprocess.TimeoutExpired:process.kill();process.wait()
+        try:
+            from agent_desk.terminal_supervisor import SupervisorClient
+            owner = SupervisorClient(self.data, self.port, start=False)
+            for row in owner.list():
+                if row['exit_code'] is None:owner.get(row['id']).stop()
+            owner.shutdown()
+        except (OSError, ValueError):pass
+        self.log.close();self.temp.cleanup()
+
+    def until(self, predicate, timeout=15):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            value = predicate()
+            if value:return value
+            time.sleep(.05)
+        self.fail('Browser workspace fixture timed out: ' + (self.root / 'server.log').read_text())
+
+    def spawn(self, argv, env):
+        process = subprocess.Popen([sys.executable, *argv], cwd=ROOT, env=env, stdin=subprocess.DEVNULL, stdout=self.log, stderr=self.log)
+        self.processes.append(process)
+        return process
+
+    def tcp(self, route, payload=None):
+        """What an agent started by the browser desk sends: its helper token to AGENT_DESK_URL."""
+        from urllib.request import Request, urlopen
+        token = (self.data / f'.terminal-token-{self.port}').read_text().strip()
+        body = json.dumps(payload).encode() if payload is not None else None
+        request = Request(f'http://127.0.0.1:{self.port}{route}', data=body, headers={'X-Agent-Desk-Terminal': token, 'Content-Type': 'application/json'})
+        with urlopen(request, timeout=10) as response:
+            return json.load(response)
+
+    def tcp_ready(self, process):
+        if process.poll() is not None:self.fail((self.root / 'server.log').read_text())
+        try:return self.tcp('/api/agents') is not None
+        except (OSError, ValueError):return False
+
+    def unix(self, route, payload=None):
+        record = json.loads((self.folder / 'connection.json').read_text())
+        connection = UnixHTTPConnection(self.folder / 'backend.sock', timeout=30)
+        body = json.dumps(payload).encode() if payload is not None else None
+        try:
+            connection.request('POST' if body is not None else 'GET', route, body,
+                               {'Host': 'app', 'Content-Type': 'application/json', 'X-Agent-Desk-Terminal': record['user_token']})
+            response = connection.getresponse()
+            return response.status, json.loads(response.read() or b'null')
+        finally:connection.close()
+
+    def test_desktop_takes_over_live_browser_terminals_and_keeps_serving_the_port(self):
+        from agent_desk.terminal_supervisor import SupervisorClient
+        browser = self.spawn(['-m', 'agent_desk', '--port', str(self.port)], self.browser_env)
+        self.until(lambda: self.tcp_ready(browser))
+        shell = self.tcp('/api/terminals/launch', {'cwd': str(self.root), 'argv': ['/bin/sh'], 'name': 'Fictional browser shell'})
+        owner = SupervisorClient(self.data, self.port, start=False)
+        supervisor_pid, shell_pid = owner.call('hello')['pid'], owner.get(shell['id']).process.pid
+
+        # One owner at a time: the browser server still holds the port.
+        refused = subprocess.run([sys.executable, '-m', 'agent_desk.desktop_backend', '--workspace-id', *self.desktop],
+                                 cwd=ROOT, env=self.env, capture_output=True, text=True, timeout=20)
+        self.assertNotEqual(refused.returncode, 0)
+        self.assertIn(f'Port {self.port} is in use', refused.stderr)
+
+        browser.send_signal(signal.SIGINT);browser.wait(timeout=15)
+        desktop = self.spawn(['-m', 'agent_desk.desktop_backend', '--workspace-id', *self.desktop], self.env)
+        with patch.dict(os.environ, self.env):self.folder = runtime_directory(self.data, self.workspace)
+        def ready():
+            if desktop.poll() is not None:self.fail((self.root / 'server.log').read_text())
+            try:return self.unix('/api/desktop/status')[0] == 200
+            except (OSError, ValueError):return False
+        self.until(ready)
+
+        status = self.unix('/api/desktop/status')[1]
+        self.assertEqual(status['workspace'], self.workspace)
+        self.assertEqual([row['id'] for row in status['sessions']], [shell['id']])
+        self.assertEqual(owner.call('hello')['pid'], supervisor_pid)
+        self.assertEqual(owner.get(shell['id']).process.pid, shell_pid)
+        self.assertIsNone(owner.get(shell['id']).process.poll())
+        self.assertFalse((self.data / f'terminal-sessions-{self.workspace}.json').exists())
+        self.assertEqual(self.unix('/api/terminals/input', {'id': shell['id'], 'data': base64.b64encode(b"printf 'desktop-%s\\n' owner\n").decode()})[0], 200)
+        self.until(lambda: 'desktop-owner' in base64.b64decode(self.unix('/api/terminals/output?id=' + shell['id'] + '&cursor=0')[1]['data']).decode(errors='replace'))
+        # Agents the browser desk started still reach it at their AGENT_DESK_URL.
+        self.until(lambda: self.tcp_ready(desktop))
+        self.assertIn(shell['id'], [row['id'] for row in self.tcp('/api/agents')['agents']])
+
+        # Leaving the desktop hands the workspace back without stopping its terminals.
+        desktop.terminate();desktop.wait(timeout=15)
+        self.assertIsNone(owner.get(shell['id']).process.poll())
+        browser = self.spawn(['-m', 'agent_desk', '--port', str(self.port)], self.browser_env)
+        self.until(lambda: self.tcp_ready(browser))
+        self.assertIn(shell['id'], [row['id'] for row in self.tcp('/api/agents')['agents']])
+        self.assertEqual(owner.get(shell['id']).process.pid, shell_pid)
+
+    def test_browser_port_requires_a_desktop_workspace(self):
+        result = subprocess.run([sys.executable, '-m', 'agent_desk', '--browser-port', str(self.port)], cwd=ROOT, env=self.browser_env, capture_output=True, text=True, timeout=20)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('--browser-port requires --workspace-id', result.stderr)

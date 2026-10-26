@@ -4,6 +4,7 @@ const path = require('node:path');
 const os = require('node:os');
 const crypto = require('node:crypto');
 const http = require('node:http');
+const net = require('node:net');
 const {spawn, execFile, execFileSync} = require('node:child_process');
 const {ORIGIN, MAX_BODY} = require('./security.cjs');
 const {openBootstrapLog} = require('./logs.cjs');
@@ -27,14 +28,25 @@ function atomicJSON(file, value) {
   fs.writeFileSync(temp, JSON.stringify(value), {mode: 0o600, flag: 'wx'});
   fs.renameSync(temp, file);
 }
+function portAnswers(port) {
+  return new Promise(resolve => {
+    const socket = net.connect({host: '127.0.0.1', port});
+    socket.setTimeout(1000);
+    socket.once('connect', () => {socket.destroy();resolve(true);});
+    socket.once('timeout', () => {socket.destroy();resolve(true);});
+    socket.once('error', () => resolve(false));
+  });
+}
 function cleanEnvironment(original) {
   const env = {...original};
   for (const key of Object.keys(env)) if (/^(?:PYTHON|DYLD_|LD_PRELOAD|NODE_OPTIONS$|NODE_PATH$|ELECTRON_RUN_AS_NODE$|AGENT_DESK_)/.test(key)) delete env[key];
   return env;
 }
 class Backend {
-  constructor({dataDir, logDir, source, python, node, development = false, env = process.env}) {
+  constructor({dataDir, browserPort = null, logDir, source, python, node, development = false, env = process.env}) {
     this.dataDir = fs.realpathSync(privateDirectory(path.resolve(dataDir)));
+    // A browser workspace keeps its port-keyed state and live terminals; the backend also serves that port.
+    this.browserPort = browserPort;
     this.source = source;this.python = python;this.node = node;this.originalEnv = env;
     // Source runs enable development tools (annotations) as the browser does by default.
     this.development = development;
@@ -104,6 +116,10 @@ class Backend {
       try {process.kill(this.child.pid, 0);throw Object.assign(Error('Backend is still starting; no duplicate was started.'), {retryable: true});}
       catch (error) {if (error.code !== 'ESRCH') throw error;}
     }
+    if (this.browserPort && await portAnswers(this.browserPort)) {
+      const message = `Agent Desk is still running in the browser on port ${this.browserPort}. Stop it (Ctrl-C where you started it) and this window opens the same sessions.`;
+      throw Object.assign(Error(message), {retryable: true, userMessage: message});
+    }
     const env = cleanEnvironment(this.originalEnv);
     let shellPath = '';
     try {shellPath = (await require('node:util').promisify(execFile)('/bin/zsh', ['-lic', 'command printf "\\036%s\\037" "$PATH"'], {env, timeout: 5000, maxBuffer: 1024 * 1024, encoding: 'utf8'})).stdout.match(/\x1e([^\x1f]*)\x1f/)?.[1] || '';} catch { /* bounded fallback */ }
@@ -118,7 +134,7 @@ class Backend {
     const log = openBootstrapLog(this.logDir);
     let spawnError;
     try {
-      this.child = spawn(this.python, ['-s', '-m', 'agent_desk.desktop_backend', '--workspace-id', this.workspace, ...this.development ? [] : ['--production']], {cwd: this.source, env, detached: true, stdio: ['ignore', log, log]});
+      this.child = spawn(this.python, ['-s', '-m', 'agent_desk.desktop_backend', '--workspace-id', this.workspace, ...this.browserPort ? ['--browser-port', String(this.browserPort)] : [], ...this.development ? [] : ['--production']], {cwd: this.source, env, detached: true, stdio: ['ignore', log, log]});
       this.child.on('error', error => {spawnError = error;});this.child.unref();
     } finally {fs.closeSync(log);}
     const deadline = Date.now() + 20000;

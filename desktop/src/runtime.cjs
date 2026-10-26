@@ -4,7 +4,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const {execFileSync} = require('node:child_process');
 const {privateDirectory, privateJSON, atomicJSON} = require('./backend.cjs');
-const {profilePaths} = require('./profile.cjs');
+const {profilePaths, workspaceChoice} = require('./profile.cjs');
 function digest(file) {return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');}
 function verifyRuntime(folder, manifest) {
   const root = fs.realpathSync(folder);
@@ -54,7 +54,9 @@ function managedProcesses(profile) {
   return found;
 }
 function requireStopped(profile) {
-  const [running] = managedProcesses(profile);
+  // A backend that owns a browser workspace runs from this runtime too.
+  const {data} = workspaceChoice(profile);
+  const [running] = [...managedProcesses(profile), ...data !== profile.data && fs.existsSync(data) ? managedProcesses({...profile, data}) : []];
   if (running) throw Object.assign(Error('Finish Stop Work and Quit in the previous app before updating or restarting changed code. Managed processes are still running (PID ' + running.pid + ').'), {retryable: false});
 }
 function stageRuntime(bundled, profile, manifest, progress = () => {}) {
