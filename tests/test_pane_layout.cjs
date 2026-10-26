@@ -171,6 +171,25 @@ test('a pane added to a resized layout fills its row below the screen',()=>{
   assert.deepEqual(rects.c,box(0,12,12,6));
 });
 
+test('a pane added to a resized layout opens beside the pane before it, not at the end',()=>{
+  const grid={a:box(0,0,6,6),b:box(6,0,6,6),c:box(0,6,6,6),d:box(6,6,6,6)};
+  // Room to the right: the new pane takes it and the pane that was there moves down.
+  let {rects}=resolve(grid,['a','n','b','c','d']);
+  covers(rects,'beside a');
+  assert.deepEqual(rects.n,box(6,0,6,6));
+  assert.deepEqual(rects.a,box(0,0,6,6),'the selected pane moved');
+  // No room to the right: it goes directly below.
+  ({rects}=resolve(grid,['a','b','n','c','d']));
+  covers(rects,'beside b');
+  assert.deepEqual(rects.n,box(6,6,6,6));
+  assert.deepEqual(rects.b,box(6,0,6,6),'the selected pane moved');
+  ({rects}=resolve({a:box(0,0,12,6),b:box(0,6,12,6)},['a','n','b'],'rows'));
+  assert.deepEqual(rects,{a:box(0,0,12,6),n:box(0,6,12,6),b:box(0,12,12,6)});
+  ({rects}=resolve({m:box(0,0,8,12),s:box(8,0,4,12)},['m','n','s'],'main'));
+  covers(rects,'beside the main pane');
+  assert.deepEqual(rects.n,box(8,0,4,4));
+});
+
 test('stored sizes with gaps from older versions are filled when they load',()=>{
   covers(resolve({a:box(0,0,4,12),b:box(0,12,6,12)},['a','b']).rects,'old push-below layout');
   covers(resolve({a:box(0,0,4,4)},['a']).rects,'shrunken single pane');
