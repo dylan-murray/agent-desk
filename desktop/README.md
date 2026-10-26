@@ -30,6 +30,22 @@ About shows **Version 0.1.0** (using the shared version from `../pyproject.toml`
 
 `AGENT_DESK_PYTHON` and `AGENT_DESK_NODE` select development interpreters. Packaged builds always use their bundled runtimes. Source development does not require signing credentials.
 
+### Editing the source
+
+There is no compile step for the app code. `npm start` serves `agent_desk/static/` and runs `agent_desk/` straight from your checkout; only the cached Agent Desk Dev wrapper is built, and only when Electron or the icon changes. The browser workflow, `python3 -m agent_desk`, is unchanged and uses the same files.
+
+| You changed | Browser (`python3 -m agent_desk`) | Agent Desk Dev (`npm --prefix desktop start`) |
+| --- | --- | --- |
+| Frontend (`agent_desk/static/`) | Reload the page | **View → Reload** |
+| Backend Python (`agent_desk/`) | Restart the server | **Agent Desk → Restart Backend** (terminals keep running) |
+| Terminal supervisor or worker code | Stop sessions, then restart | **Stop Work and Quit**, then start again |
+| Electron shell (`desktop/src/`) | — | Quit and start again |
+| Installed `Agent Desk.app` | — | Rebuild and reinstall (`npm run package`); it runs its own bundled copy |
+
+A source edit therefore reaches both the browser and Agent Desk Dev after the step above. If a backend edit fails to start, fix it and press Retry: the restarted backend reattaches to the surviving terminals, as browser mode does. Quit refuses to close while terminals are running and the backend cannot start, so it never leaves them unmanaged.
+
+Agent Desk Dev turns on development tools, including the annotation launcher, Feedback page and **Send to agent**, as browser mode does by default. Installed apps keep them off. Annotations are saved to the profile, `~/Library/Application Support/Agent Desk Dev/data/feedback.json` (or `$AGENT_DESK_PROFILE_DIR/data/feedback.json`), not to the checkout's `data/`. Browser mode and each desktop profile keep separate notes. Notes are only notes: an agent must implement them before the code changes. **Send to agent** gives the agent the absolute path of the submitted notes.
+
 Installed apps default to `~/Library/Application Support/Agent Desk/`. Source/debug runs default to `~/Library/Application Support/Agent Desk Dev/`, so both can run independently:
 
 ```text
@@ -56,13 +72,15 @@ Before stopping terminals, desktop quit discovers and saves coordinator workers'
 
 Temporary connection failures retry automatically after 1, 2, 5, 10, then 30 seconds between attempts, capped at 30 seconds until recovery. Returning to the app or waking the computer retries immediately when disconnected. The existing Retry button and Retry Connection menu item can also start an attempt immediately. Authentication, incompatible runtime/connection metadata, and setup failures require manual recovery. Retries pause during quit/shutdown and remain stopped after an incomplete shutdown. Use the Agent Desk menu to finish a shutdown, resume scheduling, or open local diagnostics. A live but unreachable owner is not replaced. Force Stop Backend requires a native confirmation and verified process identity; it leaves the terminal supervisor running. Never remove a live socket directory to recover a workspace.
 
-## Updating and source changes
+## Updating the installed app
 
 1. In the running app, choose **Stop Work and Quit** and wait for it to exit completely.
-2. Replace the installed app, or apply your source-code changes.
+2. Replace the installed app.
 3. Start it again. The launcher verifies and replaces the stable runtime after confirming the old managed work has exited. Saved application data is preserved.
 
-Closing the window or choosing Keep Running does not complete shutdown. If startup reports an old owner, finish shutdown in the previous app first. An incomplete shutdown remains paused and can be finished from the Agent Desk menu. Same-build backend crash recovery keeps its existing behavior.
+Closing the window or choosing Keep Running does not complete shutdown. If startup reports an old owner, finish shutdown in the previous app first. An incomplete shutdown remains paused and can be finished from the Agent Desk menu. Same-build backend crash recovery keeps its existing behavior. Source runs follow [Editing the source](#editing-the-source) instead.
+
+If the backend exits before it is ready, Quit and Finish Previous Shutdown close the app once no managed terminals, tools or workers remain. If they do remain, the app restarts the backend so Stop Work and Quit can stop them; if it cannot, the app stays open.
 
 ## Webhook adapters
 
@@ -89,17 +107,18 @@ npm run test:quit
 npm run test:backend-lifecycle
 npm run test:webhooks
 npm run test:smoke
+npm run test:development-workflow
 npm run package
 npm run test:packaged
 npm run make
 npm run test:dmg
 ```
 
-Run the repository's Python and Node suites too. `test:smoke` launches a real Electron window with a fictional shell and visual tool, tests report windows, streaming, backend-crash recovery and web-pane restoration after a full app process restart, and writes desktop/narrow screenshots to `AGENT_DESK_EVIDENCE_DIR` or the system temp directory. It uses the root Playwright development dependency. `test:packaged` launches the actual `.app` with host Python/Node removed from PATH, checks the bundled runtime, second-launch reuse, a real fixture PTY, no TCP listeners across the app process tree, and confirmed shutdown. `test:dmg` verifies and mounts the DMG read-only and repeats the packaged-app check from the mounted volume. None of these checks calls model services or uses real conversations. Failed fixtures retain private local diagnostics under the system temporary directory.
+Run the repository's Python and Node suites too. `test:smoke` launches a real Electron window with a fictional shell and visual tool, tests report windows, streaming, backend-crash recovery and web-pane restoration after a full app process restart, and writes desktop/narrow screenshots to `AGENT_DESK_EVIDENCE_DIR` or the system temp directory. It uses the root Playwright development dependency. `test:packaged` launches the actual `.app` with host Python/Node removed from PATH, checks the bundled runtime, second-launch reuse, a real fixture PTY, no TCP listeners across the app process tree, and confirmed shutdown. `test:dmg` verifies and mounts the DMG read-only and repeats the packaged-app check from the mounted volume. `test:development-workflow` covers source-run annotations (save, reload, edit, delete, send) in the desktop profile, Restart Backend and post-edit crash recovery with a surviving terminal, tool pop-out isolation, and Quit after a failed backend start. None of these checks calls model services or uses real conversations. Failed fixtures retain private local diagnostics under the system temporary directory.
 
 ## Visual tool compatibility
 
-The six recognized review/annotation integrations use the inherited-listener adapter in `scripts/serve_skill_ui.py`. Third-party manifests opt in with `"transports": ["unix-http-v1"]` alongside `"runtime": "python-http"`. A compatible entry point accepts `--port 0 --no-browser` and creates one standard-library loopback HTTP server; the adapter substitutes its inherited Unix socket without binding TCP. Explicit TCP binds in that process are rejected. This is a compatibility adapter, not an OS sandbox for arbitrary skill code.
+The six recognized review/annotation integrations use the inherited-listener adapter in `scripts/serve_skill_ui.py`. Third-party manifests opt in with `"transports": ["unix-http-v1"]` alongside `"runtime": "python-http"`. A compatible entry point accepts `--port 0 --no-browser` and creates one standard-library loopback HTTP server; the adapter substitutes its inherited Unix socket without binding TCP. Explicit TCP binds in that process are rejected. This is a compatibility adapter, not an OS sandbox for arbitrary skill code. A docked tool's pop-out button opens it in a separate desktop window limited to that tool's address, with no preload, desk APIs or native IPC; the tool cannot open further windows or navigate to the workspace.
 
 Each tool receives a separate internal origin and no desktop preload bridge. Electron authorizes proxy requests using browser frame metadata, rather than trusting renderer-supplied Origin headers. Existing tool script policies are preserved. Additional tool roots can be configured through `AGENT_DESK_TOOL_ROOTS`, separated by the platform path separator.
 
@@ -142,7 +161,7 @@ These downloads require Apple Silicon and macOS 14+. CI keeps `AGENT_DESK_APPLE_
 shasum -a 256 -c Agent-Desk-arm64.dmg.sha256
 ```
 
-The first intentional desktop tag release must validate GitHub publication end to end, including the downloadable assets and checksum. Implementing or locally testing the workflow does not perform that publication or imply acceptance. Updates remain manual; the app has no update checks, update notices, or automatic installation. Finish Stop Work and Quit before replacing the app or restarting after source-code changes. If managed processes from the old code remain, startup refuses the update until shutdown finishes. After shutdown, the changed runtime is copied and verified before launch. There is no upgrade handoff or cross-version work preservation.
+The first intentional desktop tag release must validate GitHub publication end to end, including the downloadable assets and checksum. Implementing or locally testing the workflow does not perform that publication or imply acceptance. Updates remain manual; the app has no update checks, update notices, or automatic installation. Finish Stop Work and Quit before replacing the app. If managed processes from the old code remain, startup refuses the update until shutdown finishes. After shutdown, the changed runtime is copied and verified before launch. There is no upgrade handoff or cross-version work preservation.
 
 ### Optional local Developer ID builds
 
@@ -158,7 +177,7 @@ Signing credentials remain outside Git. Setting `AGENT_DESK_APPLE_SIGNING=1` req
 
 The macOS window first displays a near-black loading screen with a centered 48px logo, muted status text, and a blue dot. It says “Opening your workspace…” or “Setting up Agent Desk…” while staging a first installation. Reduce Motion keeps the dot static. Native traffic lights and window dragging remain available. A failure shows a short explanation and one Retry button; diagnostics remain in the native menu.
 
-Runtime signature/integrity verification and staging run in a worker. Once verification and backend readiness finish, the same window loads the shared workspace. The launcher obtains real configuration over the Unix socket before navigation and serves that exact snapshot to the first blocking `/config.js` script, with development controls disabled. Later configuration requests proxy normally. There is no placeholder configuration or account hydration step.
+Runtime signature/integrity verification and staging run in a worker. Once verification and backend readiness finish, the same window loads the shared workspace. The launcher obtains real configuration over the Unix socket before navigation and serves that exact snapshot to the first blocking `/config.js` script. Development controls are enabled in source runs and disabled in installed apps. Later configuration requests proxy normally. There is no placeholder configuration or account hydration step.
 
 Ordinary API requests preserve methods, query strings, application headers, byte bodies, HTTP statuses and streamed responses. The main process selects the Unix socket, supplies authentication, and refuses lifecycle API requests from renderers. Chromium frame/window metadata authorizes each request; embedded tools have separate origins and cannot obtain application authority. Cancelling a fetch or response reader closes its socket request. Uploads are framed with Content-Length for the existing Python server.
 

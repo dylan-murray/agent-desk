@@ -55,6 +55,12 @@ function showDock(view,id,dock,ui,tools){
     panel.querySelector('.pane-dock-side').onclick=()=>updateDock(id,{side:paneDocks.get(id)?.side==='bottom'?'right':'bottom'});
     panel.querySelector('.pane-dock-review').onclick=()=>requestSecondOpinion(skillUIs.find(item=>item.id===paneDocks.get(id)?.tool));
     panel.querySelector('.pane-dock-hide').onclick=()=>updateDock(id,{open:false});
+    // The desktop app has no browser tab: the shell opens the tool in its own window, without desk access.
+    const library=panel.querySelector('.pane-dock-library');
+    if(window.agentDeskDesktop?.openTool){
+      library.title='Open in a new window';library.setAttribute('aria-label',library.title);
+      library.onclick=event=>{event.preventDefault();window.agentDeskDesktop.openTool(library.href).catch(error=>toast(error.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/,'')));};
+    }
     bindDockDivider(main.querySelector('.pane-divider'),main,id);
   }
   // A phone-width pane is too narrow to split sideways.

@@ -49,11 +49,17 @@ test('authentication and identity failures cannot become automatic reconnects or
   }
 });
 
-test('source edits cannot restart a backend under retained work',async t=>{
-  const root=fs.mkdtempSync('/private/tmp/ad-source-restart-');
+test('source runs start the backend with development tools; packaged runs stay production',async t=>{
+  const root=fs.mkdtempSync('/private/tmp/ad-backend-mode-');
   t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
-  const source=path.resolve(__dirname,'../..');
-  const backend=new Backend({dataDir:path.join(root,'data'),source,sourceIdentity:'old-code',python:'must-not-spawn',node:process.execPath,env:{AGENT_DESK_SOCKET_ROOT:path.join(root,'s')}});
-  await assert.rejects(()=>backend.start(),error=>error.retryable===false&&/Source code changed/.test(error.message));
-  assert.equal(backend.child,undefined);
+  // A stand-in interpreter records its arguments and exits before it is ready.
+  const python=path.join(root,'python3'),argv=path.join(root,'argv');
+  fs.writeFileSync(python,`#!/bin/sh\nprintf '%s ' "$@" > '${argv}'\n`,{mode:0o700});
+  for(const development of [true,false]){
+    const backend=new Backend({dataDir:path.join(root,'data-'+development),source:root,python,node:process.execPath,development,env:{AGENT_DESK_SOCKET_ROOT:path.join(root,'s')}});
+    await assert.rejects(()=>backend.start(),/exited during startup/);
+    const args=fs.readFileSync(argv,'utf8');
+    assert.match(args,/-m agent_desk\.desktop_backend --workspace-id [a-f0-9]{32}/);
+    assert.equal(args.includes('--production'),!development);
+  }
 });

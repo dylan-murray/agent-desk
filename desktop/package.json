@@ -22,7 +22,8 @@
     "test:quit-preparation": "node test/quit-preparation.cjs",
     "test:backend-lifecycle": "node test/backend-lifecycle.cjs",
     "test:webhooks": "node test/webhooks.cjs",
-    "test:quit": "node test/quit.cjs"
+    "test:quit": "node test/quit.cjs",
+    "test:development-workflow": "node test/development-workflow.cjs"
   },
   "dependencies": {
     "ws": "8.22.0"

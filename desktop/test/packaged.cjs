@@ -45,6 +45,9 @@ async function api(route,payload){const response=await backend.request({path:rou
   assert.ok(fs.existsSync(path.join(profile,'logs/desktop-bootstrap.log')));
   assert.equal(fs.existsSync(path.join(data,'desktop-backend.log')),false,'Desktop diagnostics stay outside data/');
   assert.ok(fs.existsSync(path.join(backend.record.runtime,'agent_desk/desktop_backend.py')));
+  // Installed apps keep development tools and the feedback API off.
+  const config=await backend.request({path:'/config.js'});assert.match(Buffer.from(config.body,'base64').toString(),/"development": false/);
+  assert.equal((await backend.request({path:'/api/feedback'})).status,404);
   await until(()=>{try{return !!metrics().workspaceReadyAt;}catch{return false;}});
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(profile,'logs/build-info.json'),'utf8')),info);
   const first=report('First installation');

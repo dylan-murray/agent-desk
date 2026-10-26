@@ -2,7 +2,7 @@
 const test = require('node:test'), assert = require('node:assert/strict');
 const fs = require('node:fs'), path = require('node:path'), crypto = require('node:crypto');
 const {createProfile} = require('../src/profile.cjs');
-const {stageRuntime, requireStopped, runtime} = require('../src/runtime.cjs');
+const {stageRuntime, requireStopped, runtime, managedProcesses} = require('../src/runtime.cjs');
 const {atomicJSON} = require('../src/backend.cjs');
 
 test('stable runtime replacement preserves data and legacy hashed runtimes and refuses a live owner', t => {
@@ -32,7 +32,7 @@ test('stable runtime replacement preserves data and legacy hashed runtimes and r
   assert.equal(fs.readFileSync(path.join(profile.runtime,'code'),'utf8'),'second');
 });
 
-test('changed source requires shutdown while same-build source recovery can retain owners', async t => {
+test('source runs reconnect to retained work after code edits, as browser mode does', async t => {
   const root = fs.mkdtempSync('/private/tmp/ad-source-update-');
   t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
   // A temporary appData namespace exercises the actual default development path.
@@ -40,11 +40,33 @@ test('changed source requires shutdown while same-build source recovery can reta
   const app = {isPackaged:false,getPath:()=>root};
   const original = process.env.AGENT_DESK_PROFILE_DIR;delete process.env.AGENT_DESK_PROFILE_DIR;
   t.after(()=>{if(original===undefined)delete process.env.AGENT_DESK_PROFILE_DIR;else process.env.AGENT_DESK_PROFILE_DIR=original;});
-  const first = await runtime(app);
   const owner = path.join(profile.data,'.terminal-owner-fixture.json');atomicJSON(owner,{pid:process.pid});
-  assert.equal((await runtime(app)).sourceIdentity,first.sourceIdentity);
   atomicJSON(path.join(profile.data,'desktop-runtime.json'),{identity:'previous-source'});
-  await assert.rejects(()=>runtime(app),/Stop Work and Quit/);
-  fs.unlinkSync(owner);
-  assert.equal((await runtime(app)).sourceIdentity,first.sourceIdentity);
+  const resolved = await runtime(app);
+  assert.equal(resolved.development,true);
+  assert.equal(resolved.source,path.resolve(__dirname,'../..'));
+  assert.ok(fs.existsSync(owner),'surviving owners are kept for the restarted backend');
+});
+
+test('managed process discovery separates a live backend from surviving owners', async t => {
+  const root = fs.mkdtempSync('/private/tmp/ad-managed-');
+  const children = [];
+  t.after(()=>{for(const child of children)child.kill('SIGKILL');fs.rmSync(root,{recursive:true,force:true});});
+  const profile = createProfile(root, {AGENT_DESK_PROFILE_DIR:path.join(root,'profile')}, true);
+  const workspace = 'a'.repeat(32);atomicJSON(path.join(profile.data,'desktop-profile.json'),{workspace});
+  assert.deepEqual(managedProcesses(profile),[]);
+  assert.doesNotThrow(()=>requireStopped(profile));
+  // Stopped and dead records are not running work.
+  atomicJSON(path.join(profile.data,'.terminal-owner-stopped.json'),{pid:process.pid,stopped:true});
+  assert.deepEqual(managedProcesses(profile),[]);
+  const {spawn} = require('node:child_process');
+  const started = args => {const child = spawn(process.execPath,['-e','setTimeout(()=>{},60000)','--',...args],{stdio:'ignore'});children.push(child);return child;};
+  // A supervisor started with the resolved data path is found from the profile path.
+  const supervisor = started(['-m','agent_desk.terminal_supervisor','--data-dir',fs.realpathSync(profile.data)]);
+  await new Promise(resolve=>setTimeout(resolve,200));
+  assert.deepEqual(managedProcesses(profile),[{pid:supervisor.pid,backend:false}]);
+  assert.throws(()=>requireStopped(profile),/Stop Work and Quit/);
+  const backend = started(['-m agent_desk.desktop_backend --workspace-id '+workspace]);
+  await new Promise(resolve=>setTimeout(resolve,200));
+  assert.deepEqual(managedProcesses(profile).sort((a,b)=>a.pid-b.pid),[{pid:supervisor.pid,backend:false},{pid:backend.pid,backend:true}].sort((a,b)=>a.pid-b.pid));
 });

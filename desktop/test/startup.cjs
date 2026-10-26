@@ -38,7 +38,7 @@ let electron;
  // The injected transient failure recovers without a click.
  await page.waitForFunction(()=>document.querySelector('#sync-status')?.textContent.includes('Connected'));
  assert.equal(await page.locator('#retry').count(),0);
- assert.equal(await page.evaluate(()=>AGENT_DESK_CONFIG.development),false);
+ assert.equal(await page.evaluate(()=>AGENT_DESK_CONFIG.development),true,'source runs enable development tools');
  assert.ok(await page.evaluate(()=>Array.isArray(AGENT_DESK_CONFIG.accounts)&&AGENT_DESK_CONFIG.accounts.length>0));
  assert.equal(await page.evaluate(async()=>(await terminalRequest('/api/agents')).agents.filter(agent=>agent.terminal_id).length),0);
  const identity=await page.evaluate(()=>window.testIdentity=crypto.randomUUID());
