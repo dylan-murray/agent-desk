@@ -16,14 +16,28 @@ parser.add_argument('script')
 parser.add_argument('args',nargs=argparse.REMAINDER)
 args=parser.parse_args()
 listener=socket.socket(fileno=int(os.environ.pop('AGENT_DESK_LISTEN_FD')))
-address=listener.getsockname()
+unix=listener.family==socket.AF_UNIX
+address=('127.0.0.1',0) if unix else listener.getsockname()
+if unix:
+    original_get_request=socketserver.TCPServer.get_request
+    def unix_request(server):
+        connection,peer=original_get_request(server)
+        return connection,('127.0.0.1',0) if server.socket is listener else peer
+    socketserver.TCPServer.get_request=unix_request
+    original_bind=socket.socket.bind
+    def no_tcp_bind(sock,address):
+        if sock.family in (socket.AF_INET,socket.AF_INET6):raise OSError('Desktop managed tools may not open TCP listeners')
+        return original_bind(sock,address)
+    socket.socket.bind=no_tcp_bind
+    original_address=http.server.BaseHTTPRequestHandler.address_string
+    http.server.BaseHTTPRequestHandler.address_string=lambda self:'local-tool' if isinstance(self.client_address,str) else original_address(self)
 bind=socketserver.TCPServer.server_bind
 activate=socketserver.TCPServer.server_activate
 claimed=False
 
 def server_bind(server):
     global claimed
-    if not claimed and server.server_address==address:
+    if not claimed and (server.server_address==address or unix and server.server_address[0] in ('127.0.0.1','localhost') and server.server_address[1]==0):
         server.socket.close();server.socket=listener;server.server_address=address;claimed=True
     else:
         bind(server)
@@ -32,12 +46,13 @@ def server_activate(server):
     activate(server)
     if server.socket is listener:
         ready=Path(args.ready);temp=ready.with_suffix('.tmp')
-        temp.write_text(json.dumps({'instance':args.instance,'port':address[1]}));os.replace(temp,ready)
+        temp.write_text(json.dumps({'instance':args.instance,'port':address[1],'transport':'unix-http-v1' if unix else 'http'}));os.replace(temp,ready)
 
 def http_server_bind(server):
     # Skip http.server's socket.getfqdn lookup, which can stall for about 35 seconds where reverse DNS is slow.
     socketserver.TCPServer.server_bind(server)
     server.server_name,server.server_port=server.server_address[:2]
+    server.tool_instance=os.environ.get('AGENT_DESK_TOOL_INSTANCE')
 
 socketserver.TCPServer.server_bind=server_bind
 http.server.HTTPServer.server_bind=http_server_bind

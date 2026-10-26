@@ -4,13 +4,15 @@ import json
 import os
 from pathlib import Path
 import secrets
+import sys
 import shlex
 import tempfile
 import threading
 from urllib.error import HTTPError
 from urllib.parse import urlparse
-from urllib.request import Request, urlopen
+from urllib.request import Request
 
+from agent_desk.local_transport import urlopen, endpoint_key
 from agent_desk.desk_tokens import read_terminal_token
 from agent_desk.paths import DATA_DIR, PROJECT_DIR
 
@@ -56,9 +58,7 @@ class ReadmeFeedback:
         self.registry = Path(registry or DATA_DIR / 'skill-uis.json')
         self.state = Path(state or DATA_DIR / 'readme-feedback')
         self.desk = desk or os.environ.get('AGENT_DESK_URL', 'http://127.0.0.1:4310')
-        parsed = urlparse(self.desk)
-        if parsed.scheme != 'http' or parsed.hostname not in ('localhost', '127.0.0.1') or not parsed.port:
-            raise ValueError('Feedback destination must be a local Agent Desk URL')
+        endpoint_key(self.desk)
         self.token = secrets.token_urlsafe(32)
         self.lock = threading.Lock()
 
@@ -67,7 +67,8 @@ class ReadmeFeedback:
         matches = [item for item in records
                    if item.get('skill') == 'readme-review'
                    and Path(item.get('context', '')).resolve() == handler.doc.resolve()
-                   and urlparse(item.get('url', '')).port == handler.server.server_port]
+                   and ((getattr(handler.server, 'tool_instance', None) and item.get('url') == 'agent-tool://t'+handler.server.tool_instance)
+                        or (not getattr(handler.server, 'tool_instance', None) and urlparse(item.get('url', '')).port == handler.server.server_port))]
         if len(matches) != 1 or not matches[0].get('agent_id'):
             raise ValueError('No launching session linked')
         return matches[0]
@@ -118,7 +119,7 @@ class ReadmeFeedback:
                                 document=str(handler.doc.resolve()), round=round_number,
                                 notes=notes, document_hash=file_digest(handler.doc))
                 save_json(path, snapshot)
-            command = shlex.join(['python3', str(PROJECT_DIR / 'scripts/complete_readme_feedback.py'),
+            command = shlex.join([sys.executable, str(PROJECT_DIR / 'scripts/complete_readme_feedback.py'),
                                   '--snapshot', str(path.resolve()), '--ids'])
             forwarded = [dict(note, id=str(note['id']), note=note['comment'],
                               document=str(handler.doc.resolve()), source='readme-review',

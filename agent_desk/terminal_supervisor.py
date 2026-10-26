@@ -21,12 +21,13 @@ import threading
 import time
 
 from agent_desk.terminals import TerminalManager
+from agent_desk.local_transport import desk_url, workspace_key, runtime_directory
 from agent_desk.worker_screen import WorkerNotReady
 
 VERSION = 1
 MAX_MESSAGE = 4 * 1024 * 1024
 # Additive operations a client must not assume: an older supervisor outlives backend updates.
-FEATURES = ('wait_output',)
+FEATURES = ('wait_output', 'shutdown_for_restart')
 # Below both ends' 30 second socket timeout.
 MAX_WAIT = 20
 
@@ -35,6 +36,8 @@ def location(data_dir, port):
     # Keep the socket beside durable workspace state when its path fits the
     # platform limit. macOS can purge /tmp while a supervisor is still alive;
     # a replacement then binds a new socket and strands the old terminals.
+    if isinstance(port, str):
+        return runtime_directory(data_dir, port) / 'supervisor'
     stable = Path(data_dir).resolve() / f'.supervisor-{port}'
     if len(os.fsencode(stable / 'rpc.sock')) < 100:
         return stable
@@ -75,7 +78,7 @@ def existing_owners(data_dir, port):
             if '-m' not in args or args[args.index('-m')+1] != 'agent_desk.terminal_supervisor':continue
             if '--shutdown' in args:continue
             if Path(args[args.index('--data-dir')+1]).resolve()!=Path(data_dir).resolve():continue
-            if int(args[args.index('--port')+1])!=port:continue
+            if workspace_key(args[args.index('--port')+1])!=port:continue
             if int(pid) not in owners:owners.append(int(pid))
         except (ValueError,IndexError):continue
     return owners
@@ -142,10 +145,22 @@ class Handler(socketserver.StreamRequestHandler):
                 result = list(manager.child_pids())
             elif operation == 'shutdown':
                 # Never turn a backend update into an implicit "stop all".
-                with self.server.lifecycle_lock, manager.lock:
-                    if any(s.process.poll() is None for s in manager.sessions.values()):
-                        raise ValueError('Terminal supervisor still has running sessions; stop them explicitly first')
-                    self.server.draining = True
+                with self.server.lifecycle_lock:
+                    for_restart = request.get('for_restart') is True
+                    if for_restart:
+                        try:
+                            manager.capture_conversations()
+                            manager.persist()
+                        except (OSError, subprocess.SubprocessError) as error:
+                            raise ValueError('Could not capture or save terminal sessions; shutdown remains paused: '+str(error)) from error
+                        # Use the shared teardown/restore behavior. Exit callbacks
+                        # must not turn app shutdown into explicit terminal stops.
+                        with manager.store_lock:
+                            manager.closing = True
+                    with manager.lock:
+                        if not for_restart and any(s.process.poll() is None for s in manager.sessions.values()):
+                            raise ValueError('Terminal supervisor still has running sessions; stop them explicitly first')
+                        self.server.draining = True
                 result = None
             else:
                 session = manager.get(request.get('id'))
@@ -191,7 +206,17 @@ class Handler(socketserver.StreamRequestHandler):
                     result = None
                 else:
                     raise ValueError('Unknown terminal supervisor operation')
-            write_message(self.wfile, {'result': result})
+            try:
+                write_message(self.wfile, {'result': result})
+            except OSError:
+                if operation == 'shutdown' and request.get('for_restart') is True:
+                    # A failed acknowledgment leaves this owner available for
+                    # retry, including persistence of any intervening exits.
+                    with self.server.lifecycle_lock:
+                        with manager.store_lock:manager.closing = False
+                        self.server.draining = False
+                        manager.persist()
+                raise
             if operation == 'shutdown':
                 threading.Thread(target=self.server.shutdown, daemon=True).start()
         except (OSError, ValueError, TypeError, KeyError) as error:
@@ -226,7 +251,7 @@ def serve(data_dir, port):
             stream.write(token)
         from agent_desk.terminal_restore import SessionStore, restore
         # Panes reach this port's web backend for readouts; the supervisor outlives backend restarts.
-        manager = TerminalManager(desk=f'http://127.0.0.1:{port}', store=SessionStore(Path(data_dir) / f'terminal-sessions-{port}.json'))
+        manager = TerminalManager(desk=desk_url(port), store=SessionStore(Path(data_dir) / f'terminal-sessions-{port}.json'))
         # Holding owner.lock guarantees the previous owner, and so its terminals, are gone.
         restore(manager, manager.store)
         stopped = threading.Event()
@@ -389,9 +414,9 @@ class SupervisorClient:
                     time.sleep(.05)
             raise OSError('Timed out starting terminal supervisor; inspect ' + str(log_path))
 
-    def call(self, operation, before_send=None, **fields):
+    def call(self, operation, before_send=None, socket_timeout=30, **fields):
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
-            connection.settimeout(30)
+            connection.settimeout(socket_timeout)
             connection.connect(str(self.folder / 'rpc.sock'))
             with connection.makefile('rwb') as stream:
                 write_message(stream, dict(token=self.token, version=VERSION, op=operation, **fields))
@@ -447,15 +472,34 @@ class SupervisorClient:
     def close(self):
         """Detach only. Stopping sessions always requires an explicit stop."""
 
-    def shutdown(self):
-        return self.call('shutdown')
+    def shutdown(self, for_restart=False):
+        from agent_desk.managed_processes import OwnedProcesses
+        pid = self.call('hello', socket_timeout=2)['pid']  # authenticated over the private socket
+        owned = OwnedProcesses(pid)
+        try:
+            # Ordinary supervisor shutdown still refuses live sessions. Only
+            # full desktop shutdown requests the shared teardown with restore.
+            result = self.call('shutdown', socket_timeout=10 if for_restart else 2,
+                               **({'for_restart': True} if for_restart else {}))
+        except OSError:
+            # Desktop teardown needs a confirmed checkpoint before any forced
+            # cleanup. A lost reply or capture failure must remain incomplete.
+            if for_restart:raise
+            # A verified owner that stops responding still belongs to this
+            # explicit shutdown. ValueError (live sessions) never takes this path.
+            owned.stop()
+            return None
+        deadline = time.monotonic() + 2
+        while owned.remaining() and time.monotonic() < deadline:time.sleep(.05)
+        if owned.remaining():owned.stop()
+        return result
 
 
 def main():
     from agent_desk.paths import DATA_DIR
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--data-dir', default=str(DATA_DIR))
-    parser.add_argument('--port', type=int, default=4310)
+    parser.add_argument('--port', type=workspace_key, default=4310)
     parser.add_argument('--shutdown', action='store_true', help='Stop an idle supervisor; refuses while sessions are running')
     args = parser.parse_args()
     if args.shutdown:

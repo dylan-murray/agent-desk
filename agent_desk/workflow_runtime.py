@@ -15,6 +15,7 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 from agent_desk.event_bus import EventBus, predicate
+from agent_desk.managed_processes import OwnedProcesses
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -61,7 +62,7 @@ def next_cron(expression, zone, after):
 class WorkflowRuntime:
     def __init__(self, path=None, desk='http://127.0.0.1:4310'):
         self.path=Path(path or DATA_DIR/'workflows.sqlite3').resolve()
-        self.desk=desk;self.lock=threading.RLock();self.stopping=threading.Event();self.children={}
+        self.desk=desk;self.lock=threading.RLock();self.stopping=threading.Event();self.desktop_paused=threading.Event();self.children={}
         self.events=EventBus(self)
 
     @contextmanager
@@ -246,11 +247,13 @@ class WorkflowRuntime:
 
     def start_flow(self,identity):
         with self.lock,self.db() as db:
+            if self.desktop_paused.is_set():raise ValueError('Desktop launches are paused during shutdown recovery')
             db.execute('BEGIN IMMEDIATE')
             return self.enqueue_flow(db,identity)
 
     def start(self,identity):
         with self.lock,self.db() as db:
+            if self.desktop_paused.is_set():raise ValueError('Desktop launches are paused during shutdown recovery')
             db.execute('BEGIN IMMEDIATE')
             config=self.config(identity)
             previous=db.execute("SELECT * FROM executions WHERE config_id=? AND state IN ('queued','starting','running','ready')",(identity,)).fetchone()
@@ -273,6 +276,47 @@ class WorkflowRuntime:
             db.execute("UPDATE executions SET state='cancelled',finished=? WHERE id=?",(time.time(),identity))
         return {'ok':True}
 
+    def shutdown_jobs(self):
+        """Include workers whose earlier desktop stop could not be confirmed."""
+        with self.db() as db:
+            return [dict(row) for row in db.execute("SELECT * FROM executions WHERE state IN ('queued','starting','running','ready') OR detail LIKE 'Pending desktop shutdown:%'")]
+
+    def stop_confirmed(self, identity, timeout=2):
+        """Desktop shutdown must observe exit, not just deliver a signal.
+
+        Do not hold a database transaction while waiting: workers save their
+        cancellation after stopping their own children. A failed stop remains
+        discoverable on retry, including after a backend restart.
+        """
+        with self.db() as db:
+            found = db.execute('SELECT * FROM executions WHERE id=?', (identity,)).fetchone()
+        if not found:raise ValueError('Run not found')
+        row = dict(found)
+
+        def alive():
+            child = self.children.get(identity)
+            if child is not None and child.pid == row['pid']:
+                return child.poll() is None
+            if not row['pid']:return False
+            if self.owned(row):return True
+            try:os.kill(row['pid'], 0)
+            except ProcessLookupError:return False
+            raise ValueError('Worker ownership could not be confirmed; no process was signalled')
+
+        try:
+            if alive():
+                if not self.owned(row):raise ValueError('Worker ownership changed; no process was signalled')
+                OwnedProcesses(row['pid']).stop(timeout)
+                child = self.children.get(identity)
+                if child is not None:child.wait(timeout=3)
+        except (OSError, ValueError) as error:
+            with self.db() as db:
+                db.execute('UPDATE executions SET detail=? WHERE id=?', ('Pending desktop shutdown: ' + str(error), identity))
+            raise
+        with self.db() as db:
+            db.execute("UPDATE executions SET state='cancelled',finished=?,detail='Stopped by desktop shutdown' WHERE id=? AND (state IN ('queued','starting','running','ready') OR detail LIKE 'Pending desktop shutdown:%')", (time.time(), identity))
+        return {'ok': True}
+
     def cancel_flow(self,identity):
         with self.db() as db:rows=db.execute("SELECT id FROM executions WHERE flow_id=? AND state IN ('queued','starting','running','ready')",(identity,)).fetchall()
         for row in rows:self.stop(row['id'])
@@ -294,6 +338,7 @@ class WorkflowRuntime:
 
     def tick(self):
         with self.lock:
+            if self.desktop_paused.is_set():return
             now=time.time()
             for identity,child in list(self.children.items()):
                 if child.poll() is not None:child.wait();del self.children[identity]
@@ -357,7 +402,8 @@ class WorkflowRuntime:
 
     def loop(self):
         while not self.stopping.is_set():
-            try:self.events.poll_files();self.tick()
+            try:
+                if not self.desktop_paused.is_set():self.events.poll_files();self.tick()
             except Exception as exc:print('Workflow scheduler:',str(exc),file=sys.stderr,flush=True)
             self.stopping.wait(2)
 

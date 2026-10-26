@@ -6,10 +6,11 @@ import argparse
 import json
 import sys
 from urllib.error import HTTPError
-from urllib.request import ProxyHandler, Request, build_opener
+from urllib.request import Request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from agent_desk.local_transport import urlopen
 from agent_desk.desk_tokens import read_terminal_token  # noqa: E402
 
 
@@ -39,14 +40,13 @@ def main():
     args = parser.parse_args()
     event = json.load(sys.stdin)
     # Loopback only: never route the desk token through a proxy.
-    opener = build_opener(ProxyHandler({}))
     token = read_terminal_token(args.desk)
     payload = dict(request_id=event['submission_id'], target_id=args.target, prompt=prompt(event),
                    notes=[dict(id=event['submission_id'], note=event['message'])])
     request = Request(args.desk + '/api/coordinators/submit-feedback', data=json.dumps(payload).encode(),
                       headers={'Content-Type': 'application/json', 'X-Agent-Desk-Terminal': token})
     try:
-        with opener.open(request, timeout=8) as response:
+        with urlopen(request, timeout=8) as response:
             result = json.load(response)
     except HTTPError as error:
         try:

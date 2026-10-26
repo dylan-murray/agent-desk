@@ -10,6 +10,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 from urllib.request import Request, urlopen
 
 from agent_desk.terminal_supervisor import SupervisorClient, VERSION, read_message, write_message, location
@@ -232,6 +233,22 @@ class SupervisorTests(unittest.TestCase):
         self.assertEqual((self.root / 'received').read_bytes(), b'\x1b[200~exactly once\x1b[201~\r')
         with self.assertRaises(WorkerNotReady):
             session.send_task('do not inject into busy prompt')
+
+
+class ShutdownAcknowledgmentTests(unittest.TestCase):
+    def test_unacknowledged_desktop_shutdown_does_not_force_stop(self):
+        client=SupervisorClient.__new__(SupervisorClient)
+        for error in (OSError('Fictional checkpoint failure'),socket.timeout('Fictional checkpoint timeout')):
+            with self.subTest(error=type(error).__name__),patch.object(client,'call',side_effect=[{'pid':123},error]),patch('agent_desk.managed_processes.OwnedProcesses') as owned:
+                with self.assertRaises(OSError):client.shutdown(for_restart=True)
+                owned.return_value.stop.assert_not_called()
+
+    def test_acknowledged_desktop_shutdown_still_confirms_or_forces_exit(self):
+        client=SupervisorClient.__new__(SupervisorClient)
+        with patch.object(client,'call',side_effect=[{'pid':123},None]),patch('agent_desk.managed_processes.OwnedProcesses') as owned,patch('agent_desk.terminal_supervisor.time.monotonic',side_effect=[0,3]):
+            owned.return_value.remaining.return_value=[123]
+            client.shutdown(for_restart=True)
+            owned.return_value.stop.assert_called_once_with()
 
 
 class BackendRestartTests(unittest.TestCase):

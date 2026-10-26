@@ -17,6 +17,20 @@ There is no frontend build step. Edit assets in `agent_desk/static/` and refresh
 
 Set `AGENT_DESK_DATA_DIR` to a temporary directory when running a separate development instance. Local databases, credentials, logs, and generated artifacts must stay out of Git.
 
+## Desktop development
+
+Desktop source development uses Apple Silicon, macOS 14+, Python 3.11+, and Node.js 24, matching desktop CI and the bundled Node runtime. Complete the dependency installation in [desktop setup](desktop/README.md#development), then launch from the repository root:
+
+```sh
+npm --prefix desktop start
+```
+
+See [desktop contributor instructions](desktop/AGENTS.md) for desktop changes, checks, and packaging. Source/debug apps default to the separate Agent Desk Dev profile and use local Python and Node; packaged apps use Agent Desk and bundle both runtimes. `AGENT_DESK_PROFILE_DIR` overrides either default. Installed runtime code lives in `<profile>/runtime/`; leave legacy hashed `runtimes/` directories untouched. Finish Stop Work and Quit before updating the app or restarting changed source. The launcher refuses changed runtime code while managed owners remain; same-build crash recovery is unchanged. Desktop checks use fixture sessions and must never point at live data.
+
+## Versioning
+
+`[project].version` in `pyproject.toml` is the shared Python and desktop version. Many commits can share a version; bump it when preparing a new release. Python source imports read the project file, installed wheels use package metadata, remote bundles carry generated version metadata, and desktop packaging derives its version and embeds build identity. Desktop releases use matching tags such as `desktop-0.1.0`; see [the release process](desktop/README.md#desktop-ci-and-automatic-github-releases). Apple signing is controlled separately by `AGENT_DESK_APPLE_SIGNING`.
+
 ## Checks
 
 ```sh

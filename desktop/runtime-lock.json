@@ -1,0 +1,10 @@
+{
+  "python": {
+    "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261021/cpython-3.13.17%2B20261021-aarch64-apple-darwin-install_only_stripped.tar.gz",
+    "sha256": "8dc60610a82f1e73be7faf964383e02520f95f6e39592a5c37c3809f5a7b798e"
+  },
+  "node": {
+    "url": "https://nodejs.org/dist/v24.22.1/node-v24.22.1-darwin-arm64.tar.gz",
+    "sha256": "89c682593d76cd44233fa53b1563264e7de9cbb189cad169135c5b4fadfbc0a7"
+  }
+}

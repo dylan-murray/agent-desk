@@ -10,7 +10,7 @@ import unittest
 import sys
 from urllib.request import Request,urlopen
 from urllib.error import HTTPError
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from types import SimpleNamespace
 
 from agent_desk.coordinator_runtime import CoordinatorRuntime
@@ -82,6 +82,104 @@ class CoordinatorTests(unittest.TestCase):
         with self.box.connect() as db:
             db.execute("UPDATE tasks SET status='cancelled' WHERE controller=?",(self.c['id'],))
         self.assertEqual(self.runtime.activity(self.c['id'])['phase'],'idle')
+
+    def test_desktop_quit_status_counts_only_runtime_work(self):
+        from agent_desk.desktop_backend import status
+        app = SimpleNamespace(
+            COORDINATORS=self.runtime, TERMINALS=SimpleNamespace(list=lambda: []),
+            TOOL_RUNTIME=SimpleNamespace(state=self.root / 'no-tools'),
+            WORKFLOWS=SimpleNamespace(snapshot=lambda: {'workflows': []}, shutdown_jobs=lambda: []))
+        server = SimpleNamespace(workspace_key='a' * 32, paused=False)
+        self.assertFalse(status(app, server)['active'], 'An idle saved coordinator is not work')
+        self.message()
+        queued = status(app, server)
+        self.assertTrue(queued['active'])
+        self.assertEqual(queued['coordinators']['queued_turns'], 1)
+        with self.runtime.db() as db:
+            db.execute("UPDATE turns SET state='running'")
+        planning = status(app, server)
+        self.assertTrue(planning['active'])
+        self.assertEqual(planning['coordinators']['planning'], 1)
+        self.assertEqual(planning['coordinators']['queued_turns'], 0)
+        with self.runtime.db() as db:
+            db.execute("UPDATE turns SET state='done'")
+        self.assertFalse(status(app, server)['active'])
+        watch = self.runtime.watch_pr(dict(id=self.c['id'], url='https://github.com/fixture/repo/pull/1'))
+        monitoring = status(app, server)
+        self.assertTrue(monitoring['active'])
+        self.assertEqual(monitoring['coordinators']['monitors'], 1)
+        self.runtime.stop_watch(dict(id=self.c['id'], watch_id=watch['id']))
+        self.assertFalse(status(app, server)['active'])
+        with self.runtime.db() as db:
+            db.execute('INSERT INTO actions VALUES(?,?,?,?,?,?,?,?)', ('delivery', self.c['id'], 'send', '{}', 'queued', 'worker-fixture', '', ''))
+        self.assertTrue(status(app, server)['active'])
+        self.assertEqual(status(app, server)['coordinators']['queued_deliveries'], 1)
+        self.runtime.pause(self.c['id'])
+        self.assertFalse(status(app, server)['active'])
+
+    def desktop_quit(self):
+        from contextlib import nullcontext
+        from agent_desk.desktop_backend import lifecycle_request
+        owner=Mock()
+        owner.shutdown.side_effect=lambda **kwargs:self.terminals.sessions.clear()
+        self.terminals.lock=threading.Lock();self.terminals.clients=[owner]
+        app=SimpleNamespace(COORDINATORS=self.runtime,TERMINALS=self.terminals,
+            WORKFLOWS=SimpleNamespace(lock=threading.Lock(),desktop_paused=threading.Event(),shutdown_jobs=lambda:[]),
+            TOOL_RUNTIME=SimpleNamespace(state=self.root/'no-tools',locked=nullcontext))
+        server=SimpleNamespace(desktop=True,lifecycle=threading.RLock(),paused_path=self.root/'desktop-shutdown.json',shutdown=Mock())
+        responses=[]
+        handler=SimpleNamespace(server=server,path='/api/desktop/shutdown',command='POST',at_the_desk=lambda:True,
+            send_json=lambda value,status=200:responses.append((status,value)))
+        lifecycle_request(handler,app)
+        return responses[-1],server,owner
+
+    def test_desktop_quit_discovers_unreported_worker_id_without_cancelling_assignment(self):
+        self.runtime.action(self.c,dict(kind='launch',name='Fictional worker',profile='claude',task='Keep this assignment'),'launch')
+        worker=next(iter(self.terminals.sessions.values()))
+        task=self.box.inbox(self.runtime.desk,self.c['id'])[0]
+        native='11111111-1111-4111-8111-111111111111'
+        config=self.root/'claude-config';project=config/'projects'/'fictional-project';project.mkdir(parents=True)
+        (project/'fixture.jsonl').write_text(json.dumps(dict(type='user',sessionId=native,
+            message=dict(role='user',content='reply '+task['id']+' --file /tmp/fictional-result.txt')))+'\n')
+        self.assertIsNone(self.box.conversation(self.runtime.desk,worker.id))
+        with patch('agent_desk.native_session_lookup.config_folder',return_value=config):
+            response,server,owner=self.desktop_quit()
+        self.assertEqual(response,(200,{'stopped':True}))
+        owner.shutdown.assert_called_once_with(for_restart=True)
+        self.assertTrue(server.supervisor_drained)
+        self.assertEqual(self.box.get(self.runtime.desk,task['id'])['status'],task['status'])
+        self.runtime.recover_workers()
+        saved=self.runtime.saved_workers(self.c['id'])[0]
+        self.assertEqual(saved['session_id'],native);self.assertTrue(saved['can_resume'])
+        self.assertEqual(saved['pending_tasks'][0]['id'],task['id'])
+        with self.runtime.db() as db:self.assertEqual(db.execute('SELECT COUNT(*) FROM stopped_workers').fetchone()[0],0)
+
+    def test_desktop_quit_worker_lookup_failure_keeps_terminal_and_assignment(self):
+        import subprocess
+        self.runtime.action(self.c,dict(kind='launch',name='Fictional worker',profile='claude',task='Keep this assignment'),'launch')
+        worker=next(iter(self.terminals.sessions.values()))
+        task=self.box.inbox(self.runtime.desk,self.c['id'])[0]
+        for error in (OSError('Fictional lookup failure'),subprocess.TimeoutExpired('fixture lookup',10)):
+            with self.subTest(error=type(error).__name__),patch('agent_desk.native_session_lookup.find_conversation',side_effect=error):
+                response,server,owner=self.desktop_quit()
+            self.assertEqual(response[0],409)
+            self.assertFalse(response[1]['stopped']);self.assertTrue(server.paused)
+            self.assertEqual(json.loads(server.paused_path.read_text())['state'],'incomplete')
+            owner.shutdown.assert_not_called()
+            self.assertIs(self.terminals.get(worker.id),worker)
+            self.assertIsNone(worker.process.poll())
+            self.assertEqual(self.box.get(self.runtime.desk,task['id'])['status'],task['status'])
+
+    def test_desktop_quit_worker_checkpoint_storage_failure_keeps_terminal(self):
+        import sqlite3
+        self.runtime.action(self.c,dict(kind='launch',name='Fictional worker',profile='claude',task='Keep this assignment'),'launch')
+        worker=next(iter(self.terminals.sessions.values()))
+        with patch.object(self.runtime,'checkpoint_workers',side_effect=sqlite3.OperationalError('Fictional storage failure')):
+            response,server,owner=self.desktop_quit()
+        self.assertEqual(response[0],409);self.assertTrue(server.paused)
+        self.assertEqual(response[1]['failed'][0]['id'],'coordinators')
+        owner.shutdown.assert_not_called()
+        self.assertIsNone(worker.process.poll())
 
     def test_invalid_optional_memory_does_not_pause_or_skip_work(self):
         self.message()

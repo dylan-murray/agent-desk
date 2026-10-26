@@ -8,6 +8,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from unittest.mock import patch
@@ -163,6 +164,68 @@ class RestoreTests(unittest.TestCase):
         third = self.manager()
         restore(third, self.store)
         self.assertEqual(third.get(parent.id).origin, 2 * RESTORE_GAP)
+
+    def test_desktop_stop_checkpoints_exact_conversations_before_process_exit(self):
+        from agent_desk.terminal_supervisor import SupervisorClient
+        for cli, native in [('claude', CLAUDE_ID), ('codex', CODEX_ID)]:
+            with patch.dict(os.environ, FAKE_SESSION=native):
+                data = self.root / cli
+                client = SupervisorClient(data, 4398)
+                try:
+                    agent = client.launch(dict(cwd=str(self.root), argv=[cli], name='Fictional saved agent', launch_profile=None))
+                    wait(lambda: 'ARGV' in text(agent))
+                    client.shutdown(for_restart=True)
+                    records = SessionStore(data / 'terminal-sessions-4398.json').load()
+                    self.assertEqual([r['id'] for r in records], [agent.id])
+                    self.assertEqual(records[0]['native_session'], native)
+                    client = SupervisorClient(data, 4398)
+                    resumed = client.get(agent.id)
+                    wait(lambda: 'ARGV' in text(resumed, RESTORE_GAP))
+                    self.assertEqual(resumed.info()['restored']['native_session'], native)
+                    self.assertIn(native, text(resumed, RESTORE_GAP))
+                finally:
+                    for row in client.list():client.get(row['id']).stop()
+                    client.shutdown()
+
+    def test_desktop_checkpoint_failure_keeps_sessions_running_and_allows_retry(self):
+        from agent_desk.terminal_supervisor import Handler, SupervisorClient, SupervisorServer, write_message
+        manager=self.manager()
+        with patch.dict(os.environ,FAKE_SESSION=CODEX_ID):
+            agent=self.launch(manager,['codex'])
+        wait(lambda:'ARGV' in text(agent))
+        server=SupervisorServer(str(self.root/'rpc.sock'),Handler)
+        server.token='fixture-token';server.manager=manager;server.draining=False;server.lifecycle_lock=threading.Lock()
+        thread=threading.Thread(target=server.serve_forever,kwargs={'poll_interval':.01},daemon=True);thread.start()
+        client=SupervisorClient.__new__(SupervisorClient);client.folder=self.root;client.token=server.token
+        try:
+            failures=[('capture_conversations',OSError('Fictional capture failure')),
+                      ('capture_conversations',subprocess.TimeoutExpired('fixture capture',10)),
+                      ('persist',OSError('Fictional storage failure'))]
+            for method,error in failures:
+                with self.subTest(method=method,error=type(error).__name__),patch.object(manager,method,side_effect=error),patch('agent_desk.managed_processes.OwnedProcesses') as owned:
+                    with self.assertRaisesRegex((OSError,ValueError),'capture|storage'):
+                        client.shutdown(for_restart=True)
+                    owned.return_value.stop.assert_not_called()
+                self.assertFalse(manager.closing);self.assertFalse(server.draining)
+                self.assertIsNone(agent.process.poll())
+                self.assertEqual(client.get(agent.id).process.pid,agent.process.pid)
+            def lose_checkpoint_reply(stream,value):
+                if value=={'result':None}:raise BrokenPipeError('Fictional checkpoint reply failure')
+                write_message(stream,value)
+            with patch('agent_desk.terminal_supervisor.write_message',side_effect=lose_checkpoint_reply),patch('agent_desk.managed_processes.OwnedProcesses') as owned:
+                with self.assertRaisesRegex(OSError,'checkpoint reply failure'):client.shutdown(for_restart=True)
+                owned.return_value.stop.assert_not_called()
+            self.assertFalse(manager.closing);self.assertFalse(server.draining)
+            self.assertEqual(client.get(agent.id).process.pid,agent.process.pid)
+            # A retry must checkpoint the original live conversation before teardown.
+            with patch('agent_desk.managed_processes.OwnedProcesses') as owned:
+                owned.return_value.remaining.return_value=[]
+                client.shutdown(for_restart=True)
+            thread.join(timeout=5);self.assertFalse(thread.is_alive())
+            self.assertEqual(self.records()[agent.id]['native_session'],CODEX_ID)
+            self.assertTrue(manager.closing)
+        finally:
+            server.shutdown();server.server_close();thread.join(timeout=5)
 
     def test_claude_terminal_resumes_its_exact_conversation(self):
         manager = self.manager()

@@ -1,11 +1,17 @@
 // Web pages in workspace panes. A web page is not an agent session: it lives in this tab's
-// pane state beside openPaneIds, and never in /api/agents, the agent map or the agent counts.
+// pane state beside openPaneIds (persistent in desktop), and never in /api/agents or agent counts.
 // Closing its pane closes the page, like closing a browser tab.
 const webPages=new Map();
-try{for(const page of JSON.parse(sessionStorage.getItem('agent-desk-web-pages')||'[]'))if(page?.id&&framePageUrl(page.url))webPages.set(page.id,page);}catch{}
+try{
+  const saved=(window.agentDeskDesktop?localStorage:sessionStorage).getItem('agent-desk-web-pages');
+  // Retain pages already open before desktop started persisting their records.
+  const legacy=saved===null&&window.agentDeskDesktop?sessionStorage.getItem('agent-desk-web-pages'):null;
+  for(const page of JSON.parse(saved??legacy??'[]'))if(page?.id&&framePageUrl(page.url))webPages.set(page.id,page);
+  if(legacy!==null)saveWebPages();
+}catch{}
 let recentWebPages=[];
 try{recentWebPages=JSON.parse(localStorage.getItem('agent-desk-recent-web-pages')||'[]').filter(url=>typeof url==='string');}catch{}
-function saveWebPages(){try{sessionStorage.setItem('agent-desk-web-pages',JSON.stringify([...webPages.values()]));}catch{}}
+function saveWebPages(){try{(window.agentDeskDesktop?localStorage:sessionStorage).setItem('agent-desk-web-pages',JSON.stringify([...webPages.values()]));}catch{}}
 function forgetWebPage(id){if(webPages.delete(id))saveWebPages();}
 // "localhost:3000" parses as a URL whose scheme is "localhost:", so a colon followed by digits
 // is a port, not a scheme. Local and port-qualified hosts default to http, the rest to https.
@@ -13,6 +19,7 @@ function forgetWebPage(id){if(webPages.delete(id))saveWebPages();}
 // refused too: a frame on this origin, sandboxed or not, could act as the desk.
 function framePageUrl(text){
   let url;try{url=new URL(String(text||''));}catch{return '';}
+  if(globalThis.agentDeskDesktop && url.protocol==='agent-tool:' && /^t[a-f0-9]{32}$/.test(url.hostname))return url.href;
   if(!['http:','https:'].includes(url.protocol)||!url.hostname)return '';
   const local=host=>['localhost','127.0.0.1','[::1]','0.0.0.0'].includes(host)||host.endsWith('.localhost');
   const port=at=>at.port||(at.protocol==='https:'?'443':'80');
@@ -88,6 +95,7 @@ function loadWebPane(view,page){
   const frame=view.node.querySelector('.web-pane-frame'),ticket=(view.check||0)+1;
   view.check=ticket;view.loadedUrl=page.url;
   showWebPaneNotice(view,null);frame.src=framePageUrl(page.url)||'about:blank';
+  if(page.url.startsWith('agent-tool:'))return;
   terminalRequest('/api/web-pages/check?url='+encodeURIComponent(page.url)).then(result=>{
     if(!view.disposed&&view.check===ticket&&(!result.reachable||result.embeddable===false))showWebPaneNotice(view,page,result);
   // An unavailable check leaves the frame exactly as the browser rendered it.
