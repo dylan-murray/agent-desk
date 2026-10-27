@@ -60,6 +60,16 @@ Set `AGENT_DESK_PROFILE_DIR` to choose a separate desktop profile. The desktop l
 
 Desktop diagnostic logs rotate at 5 MiB and daily, expire after 14 days, and have a shared 50 MiB budget. Cleanup runs when a backend starts and while it writes logs; an app that is not running cleans up on its next start. Startup timings are overwritten per launch. Open the folder with **Agent Desk → Open Local Diagnostics**. Saved conversations, terminal/tool output and workflow history in `data/` are not deleted by diagnostic-log retention.
 
+## Screenshots and file drops
+
+In a local desktop terminal, **⌘V** or **Edit → Paste** saves an image-only clipboard payload as PNG and inserts its quoted absolute path at the terminal cursor. Nonempty plain text takes precedence, including when the clipboard also contains an image. Ordinary and long text paste, native Ctrl+V and Shift+Enter keep their existing behavior. Text already queued for transmission finishes in its original terminal when its pane is hidden.
+
+Drop files into a terminal to insert their original absolute paths, separated by spaces. Each file insertion ends with a space so consecutive drops and screenshot pastes stay separate. Originals are never copied or deleted. A dropped image without a filesystem path uses the screenshot-saving flow; other pathless drops are rejected. The target pane highlights while dragging, and saving/errors appear in its existing status area. File input waiting to be sent stays with that pane and is cancelled if it closes or becomes unavailable. Once transmission starts, the current paste finishes; uncertain input is never retried.
+
+Generated images are stored in `<desktop profile>/data/pasted-images/screenshot-<UUID>.png`, including when the desktop opens a browser workspace. The directory and files are private to your user. Captured bytes and the normalized PNG must each fit within 20 MiB. Completed images remain indefinitely across pane closes, terminal stops, quits, restarts and upgrades. There is no automatic cleanup or retention setting; remove images manually when no longer needed.
+
+Agent Desk uses xterm's bracketed-paste support and adds no Enter, image labels or terminal styling. Claude/Codex keep their native prompts; whether a path turns into a colored image chip depends on the CLI. Known remote panes reject file input, and transfers into SSH sessions started manually inside a local terminal are unsupported. Browser text paste is unchanged; browser uploads and remote transfers are not provided.
+
 ## Closing, quitting, and recovery
 
 Closing the window hides it; agents and schedules keep running. Reopen it from the Dock. The app uses no extra menu bar icon; the standard Agent Desk menu provides diagnostics, recovery controls and Quit. Cmd+Q offers Keep Running, Stop Work and Quit, or Cancel while local terminals, tools, jobs, enabled schedules, coordinator planning, queued turns or deliveries, or active PR monitors exist. Idle saved coordinators alone do not trigger confirmation.
@@ -107,6 +117,7 @@ npm run test:quit
 npm run test:backend-lifecycle
 npm run test:webhooks
 npm run test:smoke
+npm run test:paste-drop
 npm run test:development-workflow
 npm run package
 npm run test:packaged
@@ -115,6 +126,8 @@ npm run test:dmg
 ```
 
 Run the repository's Python and Node suites too. `test:smoke` launches a real Electron window with a fictional shell and visual tool, tests report windows, streaming, backend-crash recovery and web-pane restoration after a full app process restart, and writes desktop/narrow screenshots to `AGENT_DESK_EVIDENCE_DIR` or the system temp directory. It uses the root Playwright development dependency. `test:packaged` launches the actual `.app` with host Python/Node removed from PATH, checks the bundled runtime, second-launch reuse, a real fixture PTY, no TCP listeners across the app process tree, and confirmed shutdown. `test:dmg` verifies and mounts the DMG read-only and repeats the packaged-app check from the mounted volume. `test:development-workflow` covers source-run annotations (save, reload, edit, delete, send) in the desktop profile, Restart Backend and post-edit crash recovery with a surviving terminal, tool pop-out isolation, and Quit after a failed backend start. None of these checks calls model services or uses real conversations. Failed fixtures retain private local diagnostics under the system temporary directory.
+
+`test:paste-drop` uses raw fictional PTYs and disposable files to check native screenshot Paste, filesystem paths, exact bracketed input, cancellation, failures and persistence across a full app restart. It writes `agent-desk-file-{drag,error}-{1280,480}.png` to the evidence directory. Hosts without a functioning system pasteboard report native Paste as unverified and still exercise DOM paste through the real bridge. Real Claude/Codex image-chip conversion is a separate manual check.
 
 ## Visual tool compatibility
 

@@ -50,6 +50,7 @@ jobs:
         working-directory: desktop
       - run: npm test
         working-directory: desktop
+      - run: node --test tests/test_terminal_files.cjs
       - run: npm run test:about
         working-directory: desktop
         env:
@@ -75,6 +76,10 @@ jobs:
         env:
           AGENT_DESK_EVIDENCE_DIR: ${{ runner.temp }}
       - run: npm run test:smoke
+        working-directory: desktop
+        env:
+          AGENT_DESK_EVIDENCE_DIR: ${{ runner.temp }}
+      - run: npm run test:paste-drop
         working-directory: desktop
         env:
           AGENT_DESK_EVIDENCE_DIR: ${{ runner.temp }}

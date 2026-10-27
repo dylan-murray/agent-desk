@@ -1,5 +1,38 @@
 # Desktop integration validation
 
+## File-input review fixes (2026-10-27)
+
+Implemented: file input keeps its pane/connection validity check through the send queue, until its first packet is transmitted. Closing the pane, reconnecting or ending the terminal cancels an unsent file payload, including a screenshot already saved to disk. A paste that has started finishes all packets and its closing bracketed-paste marker. Ordinary queued text retains its existing behavior. Every file insertion now ends with a space so separate drops and screenshot pastes remain separate shell arguments.
+
+Verified with disposable profiles and fictional PTYs: both reported bugs failed regression checks before the fixes. The updated Electron `test:paste-drop` passed cancellation on close, real connection recovery and terminal exit at 1280/480px, plus a file drop exceeding one 16 KiB packet that finishes after its pane closes. Existing long-text, native ⌘V/Edit → Paste, ordering, failure and restart-retention checks also passed. The root Node suite passed all 42 tests, including shell parsing of consecutive drops and screenshot pastes; the desktop Node suite passed all 45 tests. The isolated browser text-paste check passed at 1280/480px using installed Chrome. Electron evidence is under `/private/tmp/ad-paste-l3hLIz`; all content is fictional.
+
+Python, packaged-app and DMG checks were not rerun for these frontend fixes. Real Claude/Codex image-chip conversion remains unverified. User acceptance remains pending.
+
+## Screenshot paste and file drops (2026-10-26)
+
+Implemented on `feat/desktop-image-paste-drops` after fast-forwarding local `main` to `13cd5fc`: local desktop PTYs accept image-only ⌘V/native Paste and file drops. Captured images are decoded and normalized in the authorized main process, limited to 20 MiB before/after conversion, and completed atomically as private, unique PNGs under the desktop profile's `data/pasted-images/`. Completed images have no expiry or lifecycle cleanup. Filesystem-backed drops insert original quoted paths without copying/deleting their files. No Enter, image labels or terminal styling is added.
+
+Pending file input stays ordered with later typing and with its original pane, and is cancelled across closure, terminal unavailability and connection interruptions. Known remote panes explain rejection during dragging as well as on drop. Browser text paste and the native Claude/Codex prompts are preserved. Saving/errors use the existing status area; file dragging outlines the target pane.
+
+Verified locally on Apple Silicon macOS, Python 3.13.7, Electron 45.0.0, with disposable profiles and fictional PTYs/files:
+
+| Check | Result |
+| --- | --- |
+| Desktop Node suite | 45 passed, including image names/contents/modes, invalid and oversized bytes, partial write/sync/rename/open failures, unsafe directories, atomic completion, retention and frame authorization |
+| Root Node suite | 41 passed, including POSIX quoting round trips, image/text precedence, async ordering, pathless/unsupported drops, save failures, closure/unavailability/recovered-connection cancellation, typing before a cancelled save settles, isolation of late save successes/failures and remote-drag rejection |
+| Python suite | 445 tests, OK; one optional browser check skipped |
+| Real Electron `test:paste-drop` | Actual ⌘V and native Edit/Paste responder action from a fixture image clipboard; PNG/JPEG decoding and PNG completion; Chromium filesystem-backed File objects through sandboxed `webUtils`; multiple paths with spaces, quotes and Unicode; untouched originals; existing drafts, exact bracketed-paste bytes and no added submission; ordinary/long text, including hiding a pane mid-paste over HTTP at 1280/480px without losing bytes or the closing paste marker; Ctrl+V, Shift+Enter; target changes, delayed typing, pane closure, unavailable/remote panes, invalid/oversized images, disk errors, pane-header dragging, unregistered-window IPC rejection and complete app quit/restart retention |
+| Browser `tests/browser/terminal-files.cjs` | Own isolated backend and raw PTY at 1280/480px: ordinary/long text and mixed image/text paste, Ctrl+V, Shift+Enter, absent desktop upload handlers and absent file-drag styling |
+| Existing Electron smoke fixture | Streaming, report windows, backend-crash reconnection with the same terminal/draft, isolated tool feedback, responsive/fullscreen controls, cold-start web-pane restoration and shutdown passed |
+
+The first Python run inherited desktop session variables, which changed tool discovery and redirected an expected startup error. The complete rerun with those variables removed passed; both new integration fixtures clear inherited Agent Desk session variables themselves. The host Node executable is 25.6.1, including its misleading `node@24` symlink; local Node 24 verification was not performed. The existing CI job selects Node 24 and now includes the feature's renderer unit check and Electron integration check.
+
+Review follow-up restored the existing text-send behavior across pane disposal and made image cancellation immediately release its queue. Both added regression tests failed before the fixes and passed afterward. The root and desktop Node suites, real Electron check and isolated browser check (using installed Chrome) were rerun; Python and packaging were not rerun for these frontend fixes.
+
+Before screenshot: `/private/tmp/agent-desk-paste-before.png`, captured after launching from the repository root with `npm --prefix desktop start` and a disposable profile. After evidence: `agent-desk-file-drag-{1280,480}.png` and `agent-desk-file-error-{1280,480}.png` in `AGENT_DESK_EVIDENCE_DIR` or the system temporary directory. Desktop/narrow outlines and readable error states were visually inspected. Drop events are automated DOM events carrying real filesystem-backed File objects; a physical Finder drag was not performed.
+
+Real Claude/Codex image-chip conversion and colors remain unverified; exact, valid quoted-path insertion is the verified baseline. Browser uploads, remote transfers and manually started SSH transfers are outside this implementation. Packaged-app/DMG builds and upgrade execution were not rerun. User acceptance remains pending; no annotation was accepted or rejected.
+
 The integration baseline below was verified locally on Apple Silicon macOS on 2026-10-24. Versioning changes are recorded separately at the end of this document. User acceptance remains pending. No annotation was accepted or rejected by this work. The installed app and stored user data were not changed; local build artifacts are under `desktop/out/`.
 
 ## Implementation
