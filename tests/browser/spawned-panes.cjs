@@ -53,6 +53,7 @@ const spawn=(parent,name,argv=['/bin/sh'])=>JSON.parse(execFileSync(python,[cont
   check('...and are listed there',()=>assert.ok(children.every(id=>rows.includes(id))));
   const open=await panes(page);
   check('every live worker opens as a pane beside the agent and the web page',()=>assert.deepEqual(new Set(open),new Set([parent,open.find(id=>id.startsWith('web-')),...children])));
+  check('...right after the agent, in the order they started',()=>assert.deepEqual(open.slice(0,1+children.length),[parent,...children]));
   check('...and a worker that already finished does not',()=>assert.equal(open.includes(finished),false));
   const count=await page.textContent('#pane-count');
   check('the toolbar counts all eight panes',()=>assert.equal(count,'8 / 16 open'));

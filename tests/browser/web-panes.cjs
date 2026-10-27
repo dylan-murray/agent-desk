@@ -110,7 +110,7 @@ async function openPage(page,address,name){
 
   // Pages that refuse framing, and servers that are down, explain themselves.
   await openPage(page,denyHost+'/blocked');
-  const blocked=page.locator('.web-pane').last();
+  const blocked=page.locator('.web-pane.focused');
   await blocked.locator('.web-pane-notice:not([hidden]) h2').waitFor();
   const blockedState=await blocked.evaluate(node=>({h2:node.querySelector('.web-pane-notice h2').textContent,frame:node.querySelector('iframe').hidden,
     code:node.querySelector('.web-pane-notice code').textContent,link:node.querySelector('.web-pane-notice a').href}));
@@ -120,9 +120,9 @@ async function openPage(page,address,name){
   const full=await panes(page);
   check('the fourth pane fills the grid',()=>assert.equal(full.length,4));
 
-  await page.locator('.web-pane').last().locator('.pane-close').click();
+  await blocked.locator('.pane-close').click();
   await openPage(page,'localhost:'+deadPort);
-  const dead=page.locator('.web-pane').last();
+  const dead=page.locator('.web-pane.focused');
   await dead.locator('.web-pane-notice:not([hidden]) h2').waitFor();
   const deadState=await dead.evaluate(node=>({h2:node.querySelector('.web-pane-notice h2').textContent,p:node.querySelector('.web-pane-notice p').textContent}));
   check('a server that is not running is named with the reason',()=>{assert.equal(deadState.h2,'Couldn’t reach localhost:'+deadPort);assert.match(deadState.p,/refused/i);});
@@ -134,7 +134,7 @@ async function openPage(page,address,name){
   await page.screenshot({path:require('node:path').join(require('node:os').tmpdir(),'agent-desk-web-panes.png')});
   await page.reload({waitUntil:'domcontentloaded'});await page.waitForSelector('.web-pane');
   const restored=await page.$$eval('.web-pane .pane-title',nodes=>nodes.map(node=>node.textContent));
-  check('web panes come back after a reload',()=>assert.deepEqual(restored,['Docs','localhost:'+deadPort]));
+  check('web panes come back after a reload',()=>assert.deepEqual(restored,['localhost:'+deadPort,'Docs']));
   await page.locator(`[data-pane-id="${webId}"] .pane-close`).click();
   const forgotten=(await stored(page)).map(item=>item.id),left=await panes(page);
   check('closing a web pane closes the page',()=>{assert.ok(!forgotten.includes(webId));assert.ok(!left.includes(webId));});
@@ -150,9 +150,9 @@ async function openPage(page,address,name){
   check('dragging a header across a web page swaps the panes',()=>{assert.equal(swapped[0],order[order.length-1]);assert.equal(swapped[order.length-1],order[0]);});
 
   // Annotation pins land on a web page instead of disappearing into its frame.
-  await openPage(page,openUrl);await page.frameLocator('.web-pane iframe:not([hidden])').last().locator('h1').waitFor();
+  await openPage(page,openUrl);await page.frameLocator('.web-pane.focused iframe:not([hidden])').locator('h1').waitFor();
   await page.locator('#annotation-launcher').click();
-  const target=await page.locator('.web-pane iframe:not([hidden])').last().boundingBox();
+  const target=await page.locator('.web-pane.focused iframe:not([hidden])').boundingBox();
   await page.mouse.click(target.x+target.width/2,target.y+target.height/2);
   const pinned=await page.locator('#annotation-target').textContent();
   check('a pin can be placed over a web page',()=>assert.match(pinned,/^Pin/));
