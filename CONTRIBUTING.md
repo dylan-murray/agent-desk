@@ -42,6 +42,10 @@ The Python suite exercises real loopback HTTP servers and local terminal process
 
 Browser checks live in `tests/browser/`. See [their instructions](tests/browser/README.md) for isolated server setup. Packaging can be checked with `python -m pip wheel --no-deps .`.
 
+Use relevant automated checks as the verification gate. Add regression coverage for behavior changes and report the commands, actual outcomes, and specific coverage gaps in the PR, identifying the tested commit or CI run. Failed or skipped checks are not passes. User acceptance is not a required completion step.
+
+Keep reusable setup and check instructions in the contributor guides and READMEs. Per-change results belong in the PR and CI logs, rather than tracked validation journals. The [shared checks](.github/workflows/checks.yml) and [desktop workflow](.github/workflows/desktop.yml) define CI coverage. Screenshots support automated assertions; private local diagnostics stay in ignored state.
+
 ## Code organization
 
 - Put application logic in `agent_desk/`, using absolute `agent_desk.*` imports.
