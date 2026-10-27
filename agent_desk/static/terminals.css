@@ -454,4 +454,5 @@ body.pane-dragging-active .pane-edges{visibility:hidden}
 @media(max-width:760px){.pane-tool-toggle{padding:0 6px}.pane-tool-toggle span{display:none}.pane-dock-side{display:none}}
 #launch-terminal-form .launch-readouts{align-items:flex-start}#launch-terminal-form .launch-readouts input{flex:none;width:14px;height:14px;min-height:0;margin:2px 0 0;padding:0}#launch-terminal-form .launch-readouts small{display:block;margin-top:2px;font-size:11px;line-height:1.5;color:var(--ink-muted)}
 .terminal-pane.focused:not(.pane-fullscreen,.pane-dragging){border-color:color-mix(in srgb,var(--agent-color) 80%,transparent);box-shadow:0 0 0 1px color-mix(in srgb,var(--agent-color) min(100%,calc(30% * var(--glow,1))),transparent),0 0 18px -2px color-mix(in srgb,var(--agent-color) min(100%,calc(35% * var(--glow,1))),transparent)}
+.terminal-pane.terminal-file-target{outline:2px solid #9ccaff;outline-offset:-3px}
 .terminal-pane.focused .terminal-bar{background:color-mix(in srgb,var(--agent-color) 12%,var(--surface-raised))}

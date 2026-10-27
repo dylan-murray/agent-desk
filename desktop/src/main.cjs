@@ -1,5 +1,5 @@
 'use strict';
-const {app, BrowserWindow, Menu, ipcMain, protocol, net, shell, dialog, session, screen, powerMonitor, clipboard} = require('electron');
+const {app, BrowserWindow, Menu, ipcMain, protocol, net, shell, dialog, session, screen, powerMonitor, clipboard, nativeImage} = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
@@ -14,6 +14,7 @@ const {restoreBounds} = require('./window-state.cjs');
 const {createProfile, browserWorkspacePort, workspaceChoice, saveWorkspaceChoice} = require('./profile.cjs');
 const {configureAbout} = require('./about.cjs');
 const {reconnect, retryable} = require('./reconnect.cjs');
+const {registerImageIPC} = require('./pasted-images.cjs');
 protocol.registerSchemesAsPrivileged([
   {scheme: 'agent-desk', privileges: {standard: true, secure: true, supportFetchAPI: true, corsEnabled: true}},
   {scheme: 'agent-tool', privileges: {standard: true, secure: true, supportFetchAPI: true, corsEnabled: true}},
@@ -54,6 +55,7 @@ function updateWindowButtons() {
   if (process.platform === 'darwin' && mainWindow && !mainWindow.isDestroyed()) mainWindow.setWindowButtonVisibility(!paneFullscreen || mainWindow.isFullScreen());
 }
 async function boot() {
+  registerImageIPC(ipcMain, windows, profile.data, nativeImage);
   powerMonitor.on('resume', () => retries.now());
   configureAbout(app, process.resourcesPath, path.join(profile.logs, 'build-info.json'));
   const appSession = session.fromPartition('persist:agent-desk');

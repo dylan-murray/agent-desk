@@ -13,6 +13,7 @@
     "package": "npm run stage && electron-forge package --platform=darwin --arch=arm64",
     "make": "npm run stage && electron-forge make --platform=darwin --arch=arm64 && node scripts/make-dmg.cjs",
     "test:smoke": "node test/smoke.cjs",
+    "test:paste-drop": "node test/paste-drop.cjs",
     "test:packaged": "node test/packaged.cjs",
     "test:dmg": "node test/dmg.cjs",
     "test:startup": "node test/startup.cjs",

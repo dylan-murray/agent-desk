@@ -1,5 +1,5 @@
 'use strict';
-const {contextBridge, ipcRenderer} = require('electron');
+const {contextBridge, ipcRenderer, webUtils} = require('electron');
 let serial = 0;
 const streams = new Map();
 ipcRenderer.on('desk:stream-denied', (_event, id) => {streams.get(id)?.callback({type: 'close', code: 1006});streams.delete(id);});
@@ -20,6 +20,11 @@ contextBridge.exposeInMainWorld('agentDeskDesktop', {
   toggleFullscreen: () => ipcRenderer.invoke('desk:fullscreen'),
   setPaneFullscreen: active => ipcRenderer.send('desk:pane-fullscreen', active),
   copyText: text => ipcRenderer.invoke('desk:copy-text', text),
+  droppedFilePath: file => webUtils.getPathForFile(file),
+  saveImage: async bytes => {
+    try {return await ipcRenderer.invoke('desk:save-image', bytes);}
+    catch (error) {throw Error(error.message.replace(/^Error invoking remote method 'desk:save-image': (?:Error: )?/, ''));}
+  },
   openTool: url => ipcRenderer.invoke('desk:open-tool', url),
   subscribe: callback => {const listener = (_event, state) => callback(state);ipcRenderer.on('desk:state', listener);return () => ipcRenderer.removeListener('desk:state', listener);},
   recover: action => ipcRenderer.invoke('desk:recover', action),
