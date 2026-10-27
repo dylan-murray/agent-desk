@@ -40,7 +40,7 @@ function switchDesk(id,{quiet=false,render:draw=true}={}){
   if(draw)render();
 }
 const deskInitial=desk=>[...desk.name.trim()][0]?.toUpperCase()||'?';
-const deskMark=desk=>`<span class="desk-mark" style="--desk-color:${agentColor(desk.id)}" aria-hidden="true">${escapeHTML(deskInitial(desk))}</span>`;
+const deskMark=desk=>`<span class="desk-mark" style="--desk-color:${agentColor({id:desk.id})}" aria-hidden="true">${escapeHTML(deskInitial(desk))}</span>`;
 // Counts per desk over the agents the sidebar would list, so a desk's count matches its sidebar.
 function deskCounts(){
   const counts=new Map(desks.map(d=>[d.id,{agents:0,waiting:0}]));
@@ -167,7 +167,7 @@ function openShutdownDesk(){
     :plan.stop.includes(agent)?(coordinators.has(agent.parent_id)?['Stops · saved','Saved so its coordinator can resume it']:['Stops','The command running in it is ended'])
     :plan.clear.includes(agent)?['Clears','Already finished; removed from the sidebar']:['Keeps running','Not started by Agent Desk, so it cannot be stopped from here'];
   const row=agent=>{const [label,detail]=outcome(agent);
-    return `<li data-shutdown-id="${escapeHTML(agent.id)}" class="${plan.leave.includes(agent)?'kept':''}"><span class="session-avatar" style="--agent-color:${agentColor(agent.id)}">${({codex:'CX',claude:'CC',grok:'GX',opencode:'OC',pi:'PI',cortex:'CO'})[agent.harness]||'AI'}</span><span class="desk-shutdown-name"><strong>${escapeHTML(sessionTitle(agent))}</strong><small>${escapeHTML(agent.project||'')}${agent.cwd?' · '+escapeHTML(shortPath(agent.cwd)):''}</small></span><span class="desk-shutdown-outcome" title="${escapeHTML(detail)}">${escapeHTML(label)}</span></li>`;};
+    return `<li data-shutdown-id="${escapeHTML(agent.id)}" class="${plan.leave.includes(agent)?'kept':''}"><span class="session-avatar" style="--agent-color:${agentColor(agent)}">${({codex:'CX',claude:'CC',grok:'GX',opencode:'OC',pi:'PI',cortex:'CO'})[agent.harness]||'AI'}</span><span class="desk-shutdown-name"><strong>${escapeHTML(sessionTitle(agent))}</strong><small>${escapeHTML(agent.project||'')}${agent.cwd?' · '+escapeHTML(shortPath(agent.cwd)):''}</small></span><span class="desk-shutdown-outcome" title="${escapeHTML(detail)}">${escapeHTML(label)}</span></li>`;};
   dialog.querySelector('.desk-shutdown-list').innerHTML=[...plan.stop,...plan.close,...plan.clear,...plan.leave].map(row).join('');
   const counts=deskCounts(),others=desks.filter(d=>d.id!==desk.id&&counts.get(d.id).agents).map(d=>`<span class="desk-shutdown-other">${deskMark(d)}${escapeHTML(d.name)} · ${plural(counts.get(d.id).agents,'session')}</span>`);
   const othersNote=dialog.querySelector('.desk-shutdown-others');

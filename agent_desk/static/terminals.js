@@ -336,7 +336,8 @@ function renderUsage(view,a){
   node.setAttribute('aria-label',[span?span.state+(clock?' for '+clock:''):'',cpu===null?'':`CPU ${cpu.toFixed(0)}% of one core`,a.memory_kb?'memory '+formatMemory(a.memory_kb):''].filter(Boolean).join(', '));
 }
 // The working and idle clocks tick between refreshes; unchanged lines are skipped by their signature.
-setInterval(()=>{for(const [id,view] of paneViews){const agent=!view.disposed&&agents.find(a=>a.id===id);if(agent)renderUsage(view,withTerminalActivity(agent));}},1000);
+// The pane color follows too, since a session's folder can be detected after its pane opened.
+setInterval(()=>{for(const [id,view] of paneViews){const agent=!view.disposed&&agents.find(a=>a.id===id);if(agent){view.node.style.setProperty('--agent-color',agentColor(agent));renderUsage(view,withTerminalActivity(agent));}}},1000);
 function renderTerminal(){
   if(paneMode!==paneStoreKey())loadPanes();
   const all=current();
@@ -355,7 +356,7 @@ function renderTerminal(){
   syncPaneOrder();highlightPanes();savePanes();renderLayoutPicker();
 }
 function createPane(agent){
-  const node=document.createElement('section');node.className='terminal terminal-pane';node.dataset.paneId=agent.id;node.style.setProperty('--agent-color',agentColor(agent.id));node.setAttribute('aria-label',agent.name+' terminal');
+  const node=document.createElement('section');node.className='terminal terminal-pane';node.dataset.paneId=agent.id;node.style.setProperty('--agent-color',agentColor(agent));node.setAttribute('aria-label',agent.name+' terminal');
   node.innerHTML='<div class="terminal-bar" title="Drag this header to move the pane"><button class="pane-grip" title="Drag the header to move the pane \u00b7 \u2190/\u2192 to move it from the keyboard" aria-label="Move pane"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4h.01M10 4h.01M6 8h.01M10 8h.01M6 12h.01M10 12h.01"/></svg></button><div class="pane-title"></div><div class="pane-actions"><span class="pane-state"></span><button class="pane-protect pane-icon hidden" aria-pressed="false"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3.4" y="7.2" width="9.2" height="6.2" rx="1.4"/><path class="lock-shut" d="M5.4 7.2V5.3a2.6 2.6 0 0 1 5.2 0v1.9"/><path class="lock-open" d="M5.4 7.2V4.5a2.6 2.6 0 0 1 5.1-.8"/></svg></button><button class="pane-expand pane-icon" title="Full screen · Esc to exit" aria-label="Full screen"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 6V2.6h3.4M14 6V2.6h-3.4M2 10v3.4h3.4M14 10v3.4h-3.4"/></svg></button><button class="pane-stop hidden" title="Stop the session and close its pane" aria-label="Stop terminal"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.8"/><rect class="stop-glyph" x="5.9" y="5.9" width="4.2" height="4.2" rx=".8"/></svg><span>Stop</span></button><button class="pane-close pane-icon" title="Close pane; session keeps running" aria-label="Close pane"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8"/></svg></button></div></div><div class="pane-readouts" hidden></div><div class="pane-main"><div class="pane-body"></div></div><div class="pane-directory pane-status"><span class="pane-path"></span><span class="pane-usage" title="CPU as a share of one core, and memory, for this agent and everything it started"></span></div><div class="pane-connection" role="status"></div>';
   // Resize handles sit in the gap around the pane rather than over the terminal, so they
   // never cover its scrollbar or last row. They share the pane's grid cell.
