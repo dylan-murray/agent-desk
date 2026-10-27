@@ -48,8 +48,7 @@ function openWebPage(url,name='',{quiet=false}={}){
   if(quiet&&openPaneIds.length>=PANE_LIMIT)return;
   webPages.set(page.id,page);saveWebPages();rememberWebPage(url);
   demo=false;paneMode=paneStoreKey();
-  if(openPaneIds.length>=PANE_LIMIT)openPaneIds=openPaneIds.filter(id=>id!==selectedId).slice(0,PANE_LIMIT-1);
-  openPaneIds.push(page.id);
+  openPaneBeside(page.id);
   if(quiet){savePanes();render();return;}
   selectedId=page.id;savePanes();switchPage('agents');render();paneViews.get(page.id)?.node.scrollIntoView({block:'nearest'});
 }

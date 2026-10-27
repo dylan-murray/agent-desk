@@ -110,20 +110,32 @@ function openSpawnedPanes(all){
   const coordinators=new Set(agents.filter(a=>a.coordinator_workspace).map(a=>a.id));
   const arrived=all.filter(a=>a.parent_id&&!coordinators.has(a.parent_id)&&a.terminal_id&&a.exit_code===null&&!a.harness_internal&&!seenSpawned.has(a.id));
   if(!arrived.length)return;
-  for(const a of arrived){seenSpawned.add(a.id);if(!openPaneIds.includes(a.id)&&openPaneIds.length<PANE_LIMIT)openPaneIds.push(a.id);}
+  // Workers arriving together follow each other beside their parent, in the order they started.
+  const last=new Map();
+  for(const a of arrived){
+    seenSpawned.add(a.id);if(openPaneIds.includes(a.id)||openPaneIds.length>=PANE_LIMIT)continue;
+    openPaneBeside(a.id,last.get(a.parent_id)??(openPaneIds.includes(a.parent_id)?a.parent_id:selectedId));last.set(a.parent_id,a.id);
+  }
   const known=new Set(agents.map(a=>a.id));seenSpawned=new Set([...seenSpawned].filter(id=>known.has(id)));
   try{sessionStorage.setItem(seenSpawnedKey(),JSON.stringify([...seenSpawned]));}catch{}
   savePanes();
+}
+// A new pane opens beside the selected one (a spawned agent's, beside its parent), so it lands
+// where you are working rather than at the end. With every pane open, it takes that pane's place.
+function openPaneBeside(id,near=selectedId){
+  const index=openPaneIds.indexOf(near);
+  if(openPaneIds.length>=PANE_LIMIT){if(index>=0){handOverPaneRect(near,id);openPaneIds[index]=id;return;}openPaneIds=openPaneIds.slice(0,PANE_LIMIT-1);}
+  openPaneIds.splice(index<0?openPaneIds.length:index+1,0,id);
 }
 function selectPane(id,add=false){
   // Opening an agent that is on another desk goes to that desk, like following a link.
   const target=!demo&&everyAgent().find(a=>a.id===id);
   if(target&&!onActiveDesk(target))switchDesk(deskOf(target),{render:false});
   focusCoordinatorFor(id);
-  if(add){if(openPaneIds.includes(id)){selectedId=id;}else if(openPaneIds.length>=PANE_LIMIT){toast(PANE_LIMIT+' panes are open. Close a pane to add another.');return;}else{openPaneIds.push(id);selectedId=id;}}
+  if(add){if(openPaneIds.includes(id)){selectedId=id;}else if(openPaneIds.length>=PANE_LIMIT){toast(PANE_LIMIT+' panes are open. Close a pane to add another.');return;}else{openPaneBeside(id);selectedId=id;}}
   else if(openPaneIds.includes(id))selectedId=id;
   // A web page has no session row to come back from, so a session never replaces its pane.
-  else if(webPages.has(selectedId)){if(openPaneIds.length>=PANE_LIMIT){toast(PANE_LIMIT+' panes are open. Close a pane to add another.');return;}openPaneIds.push(id);selectedId=id;}
+  else if(webPages.has(selectedId)){if(openPaneIds.length>=PANE_LIMIT){toast(PANE_LIMIT+' panes are open. Close a pane to add another.');return;}openPaneBeside(id);selectedId=id;}
   else{const index=openPaneIds.indexOf(selectedId);if(index>=0){handOverPaneRect(selectedId,id);openPaneIds[index]=id;}else openPaneIds=[id];selectedId=id;}
   savePanes();switchPage('agents');render();paneViews.get(id)?.term?.focus();paneViews.get(id)?.coordinator?.focus();
   // Focusing the terminal only scrolls its hidden input into view; show the whole pane.
@@ -663,8 +675,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       if(!$('#terminal-readouts-field').hidden&&$('#terminal-readouts').checked)body.readouts=true;
       const session=await terminalRequest('/api/terminals/launch',body);rememberLaunchChoice(choiceKey,{command,mode:commandMode},session.id,goal);freshTerminalIds.add(session.id);demo=false;paneMode=paneStoreKey();
       agents.unshift({...session,project:session.cwd.split('/').pop()||session.cwd});
-      if(openPaneIds.length>=PANE_LIMIT)openPaneIds=openPaneIds.filter(id=>id!==selectedId).slice(0,PANE_LIMIT-1);
-      openPaneIds.push(session.id);selectedId=session.id;savePanes();$('#launch-terminal-dialog').close();switchPage('agents');render();paneViews.get(session.id)?.node.scrollIntoView({block:'nearest'});
+      openPaneBeside(session.id);selectedId=session.id;savePanes();$('#launch-terminal-dialog').close();switchPage('agents');render();paneViews.get(session.id)?.node.scrollIntoView({block:'nearest'});
     }catch(error){$('#terminal-launch-error').textContent=error.message;}finally{submit.disabled=false;}
   };
   $('#confirm-stop-terminal').onclick=async()=>{try{await terminalRequest('/api/terminals/stop',{id:stopTerminalId});$('#stop-terminal-dialog').close();if(removeAfterStop)dismissTerminal(stopTerminalId);refresh();}catch(error){toast(error.message);}};

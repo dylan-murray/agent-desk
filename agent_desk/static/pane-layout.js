@@ -56,6 +56,10 @@ function settlePanes(items,anchors=[]){
 function freePaneSlot(items,w,h){
   for(let y=0;;y++)for(let x=0;x+w<=PANE_GRID;x++){const rect={x,y,w,h};if(!items.some(item=>rectsOverlap(rect,item)))return rect;}
 }
+// Beside a pane: to its right where the new pane fits in the row, otherwise below it.
+function paneSlotBeside(rect,w,h){
+  return rect.x+rect.w+w<=PANE_GRID?{x:rect.x+rect.w,y:rect.y,w,h}:{x:Math.min(rect.x,PANE_GRID-w),y:rect.y+rect.h,w,h};
+}
 // Panes grow into any empty space left beside them, one whole row or column of cells at a
 // time, until they cover the full width and every row down to the end of the first screen
 // or the lowest pane. Widening comes before growing taller, so a short row fills its own
@@ -90,15 +94,20 @@ function loadPaneRects(){
 }
 function savePaneRects(){try{if(paneRects)(window.agentDeskDesktop?localStorage:sessionStorage).setItem(paneRectsKey(),JSON.stringify(paneRects));else (window.agentDeskDesktop?localStorage:sessionStorage).removeItem(paneRectsKey());}catch{}}
 // Explicit sizes for every open pane. Closed panes are dropped and the rest rise into their
-// space; a newly opened pane takes the layout's cell size at the first spot it fits. Then the
+// space; a newly opened pane takes the layout's cell size beside the pane before it in the list,
+// pushing whatever was there down, or the first spot it fits when it heads the list. Then the
 // panes grow to fill any gap; one that no pane can grow into whole (a pinwheel of four panes
 // around a hole) tiles the layout afresh rather than leave dead space.
 function resolvePaneRects(ids){
   const tiled=()=>Object.fromEntries(tilePanes(paneLayoutId,ids.length).map((rect,i)=>[ids[i],rect]));
   if(!paneRects)return tiled();
   const layout=paneLayout(paneLayoutId),cell=tilePanes(layout.id,layout.screen).at(-1);
-  const items=settlePanes(ids.filter(id=>paneRects[id]).map(id=>({id,...paneRects[id]})));
-  for(const id of ids)if(!paneRects[id])items.push({id,...freePaneSlot(items,cell.w,cell.h)});
+  let items=settlePanes(ids.filter(id=>paneRects[id]).map(id=>({id,...paneRects[id]})));
+  ids.forEach((id,i)=>{
+    if(paneRects[id])return;
+    const near=i&&items.find(item=>item.id===ids[i-1]);
+    items=near?settlePanes([...items,{id,...paneSlotBeside(near,cell.w,cell.h)}],[id]):[...items,{id,...freePaneSlot(items,cell.w,cell.h)}];
+  });
   const filled=fillPaneGaps(items);
   if(paneGapCells(filled)){paneRects=null;savePaneRects();return tiled();}
   paneRects=Object.fromEntries(filled.map(({id,...rect})=>[id,rect]));
@@ -140,6 +149,9 @@ function applyPaneLayout({animate=false,held=[]}={}){
     if(Math.abs(dx)<.5&&Math.abs(dy)<.5)continue;
     node.reflow?.cancel();
     node.reflow=node.animate([{transform:`translate(${dx}px,${dy}px)`},{transform:'none'}],{duration:200,easing:'cubic-bezier(.2,.7,.3,1)'});
+    // Mid-glide a pane is measured where it was, so count the panes below again once it lands.
+    // A cancelled glide was replaced by a new one, which counts them in turn.
+    node.reflow.finished.then(updatePanesBelow,()=>{});
   }
 }
 // The row unit is a twelfth of the visible height, less a gap below each row: the last one
