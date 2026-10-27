@@ -47,7 +47,7 @@ const groupChevron='<svg class="nav-group-chevron" viewBox="0 0 16 16" aria-hidd
 function sessionGroupHeader(group,sessions,forceOpen){
   const members=sessions.filter(a=>!a.harness_internal&&group.ids.includes(a.id)),open=forceOpen||!group.collapsed;
   const needsYou=members.filter(a=>a.status==='needs_input').length,working=members.some(a=>matchesStatus(a,'working'));
-  const peek=members.slice(0,4).map(a=>`<span class="nav-group-peek-avatar" style="--agent-color:${agentColor(a.id)}">${({codex:'CX',claude:'CC',grok:'GX',opencode:'OC',pi:'PI',cortex:'CO'})[a.harness]||'AI'}</span>`).join('');
+  const peek=members.slice(0,4).map(a=>`<span class="nav-group-peek-avatar" style="--agent-color:${agentColor(a)}">${({codex:'CX',claude:'CC',grok:'GX',opencode:'OC',pi:'PI',cortex:'CO'})[a.harness]||'AI'}</span>`).join('');
   return `<button type="button" class="nav-group-toggle" draggable="true" data-group-toggle="${escapeHTML(group.id)}" aria-expanded="${open}" title="${escapeHTML(group.name)} · click to ${open?'collapse':'expand'} · right-click to rename · drag to move">${groupChevron}<span class="nav-group-name">${escapeHTML(group.name)}</span><span class="nav-group-count">${members.length}</span>${working?'<span class="nav-group-working" title="A session in this group is working" aria-hidden="true"></span>':''}<span class="nav-group-peek" aria-hidden="true">${peek}</span>${needsYou?`<span class="nav-group-attention" role="img" aria-label="${needsYou} need${needsYou===1?'s':''} you" title="${needsYou} session${needsYou===1?'':'s'} in this group need${needsYou===1?'s':''} you">${attentionGlyph}</span>`:''}</button>`;
 }
 // The sidebar list with each group's members wrapped in its folder. orderedSessions keeps a
