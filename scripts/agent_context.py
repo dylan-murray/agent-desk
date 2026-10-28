@@ -2,11 +2,13 @@
 import argparse
 import json
 import sys
-from urllib.request import Request, urlopen
+from urllib.request import Request
 try:
     from .agent_control import DeskClient
 except ImportError:
     from agent_control import DeskClient
+
+from agent_desk.local_transport import urlopen
 
 
 def main():

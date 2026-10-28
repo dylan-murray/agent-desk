@@ -281,6 +281,8 @@ class TerminalSession:
         self.send(dict(op='input',data=base64.b64encode(b'\r').decode()))
 
     def stop(self):
+        from agent_desk.managed_processes import OwnedProcesses
+        owned = OwnedProcesses(self.process.pid) if self.process.poll() is None else None
         if self.process.poll() is None:
             try:
                 self.send(dict(op='stop'))
@@ -295,6 +297,7 @@ class TerminalSession:
                 except subprocess.TimeoutExpired:
                     self.process.kill()
                     self.process.wait()
+        if owned:owned.stop()
         self.reader.join(timeout=2)
         self.process.stdin.close()
 

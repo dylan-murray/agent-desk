@@ -24,8 +24,8 @@
     <p id="event-source-help" class="muted"></p><p class="muted">Saving pauses this source and discards its waiting events. Enable it from the source list when ready.</p>
     <p id="event-source-error" class="error-banner" role="alert"></p><div class="dialog-actions"><button type="button" class="button" data-close>Cancel</button><button type="submit" class="button primary">Save source</button></div></form>`;
   const tokenDialog=node('dialog','','event-source-dialog');tokenDialog.id='event-token-dialog';tokenDialog.setAttribute('aria-labelledby','event-token-title');
-  tokenDialog.innerHTML=`<h2 id="event-token-title">Connect your local adapter</h2><p class="muted">Copy this token now. Agent Desk stores only its hash. Rotating it invalidates the previous token.</p><label>Webhook URL<input id="event-webhook-url" readonly></label><label>Bearer token<input id="event-webhook-token" readonly type="password"></label><button type="button" id="event-token-copy" class="text-button">Copy token</button><p class="muted">POST JSON with <code>Authorization: Bearer TOKEN</code> and <code>Content-Type: application/json</code>. Slack credentials stay in your separate adapter process.</p><pre>{"id":"stable-source-event-id","payload":{"type":"message"}}</pre><button type="button" class="button" data-close>Done</button>`;
-  tokenDialog.addEventListener('close',()=>{$('event-webhook-token').value='';});
+  tokenDialog.innerHTML=`<h2 id="event-token-title">Connect your local adapter</h2><p class="muted">Copy this token now. Agent Desk stores only its hash. Rotating it invalidates the previous token.</p><label>Webhook URL<input id="event-webhook-url" readonly></label><label id="event-workspace-label" hidden>Workspace address<input id="event-workspace" readonly></label><label id="event-socket-label" hidden>Unix socket<input id="event-webhook-socket" readonly></label><label>Bearer token<input id="event-webhook-token" readonly type="password"></label><button type="button" id="event-token-copy" class="text-button">Copy token</button><p class="muted">POST JSON with <code>Authorization: Bearer TOKEN</code> and <code>Content-Type: application/json</code>. Slack credentials stay in your separate adapter process.</p><pre id="event-webhook-example" tabindex="0"></pre><button type="button" id="event-example-copy" class="text-button">Copy curl example</button><button type="button" class="button" data-close>Done</button>`;
+  tokenDialog.addEventListener('close',()=>{$('event-webhook-token').value='';$('event-webhook-example').textContent='';});
   const confirm=node('dialog','','event-source-dialog');confirm.id='event-source-confirm';confirm.setAttribute('aria-labelledby','event-confirm-title');
   confirm.innerHTML='<h2 id="event-confirm-title"></h2><p id="event-confirm-detail"></p><p class="error-banner" role="alert"></p><div class="dialog-actions"><button type="button" class="button" data-close>Cancel</button><button type="button" class="button" id="event-confirm-action"></button></div>';
   document.body.append(dialog,tokenDialog,confirm);
@@ -37,8 +37,21 @@
   const option=node('option','Event');option.value='event';option.disabled=true;$('schedule-trigger').append(option);
   function action(label,fn){const b=node('button',label,'text-button');b.type='button';b.onclick=async()=>{b.disabled=true;try{await fn();}catch(e){toast(e.message);}finally{b.disabled=false;}};return b;}
   async function request(name,payload){const result=await terminalRequest('/api/event-bus/'+name,payload);await refresh();return result;}
-  function showToken(result){$('event-webhook-url').value=location.origin+'/api/event-bus/webhook/'+result.id;$('event-webhook-token').value=result.token;tokenDialog.showModal();}
-  $('event-token-copy').onclick=async()=>{try{await navigator.clipboard.writeText($('event-webhook-token').value);toast('Token copied');}catch{toast('Select the token field to copy it.');}};
+  const shellQuote=value=>"'"+value.replaceAll("'", "'\\''")+"'";
+  const copyText=text=>window.agentDeskDesktop?.copyText?window.agentDeskDesktop.copyText(text):navigator.clipboard.writeText(text);
+  function showToken(result){
+    const connection=result.connection;
+    $('event-webhook-url').value=connection.url;
+    $('event-workspace').value=connection.workspace;
+    $('event-webhook-socket').value=connection.socket||'';
+    $('event-workspace-label').hidden=!connection.socket;
+    $('event-socket-label').hidden=!connection.socket;
+    $('event-webhook-token').value=result.token;
+    $('event-webhook-example').textContent=['curl',...(connection.socket?['--unix-socket',shellQuote(connection.socket)]:[]),shellQuote(connection.url),'-H',shellQuote('Authorization: Bearer '+result.token),'-H',"'Content-Type: application/json'",'--data',shellQuote(JSON.stringify({id:'stable-source-event-id',payload:{type:'message'}}))].join(' ');
+    tokenDialog.showModal();
+  }
+  $('event-example-copy').onclick=async()=>{try{await copyText($('event-webhook-example').textContent);toast('curl example copied');}catch{toast('Select the example to copy it.');}};
+  $('event-token-copy').onclick=async()=>{try{await copyText($('event-webhook-token').value);toast('Token copied');}catch{toast('Select the token field to copy it.');}};
   function confirmation(title,detail,label,fn){$('event-confirm-title').textContent=title;$('event-confirm-detail').textContent=detail;confirm.querySelector('[role=alert]').textContent='';const b=$('event-confirm-action');b.textContent=label;b.onclick=async()=>{b.disabled=true;try{await fn();confirm.close();}catch(e){confirm.querySelector('[role=alert]').textContent=e.message;}finally{b.disabled=false;}};confirm.showModal();}
   function render(){
     $('event-bus-status').dataset.state='ready';

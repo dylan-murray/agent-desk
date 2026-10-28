@@ -6,12 +6,17 @@ import shlex
 import subprocess
 import sys
 import time
+from agent_desk.local_transport import urlopen
 from urllib.request import build_opener, ProxyHandler
 from agent_desk.launch_profiles import remote_native
 
 
 class ToolSelectionError(ValueError):
     """Rejected before launching anything; safe for a bounded planning retry."""
+
+
+def tool_open(url, timeout=3):
+    return urlopen(url, timeout=timeout) if url.startswith('agent-tool:') else build_opener(ProxyHandler({})).open(url, timeout=timeout)
 
 
 class CoordinatorTools:
@@ -101,7 +106,7 @@ class CoordinatorTools:
 
     @staticmethod
     def review_state(url):
-        with build_opener(ProxyHandler({})).open(url+'/state',timeout=3) as response:
+        with tool_open(url+'/state',timeout=3) as response:
             return json.loads(response.read(2_000_000))
 
     @staticmethod
@@ -219,7 +224,7 @@ class CoordinatorTools:
                 state=self.review_state(row['url']);sub=state.get('submission',{}).get('n',0);pr=state.get('pr_request',{}).get('n',0)
                 submitted=sub>row['submission'];requested=pr>row['pr_request']
                 if not submitted and not requested:continue
-                with build_opener(ProxyHandler({})).open(row['url']+'/dump',timeout=3) as response:notes=response.read(24000).decode(errors='replace')
+                with tool_open(row['url']+'/dump',timeout=3) as response:notes=response.read(24000).decode(errors='replace')
                 # A simultaneous feedback submission keeps publication blocked.
                 approved=requested and not submitted
                 text=('Local review approved: user clicked Open PR.' if approved else 'Local review feedback submitted. Fix these notes and reply on the review page; publication remains blocked.')

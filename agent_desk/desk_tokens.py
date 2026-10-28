@@ -6,13 +6,13 @@ so a process that can only reach 127.0.0.1 cannot pick them up.
 """
 import os
 from pathlib import Path
-from urllib.parse import urlparse
 
 from agent_desk.paths import DATA_DIR
+from agent_desk.local_transport import endpoint_key, workspace_key
 
 
 def token_path(kind, port, data_dir=None):
-    return Path(data_dir or DATA_DIR) / f'.{kind}-token-{int(port)}'
+    return Path(data_dir or DATA_DIR) / f'.{kind}-token-{workspace_key(port)}'
 
 
 def write_token(kind, port, value, data_dir=None):
@@ -28,7 +28,7 @@ def write_token(kind, port, value, data_dir=None):
 
 def read_terminal_token(desk, data_dir=None):
     """The terminal token of the desk at ``desk`` (a loopback URL with a port)."""
-    port = urlparse(desk).port
+    port = endpoint_key(desk)
     if not port:
         raise ValueError('Use an Agent Desk URL with an explicit port')
     path = token_path('terminal', port, data_dir)

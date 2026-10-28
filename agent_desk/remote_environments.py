@@ -12,6 +12,7 @@ import subprocess
 import threading
 import zipfile
 
+from agent_desk import __version__
 from agent_desk.paths import DATA_DIR, PACKAGE_DIR, SCRIPTS_DIR
 from agent_desk.remote_connections import environment, ssh_command, target_identity, target_name
 
@@ -41,6 +42,8 @@ def bundle():
         for folder in (PACKAGE_DIR, SCRIPTS_DIR):
             for path in sorted(folder.rglob('*')):
                 relative = path.relative_to(folder)
+                if folder == PACKAGE_DIR and relative.as_posix() == '_version.py':
+                    continue
                 if not path.is_file() or path.is_symlink() or '__pycache__' in relative.parts:
                     continue
                 if path.suffix not in ('.py', '.js', '.cjs', '.css', '.html', '.svg'):
@@ -50,6 +53,11 @@ def bundle():
                 item = zipfile.ZipInfo(folder.name + '/' + relative.as_posix())
                 item.compress_type = zipfile.ZIP_DEFLATED
                 archive.writestr(item, path.read_bytes())
+        # Preserve the shared version even on hosts without a Python installation
+        # of agent-desk. ZipInfo keeps bundle identity deterministic across calls.
+        item = zipfile.ZipInfo('agent_desk/_version.py')
+        item.compress_type = zipfile.ZIP_DEFLATED
+        archive.writestr(item, f'VERSION = {__version__!r}\n')
     data = output.getvalue()
     return {'version': hashlib.sha256(data).hexdigest(), 'bundle': base64.b64encode(data).decode()}
 

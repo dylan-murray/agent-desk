@@ -1,5 +1,6 @@
 """Local agent dashboard. Python standard library only."""
 from agent_desk.paths import DATA_DIR, STATIC_DIR
+from agent_desk.local_transport import desk_url, workspace_key
 import argparse
 import atexit
 import json
@@ -39,6 +40,16 @@ from agent_desk.desks import Desks
 
 
 class ThreadingHTTPServer(http.server.ThreadingHTTPServer):
+    desktop = False
+
+    @property
+    def workspace_key(self):
+        return self.server_port
+
+    @property
+    def desk_url(self):
+        return desk_url(self.server_port)
+
     def server_bind(self):
         # http.server names the bound address with socket.getfqdn, which stalls for about
         # 35 seconds where reverse DNS is slow (GitHub's macOS runners, some VPNs). Loopback needs no name.
@@ -68,12 +79,15 @@ class DeskTerminals:
     def __init__(self, terminals):
         self.terminals = terminals
         self.lock = threading.Lock()
+        self.desktop_paused = False
 
     def __getattr__(self, name):
         return getattr(self.terminals, name)
 
     def launch(self, payload, coordinator=None, desk=None):
         with self.lock:
+            if self.desktop_paused:
+                raise ValueError('Desktop launches are paused during shutdown recovery')
             rows = self.terminals.list()
             # Not a real ID: it stands in for the new terminal, which, without a desk, follows its parent.
             arriving = dict(id='\0launching', parent_id=payload.get('parent_id'))
@@ -140,6 +154,12 @@ def read_skill_uis():
 def skill_ui_url(text, desk_port):
     """Whether a tool's address is a local page on a port other than the desk's."""
     try:
+        if isinstance(desk_port, str):
+            url = urlparse(text)
+            if url.scheme != 'agent-tool' or url.path not in ('', '/') or url.query or url.fragment:
+                return False
+            return any(item and item.get('url') == text and item.get('transport') == 'unix-http-v1'
+                       for item in (TOOL_RUNTIME.read_record(p) for p in TOOL_RUNTIME.state.glob('*.json')))
         url = urlparse(text)
         return bool(url.scheme == 'http' and url.hostname in ('127.0.0.1', 'localhost') and url.port
                     and url.port != desk_port and not url.username and not url.password)
@@ -336,14 +356,22 @@ class Handler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def address_string(self):
+        return 'local-desktop' if self.server.desktop else super().address_string()
+
     def log_request(self, code='-', size='-'):
         # Panes and lists poll API reads several times a second; log what changes state or fails.
         if self.command == 'GET' and self.path.startswith('/api/') and isinstance(code, int) and code < 400:
             return
         super().log_request(code, size)
 
+    def request_origin(self):
+        return 'agent-desk://app' if self.server.desktop else 'http://' + self.headers.get('Host', '')
+
     def allowed_host(self):
-        return self.headers.get('Host') in (f'127.0.0.1:{self.server.server_port}', f'localhost:{self.server.server_port}')
+        if self.server.desktop:
+            return self.headers.get('Host') == 'app'
+        return self.headers.get('Host') in (f'127.0.0.1:{self.server.workspace_key}', f'localhost:{self.server.workspace_key}')
 
     def content_security_policy(self):
         """Only the desk's own files may run as script, so injected markup cannot.
@@ -351,14 +379,14 @@ class Handler(SimpleHTTPRequestHandler):
         Styles stay inline-capable (xterm and pane layout set them); web panes may
         frame any http(s) page the user opens. No other page may frame the desk.
         """
-        port = self.server.server_port
+        port = self.server.workspace_key
         return '; '.join((
             "default-src 'self'",
             "script-src 'self'",
             "style-src 'self' 'unsafe-inline'",
             "img-src 'self' data: blob:",
             "font-src 'self' data:",
-            f"connect-src 'self' ws://127.0.0.1:{port} ws://localhost:{port}",
+            ("connect-src 'self'" if self.server.desktop else f"connect-src 'self' ws://127.0.0.1:{port} ws://localhost:{port}"),
             "frame-src 'self' http: https:",
             "media-src 'self' blob: data:",
             "worker-src 'none'",
@@ -389,7 +417,7 @@ class Handler(SimpleHTTPRequestHandler):
         if site is None:
             # Browsers without these labels (Safari before 16.4) still say where a request came
             # from. Tools send neither header.
-            own = 'http://' + self.headers.get('Host', '')
+            own = self.request_origin()
             origin, referer = self.headers.get('Origin'), self.headers.get('Referer')
             if origin is not None:
                 site = 'same-origin' if origin == own else 'cross-site'
@@ -414,6 +442,12 @@ class Handler(SimpleHTTPRequestHandler):
         if remote_native() and not self.terminal_authorized():
             return self.send_json({'error': 'Remote runtime authentication required'}, 403)
         route = urlparse(self.path).path
+        if self.server.desktop and not self.terminal_authorized():
+            return self.send_json({'error': 'Desktop authorization required'}, 403)
+        if route.startswith('/api/desktop/'):
+            from agent_desk.desktop_backend import lifecycle_request
+            import sys
+            return lifecycle_request(self, sys.modules[__name__])
         if route == '/api/event-bus':
             if not self.terminal_authorized():
                 return self.send_json({'error': 'Terminal authentication required'}, 403)
@@ -422,18 +456,20 @@ class Handler(SimpleHTTPRequestHandler):
             from agent_desk.remote_node import info
             return self.send_json(info())
         if route == '/api/terminal-auth':
+            if self.server.desktop:
+                return self.send_json({'error': 'Desktop user tokens are not served to renderers'}, 403)
             # Only the desk's own page gets the token over HTTP: a browser marks its
             # same-origin fetches, and nothing else can read them. Local helpers read
             # the owner-only token file instead.
             origin = self.headers.get('Origin')
-            if origin and origin != 'http://' + self.headers.get('Host', ''):
+            if origin and origin != self.request_origin():
                 return self.send_json({'error': 'Invalid origin'}, 403)
-            own = 'http://' + self.headers.get('Host', '')
+            own = self.request_origin()
             # Safari before 16.4 sends no Sec-Fetch-Site; its page is known by the Referer instead.
             older_browser = self.headers.get('Sec-Fetch-Site') is None and (self.headers.get('Referer') or '').startswith(own + '/')
             if self.headers.get('Sec-Fetch-Site') != 'same-origin' and not older_browser:
                 return self.send_json({'error': 'The terminal token is only served to the desk page; local helpers read '
-                                       + str(desk_tokens.token_path('terminal', self.server.server_port))}, 403)
+                                       + str(desk_tokens.token_path('terminal', self.server.workspace_key))}, 403)
             return self.send_json({'token': TERMINAL_TOKEN, 'cwd': str(ROOT.resolve())})
         if route == '/api/coordinators':
             if not self.terminal_authorized():
@@ -467,13 +503,13 @@ class Handler(SimpleHTTPRequestHandler):
             query=parse_qs(urlparse(self.path).query)
             if query.get('task'):
                 if REMOTES.identity(query['task'][0]):return self.send_json({'tasks':[t for t in REMOTES.records('tasks') if t['id']==query['task'][0]]})
-                try:return self.send_json({'tasks':[MAILBOX.get(f'http://127.0.0.1:{self.server.server_port}',query['task'][0])]})
+                try:return self.send_json({'tasks':[MAILBOX.get(self.server.desk_url,query['task'][0])]})
                 except ValueError as error:return self.send_json({'error':str(error)},404)
-            return self.send_json({'event_delivery': True, 'native_grok_terminal': True, 'supported_harnesses': ['codex','claude','grok'], 'tasks': REMOTES.records('tasks') + MAILBOX.events(f'http://127.0.0.1:{self.server.server_port}')})
+            return self.send_json({'event_delivery': True, 'native_grok_terminal': True, 'supported_harnesses': ['codex','claude','grok'], 'tasks': REMOTES.records('tasks') + MAILBOX.events(self.server.desk_url)})
         if route == '/api/terminals/stream':
             # WebSockets are exempt from CORS, so check the origin here; the token arrives as the first message.
             origin = self.headers.get('Origin')
-            if origin is not None and origin != 'http://' + self.headers.get('Host', ''):
+            if origin is not None and origin != self.request_origin():
                 return self.send_json({'error': 'Invalid origin'}, 403)
             problem = websocket.upgrade_error(self.headers)
             if problem:
@@ -523,7 +559,7 @@ class Handler(SimpleHTTPRequestHandler):
                 with SKILL_UIS_LOCK:
                     # The file is checked again on the way out: the page frames these addresses.
                     return self.send_json({'uis': [dict(ui, **TOOL_RUNTIME.status(ui['id'])) for ui in read_skill_uis()
-                                                   if isinstance(ui, dict) and skill_ui_url(ui.get('url'), self.server.server_port)]})
+                                                   if isinstance(ui, dict) and skill_ui_url(ui.get('url'), self.server.workspace_key)]})
             except (OSError, ValueError):
                 return self.send_json({'error': 'Could not read skill UI registry'}, 500)
         if route.startswith('/apps/'):
@@ -582,7 +618,7 @@ class Handler(SimpleHTTPRequestHandler):
                     if agent['id'] in PROTECTED_PANES:
                         agent['protected'] = True
                 known_pids = {a.get('pid') for a in reported} | TERMINALS.child_pids()
-                internal = MAILBOX.subagents(f'http://127.0.0.1:{self.server.server_port}', {a['id'] for a in managed if a['exit_code'] is None})
+                internal = MAILBOX.subagents(self.server.desk_url, {a['id'] for a in managed if a['exit_code'] is None})
                 for agent in internal:
                     agent.update(folder_context(agent['cwd']))
                 every = REMOTES.records('agents') + COORDINATORS.agents() + managed + internal + reported + [a for a in processes if a['pid'] not in known_pids]
@@ -596,7 +632,7 @@ class Handler(SimpleHTTPRequestHandler):
     def terminal_authorized(self):
         origin = self.headers.get('Origin')
         return (self.allowed_host() and
-                (origin is None or origin == 'http://' + self.headers.get('Host', '')) and
+                (origin is None or origin == self.request_origin()) and
                 any(secrets.compare_digest(self.headers.get('X-Agent-Desk-Terminal', '').encode(), token.encode())
                     for token in (TERMINAL_TOKEN, HELPER_TOKEN)))
 
@@ -622,7 +658,7 @@ class Handler(SimpleHTTPRequestHandler):
     def set_readouts(self):
         # Pane processes authenticate with their own pane's token, never the desk-wide ones.
         origin = self.headers.get('Origin')
-        if not self.allowed_host() or origin not in (None, 'http://' + self.headers.get('Host', '')):
+        if not self.allowed_host() or origin not in (None, self.request_origin()):
             return self.send_json({'error': 'Invalid host or origin'}, 403)
         try:
             size = int(self.headers.get('Content-Length', '0'))
@@ -649,14 +685,15 @@ class Handler(SimpleHTTPRequestHandler):
         # Browser-mediated activation is separate from agent-friendly save APIs.
         # Like the rest of this local app, this is not a boundary against a hostile local process.
         return (self.terminal_authorized() and
-                self.headers.get('Origin') == 'http://' + self.headers.get('Host', '') and
+                (not self.server.desktop or self.at_the_desk()) and
+                self.headers.get('Origin') == self.request_origin() and
                 self.headers.get('Sec-Fetch-Site') == 'same-origin')
 
     def event_webhook(self):
         identity = self.path.removeprefix('/api/event-bus/webhook/')
         authenticated = False
         try:
-            if not self.allowed_host() or self.client_address[0] not in ('127.0.0.1', '::1') or self.headers.get('Origin') is not None:
+            if not self.allowed_host() or (not self.server.desktop and self.client_address[0] not in ('127.0.0.1', '::1')) or self.headers.get('Origin') is not None:
                 raise EventError('Webhook requires a loopback adapter request without a browser Origin', 403)
             authorization = self.headers.get('Authorization', '')
             token = authorization[7:] if authorization.startswith('Bearer ') else ''
@@ -674,19 +711,33 @@ class Handler(SimpleHTTPRequestHandler):
                 payload = json.loads(self.rfile.read(size))
             except (ValueError, RecursionError):
                 raise EventError('Malformed JSON event') from None
-            result = WORKFLOWS.events.ingest(identity, payload)
+            with WORKFLOWS.lock:
+                if self.server.desktop and self.server.paused:
+                    raise EventError('Desktop shutdown is paused; resume or finish shutdown from the app menu', 409)
+                result = WORKFLOWS.events.ingest(identity, payload)
             return self.send_json(result, 200 if result['duplicate'] else 202)
         except EventError as exc:
             if authenticated:WORKFLOWS.events.error(identity, str(exc), seen=True)
             return self.send_json({'error': str(exc)}, exc.status)
 
     def do_POST(self):
+        if self.path.startswith('/api/event-bus/webhook/'):
+            if self.foreign_browser_request():
+                return self.send_json({'error': 'Cross-site requests are not allowed'}, 403)
+            return self.event_webhook()
+        if self.server.desktop:
+            if not self.terminal_authorized():
+                return self.send_json({'error': 'Desktop authorization required'}, 403)
+            if self.path.startswith('/api/desktop/'):
+                from agent_desk.desktop_backend import lifecycle_request
+                import sys
+                return lifecycle_request(self, sys.modules[__name__])
+            if self.server.paused:
+                return self.send_json({'error': 'Previous shutdown is incomplete. Resume or finish shutdown from the app menu.'}, 409)
         if self.foreign_browser_request():
             return self.send_json({'error': 'Cross-site requests are not allowed'}, 403)
         if self.path == '/api/readouts':
             return self.set_readouts()
-        if self.path.startswith('/api/event-bus/webhook/'):
-            return self.event_webhook()
         if self.path.startswith('/api/event-bus/') or self.path.startswith('/api/remote/') or self.path.startswith('/api/accounts/') or self.path.startswith('/api/conversations/') or self.path.startswith('/api/terminals/') or self.path == '/api/projects/create' or self.path.startswith('/api/inbox/') or self.path.startswith('/api/tools/') or self.path.startswith('/api/special-agents/') or self.path.startswith('/api/skills/') or self.path.startswith('/api/workflows/') or self.path.startswith('/api/coordinator-events/') or self.path.startswith('/api/coordinators/') or self.path.startswith('/api/model-router/') or self.path.startswith('/api/desks/'):
             if not self.terminal_authorized():
                 return self.send_json({'error': 'Terminal authentication required'}, 403)
@@ -704,7 +755,13 @@ class Handler(SimpleHTTPRequestHandler):
                                'rotate-token': lambda p: WORKFLOWS.events.rotate_token(p.get('id'))}
                     action = actions.get(self.path.rsplit('/', 1)[-1])
                     if not action:return self.send_json({'error': 'Not found'}, 404)
-                    return self.send_json(action(payload))
+                    result = action(payload)
+                    if result.get('token'):
+                        route = '/api/event-bus/webhook/' + result['id']
+                        result['connection'] = dict(workspace=self.server.desk_url,
+                                                    url=('http://app' if self.server.desktop else self.server.desk_url) + route,
+                                                    socket=str(self.server.socket_path) if self.server.desktop else None)
+                    return self.send_json(result)
                 if self.path == '/api/accounts/list':return self.send_json({'accounts': accounts.listing()})
                 if self.path == '/api/accounts/save':return self.send_json(accounts.save_account(payload))
                 if self.path == '/api/accounts/delete':return self.send_json(accounts.delete_account(payload))
@@ -796,7 +853,7 @@ class Handler(SimpleHTTPRequestHandler):
                 if self.path.startswith('/api/desks/'):
                     return self.send_json(desk_action(self.path.rsplit('/', 1)[-1], payload, self.pane_refusal))
                 if self.path.startswith('/api/coordinator-events/'):
-                    desk = f'http://127.0.0.1:{self.server.server_port}'
+                    desk = self.server.desk_url
                     if self.path.endswith('/retry'):
                         return self.send_json(MAILBOX.retry(desk, payload.get('id'), payload.get('controller')))
                     if self.path.endswith('/ack'):
@@ -847,7 +904,7 @@ class Handler(SimpleHTTPRequestHandler):
                         raise ValueError('This role still has a running terminal. Open or stop it before another pass.')
                     run = SPECIAL_AGENTS.start_run(role['id'],payload.get('event_context'))
                     try:
-                        session = TERMINALS.launch(launch_payload(role, run, 'http://' + self.headers['Host'], ROOT, payload.get('event_context')), desk=desk).info()
+                        session = TERMINALS.launch(launch_payload(role, run, self.server.desk_url, ROOT, payload.get('event_context')), desk=desk).info()
                     except Exception as exc:
                         SPECIAL_AGENTS.update_run(run['id'], 'failed', str(exc))
                         raise
@@ -858,7 +915,7 @@ class Handler(SimpleHTTPRequestHandler):
                     item = TOOL_RUNTIME.launch(payload.get('skill'), payload.get('target'), payload.get('id'), payload.get('title'))
                     # Launching from Skills names the agent session the tool is opened beside.
                     owner = {'agent_id': payload['agent_id']} if payload.get('agent_id') else {}
-                    item = register_skill_ui({k:v for k,v in item.items() if k in ('id','title','skill','url','context')} | owner, self.server.server_port)
+                    item = register_skill_ui({k:v for k,v in item.items() if k in ('id','title','skill','url','context')} | owner, self.server.workspace_key)
                     return self.send_json(dict(item, **TOOL_RUNTIME.status(item['id'])))
                 if self.path == '/api/tools/stop':
                     return self.send_json(TOOL_RUNTIME.stop(payload.get('id','')))
@@ -890,7 +947,7 @@ class Handler(SimpleHTTPRequestHandler):
                         harness = payload['coordinator_harness']
                         if harness not in ('codex', 'claude', 'grok') or not isinstance(payload.get('argv'), list) or len(payload['argv']) < 2:
                             raise ValueError('Choose Codex, Claude or Grok with an initial coordinator prompt')
-                        coordinator = dict(harness=harness, desk=f'http://127.0.0.1:{self.server.server_port}', db=str(MAILBOX.path))
+                        coordinator = dict(harness=harness, desk=self.server.desk_url, db=str(MAILBOX.path))
                     if coordinator is None:
                         from agent_desk.standalone_agent import launch_payload as standalone_payload
                         payload=standalone_payload(payload)
@@ -923,7 +980,7 @@ class Handler(SimpleHTTPRequestHandler):
         # A custom header requires a browser preflight for cross-origin writes.
         # No CORS permissions are served. Also reject an explicitly foreign Origin.
         origin = self.headers.get('Origin')
-        local_origin = origin is None or origin == 'http://' + self.headers.get('Host', '')
+        local_origin = origin is None or origin == self.request_origin()
         authorized = (self.headers.get('X-Agent-Desk') == 'feedback' and local_origin) if feedback_route else self.headers.get('Authorization') == 'Bearer ' + TOKEN
         if not self.allowed_host() or not authorized:
             return self.send_json({'error': 'A valid adapter token is required'}, 403)
@@ -938,7 +995,7 @@ class Handler(SimpleHTTPRequestHandler):
             if not isinstance(payload, dict):
                 raise ValueError('Expected an object')
             if self.path == '/api/skill-uis':
-                return self.send_json(register_skill_ui(payload, self.server.server_port))
+                return self.send_json(register_skill_ui(payload, self.server.workspace_key))
             return self.send_json(save_feedback(payload) if feedback_route else ingest(payload))
         except (ValueError, TypeError) as exc:
             return self.send_json({'error': str(exc)}, 400)
@@ -1047,18 +1104,39 @@ def main():
     global COORDINATORS, DESKS, DEVELOPMENT, TERMINALS
     parser = argparse.ArgumentParser()
     parser.add_argument('--port', type=int, default=4310)
+    parser.add_argument('--workspace-id', type=workspace_key, help='Desktop workspace ID; use a private Unix socket instead of TCP')
     parser.add_argument('--production', action='store_true', help='Hide development tools and disable the feedback API')
     parser.add_argument('--attach-only',action='store_true',help='Require an existing terminal supervisor; never create a replacement during a backend restart')
+    parser.add_argument('--browser-port', type=int, help="With --workspace-id: own the browser workspace on this port, sharing its terminals and state, and keep serving it there for agents and browser tabs")
     args = parser.parse_args()
+    if args.browser_port and not args.workspace_id:
+        parser.error('--browser-port requires --workspace-id')
+    key = args.browser_port or args.workspace_id or args.port
+    if args.workspace_id and not isinstance(args.workspace_id, str):
+        parser.error('Desktop workspace ID must be 32 lowercase hex characters')
+    browser = None
+    if args.workspace_id:
+        if args.browser_port:
+            # Agents started by the browser desk call back on this port, and holding it
+            # keeps a browser server from owning the same workspace at the same time.
+            try:
+                browser = ThreadingHTTPServer(('127.0.0.1', args.browser_port), Handler)
+            except OSError as error:
+                raise SystemExit(f'Port {args.browser_port} is in use; stop the browser Agent Desk before opening its workspace here ({error})')
+        os.environ['AGENT_DESK_WORKSPACE_ID'] = args.workspace_id
+        from agent_desk.desktop_backend import DesktopHTTPServer
+        server = DesktopHTTPServer(DATA_DIR, args.workspace_id, Handler)
+    else:
+        server = ThreadingHTTPServer(('127.0.0.1', args.port), Handler)
     from agent_desk.terminal_owners import TerminalOwners
-    TERMINALS = DeskTerminals(TerminalOwners.attach(DATA_DIR, args.port,start=not args.attach_only))
+    TERMINALS = DeskTerminals(TerminalOwners.attach(DATA_DIR, key,start=not args.attach_only))
     TERMINALS.call('hello')
-    coordinator_file = 'coordinators.sqlite3' if args.port == 4310 else f'coordinators-{args.port}.sqlite3'
+    coordinator_file = 'coordinators.sqlite3' if key == 4310 else f'coordinators-{key}.sqlite3'
     COORDINATORS = CoordinatorRuntime(DATA_DIR / coordinator_file, TERMINALS, MAILBOX)
-    DESKS = Desks(DATA_DIR / ('desks.json' if args.port == 4310 else f'desks-{args.port}.json'))
+    DESKS = Desks(DATA_DIR / ('desks.json' if key == 4310 else f'desks-{key}.json'))
     atexit.register(COORDINATORS.close)
     DEVELOPMENT = not args.production
-    WORKFLOWS.desk = f'http://127.0.0.1:{args.port}'
+    WORKFLOWS.desk = desk_url(key)
     COORDINATORS.desk = WORKFLOWS.desk
     COORDINATORS.event_bus = WORKFLOWS.events
     def automation_terminals():
@@ -1068,9 +1146,11 @@ def main():
     COORDINATORS.tool_catalog = TOOL_RUNTIME.catalog
     def launch_hook_ui(skill,target,identity,coordinator,extra):
         item=TOOL_RUNTIME.launch(skill,target,identity,extra=extra)
-        return register_skill_ui({k:v for k,v in item.items() if k in ('id','title','skill','url','context')} | {'agent_id':coordinator},args.port)
+        return register_skill_ui({k:v for k,v in item.items() if k in ('id','title','skill','url','context')} | {'agent_id':coordinator},key)
     COORDINATORS.tool_launcher = launch_hook_ui
-    server = ThreadingHTTPServer(('127.0.0.1', args.port), Handler)
+    if args.workspace_id and server.paused:
+        WORKFLOWS.desktop_paused.set()
+        TERMINALS.desktop_paused = True
     cleanup_stop = threading.Event()
     def cleanup_automations():
         while not cleanup_stop.is_set():
@@ -1078,7 +1158,8 @@ def main():
             except Exception:
                 import logging
                 logging.exception('Automation terminal cleanup will retry')
-            try:drain_feedback(COORDINATORS)
+            try:
+                if not getattr(server, 'paused', False):drain_feedback(COORDINATORS)
             except Exception:
                 import logging
                 logging.exception('Queued feedback delivery will retry')
@@ -1086,7 +1167,8 @@ def main():
     cleanup_thread = threading.Thread(target=cleanup_automations, daemon=True)
     cleanup_thread.start()
     WORKFLOWS.start_scheduler()
-    COORDINATORS.start()
+    if not args.workspace_id or not server.paused:
+        COORDINATORS.start()
     def retire_tool_registrations():
         result = tool_registration.retire()
         for label in result['removed']:
@@ -1094,14 +1176,21 @@ def main():
         for error in result['errors']:
             print(f'Could not remove an agent-desk tool server registration: {error}', flush=True)
     # Only the main desk edits account configuration; test and side desks on other ports never do.
-    if args.port == 4310:
+    if key == 4310:
         threading.Thread(target=retire_tool_registrations, daemon=True).start()
-    desk_tokens.write_token('adapter', args.port, TOKEN)
+    desk_tokens.write_token('adapter', key, TOKEN)
     # Local helpers (agent_control, feedback forwarders) read this file; the
     # HTTP endpoint only serves the desk's own page.
-    desk_tokens.write_token('terminal', args.port, HELPER_TOKEN)
-    print(f'Agent Desk → http://127.0.0.1:{args.port}', flush=True)
-    print(f'Adapter token (this run only): {TOKEN}', flush=True)
+    desk_tokens.write_token('terminal', key, HELPER_TOKEN)
+    if args.workspace_id:
+        server.ready(__import__(__name__, fromlist=['']))
+        print('Agent Desk desktop backend ready', flush=True)
+        if browser:
+            threading.Thread(target=browser.serve_forever, daemon=True).start()
+            print(f'Browser workspace → http://127.0.0.1:{args.browser_port}', flush=True)
+    else:
+        print(f'Agent Desk → http://127.0.0.1:{args.port}', flush=True)
+        print(f'Adapter token (this run only): {TOKEN}', flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
@@ -1110,8 +1199,11 @@ def main():
         cleanup_stop.set()
         cleanup_thread.join(timeout=15)
         WORKFLOWS.stopping.set()
-        COORDINATORS.close()
+        if not getattr(server, 'supervisor_drained', False):COORDINATORS.close()
         TERMINALS.close()
+        if browser:
+            browser.shutdown()
+            browser.server_close()
         server.server_close()
 
 

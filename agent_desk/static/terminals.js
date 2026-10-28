@@ -93,10 +93,10 @@ async function monitorTerminals(){
 setInterval(monitorTerminals,2000);
 // Open panes belong to this tab and to the desk it shows; each desk keeps its own.
 const paneStoreKey=()=>demo?'demo':deskScoped('live');
-function savePanes(){try{sessionStorage.setItem('agent-desk-panes-'+paneStoreKey(),JSON.stringify(openPaneIds));}catch{}}
+function savePanes(){try{(window.agentDeskDesktop?localStorage:sessionStorage).setItem('agent-desk-panes-'+paneStoreKey(),JSON.stringify(openPaneIds));}catch{}}
 function loadPanes(){
   paneMode=paneStoreKey();
-  try{const saved=sessionStorage.getItem('agent-desk-panes-'+paneMode);paneInitialized=saved!==null;openPaneIds=JSON.parse(saved||'[]').filter(x=>typeof x==='string').slice(0,PANE_LIMIT);}catch{openPaneIds=[];paneInitialized=false;}
+  try{const saved=(window.agentDeskDesktop?localStorage:sessionStorage).getItem('agent-desk-panes-'+paneMode);paneInitialized=saved!==null;openPaneIds=JSON.parse(saved||'[]').filter(x=>typeof x==='string').slice(0,PANE_LIMIT);}catch{openPaneIds=[];paneInitialized=false;}
   loadPaneRects();loadPaneLayout();loadSeenSpawned();
 }
 // Agents spawn sessions onto the desk they run on (scripts/agent_control.py launch --parent).
@@ -396,12 +396,12 @@ function renderTerminal(){
   if(paneMode!==paneStoreKey())loadPanes();
   const all=current();
   // Don't discard restored selection while the initial process fetch is pending.
-  if(all.length||agents.length||demo){openPaneIds=openPaneIds.filter(id=>webPages.has(id)||all.some(a=>a.id===id));if(!openPaneIds.length&&!paneInitialized&&selectedId)openPaneIds=[selectedId];paneInitialized=true;if(!demo)openSpawnedPanes(all);}
+  if(all.length||agents.length||demo||typeof agentsLoaded!=='undefined'&&agentsLoaded){openPaneIds=openPaneIds.filter(id=>webPages.has(id)||all.some(a=>a.id===id));if(!openPaneIds.length&&!paneInitialized&&selectedId)openPaneIds=[selectedId];paneInitialized=true;if(!demo)openSpawnedPanes(all);}
   if(!openPaneIds.includes(selectedId))selectedId=openPaneIds[0]||null;
   const workspace=$('#terminal');workspace.dataset.count=openPaneIds.length;
   $('#pane-count').textContent=`${openPaneIds.length} / ${PANE_LIMIT} open`;
   // A pane of another desk or mode is put away, not closed: its web page is kept for when that desk is shown again.
-  for(const [id,view] of paneViews){if(!openPaneIds.includes(id)||view.paneKey!==paneMode){if(view.paneKey===paneMode)forgetWebPage(id);view.checkpoint?.();view.disposed=true;view.subscription?.close();view.observer?.disconnect();view.term?.dispose();view.cleanup?.();view.node.remove();view.edges.remove();paneViews.delete(id);}}
+  for(const [id,view] of paneViews){if(!openPaneIds.includes(id)||view.paneKey!==paneMode){if(view.paneKey===paneMode)forgetWebPage(id);view.checkpoint?.();view.disposed=true;view.subscription?.close();view.files?.dispose();view.observer?.disconnect();view.term?.dispose();view.cleanup?.();view.node.remove();view.edges.remove();paneViews.delete(id);}}
   workspace.querySelector('.workspace-empty')?.remove();
   if(!openPaneIds.length){workspace.innerHTML='<div class="workspace-empty"><h2>Your workspace is ready.</h2><p>Select a session or start an interactive terminal.</p><button class="button" id="empty-new-terminal">＋ New terminal</button></div>';$('#empty-new-terminal').onclick=()=>openTerminalLauncher();}
   for(const id of openPaneIds){const page=webPages.get(id);if(page){let view=paneViews.get(id);if(!view){view=createWebPane(page);view.paneKey=paneMode;paneViews.set(id,view);workspace.append(view.node,view.edges);}updateWebPane(view,page);continue;}const agent=all.find(a=>a.id===id);if(!agent)continue;let view=paneViews.get(id);if(!view){view=createPane(agent);view.paneKey=paneMode;paneViews.set(id,view);workspace.append(view.node,view.edges);if(agent.terminal_id)mountPTY(view,agent);}if(agent.coordinator_workspace&&!view.coordinator)window.mountCoordinatorPane?.(view,agent);updatePane(view,agent);}
@@ -516,19 +516,38 @@ function mountPTY(view,agent){
     }
   };
   // Keystrokes ride the stream when it is open; the queue keeps them ordered with HTTP fallbacks.
-  function send(data){if(view.restoring||view.exited)return;view.lastActivity=performance.now();view.queue=view.queue.then(()=>view.subscription&&terminalStream.send({type:'input',id:agent.id,data})||terminalRequest('/api/terminals/input',{id:agent.id,data})).catch(error=>{status.textContent=error.message+' · input was not retried';});}
+  // Finish ordinary text in its original terminal even if its pane is hidden.
+  // File input can be cancelled until its first packet; once started, finish the paste framing.
+  const inputFailed=error=>{status.textContent=error.message+' · input was not retried';};
+  function send(packets,canSend){
+    if(view.restoring||view.exited)return;
+    view.lastActivity=performance.now();
+    view.queue=view.queue.then(async()=>{
+      if(canSend&&!canSend())return;
+      for(const data of packets){
+        try{await(view.subscription&&terminalStream.send({type:'input',id:agent.id,data})||terminalRequest('/api/terminals/input',{id:agent.id,data}));}
+        catch(error){inputFailed(error);}
+      }
+    }).catch(inputFailed);
+    return view.queue;
+  }
   const sendResize=(cols,rows)=>(quietRedraw(agent.id),view.subscription)&&terminalStream.send({type:'resize',id:agent.id,cols,rows})||terminalRequest('/api/terminals/resize',{id:agent.id,cols,rows});
   // Ignore responses generated by replayed terminal queries as well as keyboard input.
-  function sendText(data){if(view.restoring||view.exited)return;const bytes=new TextEncoder().encode(data);for(let offset=0;offset<bytes.length;offset+=16384)send(btoa(Array.from(bytes.subarray(offset,offset+16384),byte=>String.fromCharCode(byte)).join('')));}
-  term.onData(sendText);
+  function sendText(data,canSend){if(view.restoring||view.exited)return;const bytes=new TextEncoder().encode(data),packets=[];for(let offset=0;offset<bytes.length;offset+=16384)packets.push(btoa(Array.from(bytes.subarray(offset,offset+16384),byte=>String.fromCharCode(byte)).join('')));return send(packets,canSend);}
+  const files=TerminalFiles.mount({bridge:window.agentDeskDesktop,target,pane:view.node,term,status,
+    available:()=>!view.disposed&&!view.restoring&&!view.exited&&!view.reconnects&&!term.options.disableStdin,
+    remote:()=>!!(agents.find(item=>item.id===agent.id)||agent).remote_node||String(agent.id).startsWith('remote:')});
+  view.files=files;
+  const input=write=>files?files.input(write):write();
+  term.onData(data=>input(canSend=>sendText(data,canSend)));
   // Shift+Enter must add a line instead of submitting. xterm sends a bare CR for both,
   // so send the escape sequence coding agents read as a newline, the same one
   // `claude /terminal-setup` binds in iTerm2 and VS Code.
   term.attachCustomKeyEventHandler(event=>{
     if(event.type!=='keydown'||event.key!=='Enter'||!event.shiftKey||event.ctrlKey||event.metaKey||event.altKey)return true;
-    event.preventDefault();sendText('\x1b\r');return false;
+    event.preventDefault();input(()=>sendText('\x1b\r'));return false;
   });
-  term.onBinary(data=>send(btoa(data)));
+  term.onBinary(data=>input(()=>send([btoa(data)])));
   function resize(force=false){
     if(view.disposed||view.restoring||!target.clientWidth||!target.clientHeight)return;
     // A pane being resized is refitted once, on release, not at every cell it passes.
@@ -551,7 +570,7 @@ function mountPTY(view,agent){
     // A reply ends any reconnect notice; without this a single dropped request
     // left "reconnecting…" on a terminal that had already recovered and was streaming again.
     if(view.reconnects){view.reconnects=0;if(!view.restoring&&!view.exited)status.textContent='';}
-    if(output.truncated){term.reset();boundary=new TerminalStreamBoundary();needsRedraw=true;view.restoring=true;term.options.disableStdin=true;status.textContent='Recovering terminal after a gap in output…';}
+    if(output.truncated){files?.cancel();term.reset();boundary=new TerminalStreamBoundary();needsRedraw=true;view.restoring=true;term.options.disableStdin=true;status.textContent='Recovering terminal after a gap in output…';}
     const bytes=Uint8Array.from(atob(output.data),char=>char.charCodeAt(0));
     if(bytes.length){view.lastActivity=performance.now();await write(bytes);boundary.feed(bytes);dirty=true;}
     view.cursor=output.cursor;
@@ -559,11 +578,12 @@ function mountPTY(view,agent){
       view.restoring=false;view.exited=output.exit_code!==null;term.options.disableStdin=view.exited;
       target.classList.remove('pty-restoring');status.textContent='';resize(needsRedraw);needsRedraw=false;dirty=true;view.checkpoint();
     }
-    if(output.exit_code!==null&&!bytes.length){view.exited=true;status.textContent=`Session ended · exit ${output.exit_code}`;term.options.disableStdin=true;view.checkpoint();return null;}
+    if(output.exit_code!==null&&!bytes.length){files?.cancel();view.exited=true;status.textContent=`Session ended · exit ${output.exit_code}`;term.options.disableStdin=true;view.checkpoint();return null;}
     if(!view.restoring&&performance.now()-lastSaved>300)view.checkpoint();
     return bytes.length;
   }
   function interrupted(message,attempts){
+    files?.cancel();
     view.reconnects=attempts;
     // One dropped request is ordinary while the browser or server is busy; say so on the second.
     if(attempts>1)status.textContent=(/failed to fetch|load failed|networkerror/i.test(message)?'Connection interrupted':message)+' · reconnecting…';

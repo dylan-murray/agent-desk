@@ -1,0 +1,139 @@
+name: macOS desktop
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'desktop-*'
+  pull_request:
+    paths:
+      - 'desktop/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'pyproject.toml'
+      - 'agent_desk/**'
+      - 'scripts/**'
+      - 'tests/fixtures/desktop/**'
+      - 'tests/test_desktop_transport.py'
+      - 'tests/test_desktop_logging.py'
+      - 'tests/test_version.py'
+      - 'tests/test_coordinator_runtime.py'
+      - '.github/workflows/desktop.yml'
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  desktop:
+    runs-on: macos-15
+    timeout-minutes: 30
+    env:
+      AGENT_DESK_APPLE_SIGNING: '0'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - name: Validate build identity and release tag
+        run: node desktop/scripts/build-info.cjs
+      - run: npm ci
+      - run: npm ci
+        working-directory: desktop
+      - run: npx install-electron --no
+        working-directory: desktop
+      - run: npm test
+        working-directory: desktop
+      - run: node --test tests/test_terminal_files.cjs
+      - run: npm run test:about
+        working-directory: desktop
+        env:
+          AGENT_DESK_EVIDENCE_DIR: ${{ runner.temp }}
+      - run: python3 -m unittest discover -s tests -p test_desktop_transport.py
+      - run: python3 -m unittest discover -s tests -p test_desktop_logging.py
+      - run: python3 -m unittest discover -s tests -p test_version.py
+      - run: npm run test:transport
+        working-directory: desktop
+      - run: npm run test:startup
+        working-directory: desktop
+        env:
+          AGENT_DESK_EVIDENCE_DIR: ${{ runner.temp }}
+      - run: npm run test:quit-preparation
+        working-directory: desktop
+      - run: python3 -m unittest discover -s tests -p test_coordinator_runtime.py
+      - run: npm run test:quit
+        working-directory: desktop
+      - run: npm run test:backend-lifecycle
+        working-directory: desktop
+      - run: npm run test:webhooks
+        working-directory: desktop
+        env:
+          AGENT_DESK_EVIDENCE_DIR: ${{ runner.temp }}
+      - run: npm run test:smoke
+        working-directory: desktop
+        env:
+          AGENT_DESK_EVIDENCE_DIR: ${{ runner.temp }}
+      - run: npm run test:paste-drop
+        working-directory: desktop
+        env:
+          AGENT_DESK_EVIDENCE_DIR: ${{ runner.temp }}
+      - run: npm run test:development-workflow
+        working-directory: desktop
+        env:
+          AGENT_DESK_EVIDENCE_DIR: ${{ runner.temp }}
+      - run: npm run package
+        working-directory: desktop
+      - run: npm run test:packaged
+        working-directory: desktop
+      - run: node scripts/make-dmg.cjs
+        working-directory: desktop
+      - run: npm run test:dmg
+        working-directory: desktop
+      - name: Checksum tested DMG
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/desktop-')
+        working-directory: desktop/out/make
+        run: shasum -a 256 Agent-Desk-arm64.dmg > Agent-Desk-arm64.dmg.sha256
+      - name: Upload tested release assets
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/desktop-')
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: desktop-release
+          path: |
+            desktop/out/make/Agent-Desk-arm64.dmg
+            desktop/out/make/Agent-Desk-arm64.dmg.sha256
+          if-no-files-found: error
+          compression-level: 0
+          overwrite: true
+  publish:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/desktop-')
+    needs: desktop
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - name: Validate release checkout
+        run: node desktop/scripts/build-info.cjs
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: desktop-release
+          path: release-assets
+      - name: Verify assets and publish release
+        run: node desktop/scripts/publish-release.cjs release-assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}

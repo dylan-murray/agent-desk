@@ -1,0 +1,13 @@
+/* Native chrome only; the browser keeps its existing layout. */
+.desktop-mac .topbar,.desktop-mac .desktop-sidebar-header{-webkit-app-region:drag}
+.desktop-mac :is(button,a,input,select,textarea,summary,[role="button"]){-webkit-app-region:no-drag}
+.desktop-mac .sidebar{padding-top:0}
+/* Native 14px button frames end at x=68; leave 20px before the wordmark. */
+.desktop-mac .desktop-sidebar-header{display:flex;align-items:center;flex-shrink:0;height:60px;margin:0 -10px;padding-left:88px;border-bottom:1px solid var(--border)}
+.desktop-mac .sidebar .brand{flex:none;width:158px;height:36px;min-height:0;margin:0;padding:0;border:0}
+.desktop-mac.native-fullscreen .desktop-sidebar-header{justify-content:center;padding-left:0}
+.desktop-mac .topbar{min-height:60px}
+.desktop-mac .sidebar .brand img{width:158px;max-width:100%;object-fit:contain}
+.desktop-connection{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);z-index:1000;display:flex;align-items:center;gap:12px;width:max-content;max-width:calc(100% - 32px);padding:10px 14px;border:1px solid var(--border);border-radius:8px;background:var(--surface,#161719);color:var(--muted,#aaa);font-size:13px;line-height:1.6}
+.desktop-connection[hidden]{display:none}
+@media(max-width:760px){.desktop-mac .desktop-sidebar-header{flex-basis:calc(100% + 20px)}}
