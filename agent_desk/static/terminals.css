@@ -238,6 +238,11 @@ body.pane-dragging-active,body.pane-dragging-active *{cursor:grabbing!important;
    the result. Only the held pane is exempt: it must track the cursor with no easing. */
 body.pane-dragging-active .terminal-pane:not(.pane-dragging){transition:transform .19s cubic-bezier(.2,.7,.3,1),clip-path .19s cubic-bezier(.2,.7,.3,1)}
 .terminal-pane.pane-swap-target{z-index:2;transform-origin:0 0;border-color:#96b8ec66}
+/* Dropping near a pane's side places the held pane beside it; this grid cell outlines the space
+   the hovered pane gives up for it. */
+#pane-snap-preview{z-index:1;pointer-events:none;border:1px solid #96b8ec59;border-radius:9px;background:#96b8ec0d;animation:pane-snap-in .16s ease-out}
+@keyframes pane-snap-in{from{opacity:0}}
+@media(prefers-reduced-motion:reduce){#pane-snap-preview{animation:none}}
 @media(prefers-reduced-motion:reduce){.terminal-pane.pane-dragging{transform:none!important;opacity:.5;box-shadow:none}.terminal-pane.pane-returning,body.pane-dragging-active .terminal-pane:not(.pane-dragging){transition:none}}
 /* And a short settle where it lands, so the drop is visible rather than instantaneous. */
 .terminal-pane.pane-settled{animation:pane-settle .32s cubic-bezier(.2,.7,.3,1)}
@@ -337,7 +342,7 @@ body.annotating .web-pane-frame{pointer-events:none}
 .pane-resize[data-edge=se]:focus-visible::after{opacity:1;border-color:#96b8ec}
 body.pane-resizing-active,body.pane-resizing-active *{cursor:var(--pane-resize-cursor,nwse-resize)!important;user-select:none}
 /* A web page's frame would swallow the pointer mid-resize. */
-body.pane-resizing-active .web-pane-frame{pointer-events:none}
+body.pane-resizing-active .web-pane-frame,body.pane-dragging-active iframe{pointer-events:none}
 .terminal-pane.pane-resizing{border-color:#96b8ec73;box-shadow:0 0 0 1px #96b8ec40}
 body.pane-dragging-active .pane-edges{visibility:hidden}
 .terminal-workspace.has-fullscreen>.pane-edges{display:none}
