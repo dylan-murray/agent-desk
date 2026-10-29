@@ -244,8 +244,57 @@ class PrintedLinkTests(GhFixture):
         saved = json.loads((self.folder / 'data' / 'pull-requests.json').read_text())
         self.assertEqual(saved['forgotten'], {'term-1': ['https://github.com/example-org/example-repo/pull/28']})
         self.assertEqual(self.prs.status(self.repo, 'term-1', now=self.now + 86401)['others'], [])
-        with self.assertRaisesRegex(ValueError, 'not printed'):
+        with self.assertRaisesRegex(ValueError, 'not showing'):
             self.prs.forget('term-1', 'https://github.com/example-org/example-repo/pull/99')
+
+    def test_a_merge_printed_in_the_terminal_is_checked_before_the_next_poll(self):
+        self.answer(pull_request())
+        self.poll()
+        self.answer(pull_request(state='MERGED'))
+        self.prints('\x1b[32m✓\x1b[0m Squashed and merged pull request example-org/example-repo#42 (Fixture change)\r\n')
+        self.poll(advance=20)
+        self.assertEqual(self.prs.status(self.repo, 'term-1')['state'], 'merged')
+
+    def test_the_same_merge_redrawn_on_screen_is_checked_once(self):
+        self.answer(pull_request())
+        self.poll()
+        line = '✓ Merged pull request example-org/example-repo#42 (Fixture change)\r\n'
+        self.prints(line)
+        self.poll(advance=20)
+        self.prints('\x1b[H' + line)
+        self.poll(advance=20)
+        self.assertEqual(len([c for c in self.calls() if c[1:3] == ['pr', 'view']]), 2, 'one poll and one re-check, none for the redraw')
+
+    def test_coming_back_does_not_ask_about_merged_or_closed_pull_requests_again(self):
+        self.answer(pull_request(state='MERGED'))
+        self.prints(self.link(28, state='CLOSED') + '\r\n')
+        self.poll()
+        asked = len(self.calls())
+        self.prs.hurry(['term-1'], self.now + 20)
+        self.poll(advance=20)
+        self.assertEqual(len(self.calls()), asked)
+
+    def test_coming_back_to_the_desk_rechecks_now_but_not_twice_within_seconds(self):
+        self.answer(pull_request())
+        self.poll()
+        self.answer(pull_request(state='MERGED'))
+        self.poll(advance=5)
+        self.prs.hurry(['term-1'], self.now)
+        self.poll(advance=0)
+        self.assertEqual(self.prs.status(self.repo, 'term-1')['state'], 'open', 'checked 5 seconds ago, so it waits')
+        self.poll(advance=11)
+        self.assertEqual(self.prs.status(self.repo, 'term-1')['state'], 'merged')
+        self.assertEqual(len([c for c in self.calls() if c[1:3] == ['pr', 'view']]), 2, 'the long poll did not run in between')
+
+    def test_a_hidden_branch_pull_request_stays_hidden_until_the_branch_has_a_new_one(self):
+        self.answer(pull_request(state='MERGED'))
+        self.poll()
+        self.prs.forget('term-1', PR_URL, self.repo)
+        self.assertIsNone(self.prs.status(self.repo, 'term-1'))
+        self.assertIsNotNone(self.prs.status(self.repo, 'term-2'), 'other terminals in the folder still show it')
+        self.answer(pull_request(number=44, url='https://github.com/example-org/example-repo/pull/44'))
+        self.poll()
+        self.assertEqual(self.prs.status(self.repo, 'term-1')['number'], 44)
 
     def test_a_printed_pull_request_reaches_the_inbox_for_the_terminal_that_printed_it(self):
         self.answer(pull_request())

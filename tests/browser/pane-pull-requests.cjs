@@ -221,10 +221,24 @@ const check = (name, fn) => {fn();results.push(name);console.log('  PASS  ' + na
   await until(async () => (await header()).text === '#42 Merged', 'Merged was not shown');
   const merged = await chip.getAttribute('data-state');
   check('a merged pull request drops its checks', () => assert.equal(merged, 'merged'));
+  const hide = chip.locator('.pane-pr-hide'), hideLabel = await hide.getAttribute('aria-label');
+  for (const [width, height] of [[390, 844], [1440, 900]]) {await page.setViewportSize({width, height});await pane.evaluate(node => node.scrollIntoView({block: 'start'}));await pause();await page.screenshot({path: evidence(`pr-chip-merged-${width}.png`)});}
+  await hide.click();
+  await until(async () => (await pane.locator('.pane-pr').count()) === 0, '× did not hide the merged pull request');
+  await pause();await pause();
+  const stillHidden = await pane.locator('.pane-pr').count();
+  check('× on a merged pull request hides it in this terminal, and it stays hidden', () => {assert.equal(hideLabel, 'Stop showing #42 here');assert.equal(stillHidden, 0);});
+  answer('pr-example-repo.json', {number: 44, title: 'Fixture follow-up', url: 'https://github.com/example-org/example-repo/pull/44', statusCheckRollup: [run('unit tests', 'IN_PROGRESS')]});
+  await until(async () => (await header()).text === '#44 Open Pending Awaiting review', 'A new pull request on the branch did not show');
+  const openHide = await chip.locator('.pane-pr-hide').isHidden();
+  check('a new pull request on the branch shows again, and an open one has no ×', () => assert.equal(openHide, true));
   answer('pr-example-repo.json', null, 4, 'To get started with GitHub CLI, please run:  gh auth login');
   await until(async () => (await pane.locator('.pane-pr').count()) === 0, 'A signed-out gh left the chip up');
   const headerState = await pane.locator('.pane-state').textContent();
   check('a signed-out gh clears the chip without an error in the header', () => assert.equal(headerState, ''));
+  // Coming back from GitHub, say after merging there, asks the server to re-check the open panes before the next poll.
+  const [recheck] = await Promise.all([page.waitForRequest(request => request.url().endsWith('/api/pull-requests/refresh')), page.evaluate(() => {prRechecked = 0;dispatchEvent(new Event('focus'));})]);
+  check('coming back to the desk asks for an early re-check of the open panes', () => assert.ok(JSON.parse(recheck.postData()).ids.includes(ids.pr)));
   check('no page errors', () => assert.deepEqual(errors, []));
   console.log(`PASS: ${results.length} pull request checks`);
 })().catch(error => {console.error(error);process.exitCode = 1;}).finally(async () => {
