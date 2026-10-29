@@ -21,7 +21,9 @@ function renderPanePullRequest(view,agent){
     group.innerHTML='<a class="pane-tool-toggle pane-pr-link" target="_blank" rel="noopener noreferrer"></a><button type="button" class="pane-tool-exit pane-pr-log" hidden>'+prIcons.log+'</button>';
     view.node.querySelector('.pane-actions').prepend(group);
     group.querySelector('.pane-pr-log').onclick=event=>pastePullRequestFailure(agent.id,event.currentTarget);
+    new ResizeObserver(()=>fitPullRequest(view)).observe(view.node.querySelector('.terminal-bar'));
   }
+  requestAnimationFrame(()=>fitPullRequest(view));
   const live=pr.state==='open'||pr.state==='draft',checks=live&&prChecks[pr.checks]?pr.checks:null,review=live&&prReviews[pr.review]?pr.review:null,number=escapeHTML(String(pr.number));
   const signature=JSON.stringify([pr.number,pr.url,pr.state,checks,review,pr.title,pr.failed.map(c=>c.name),pr.logs,!!view.term]);
   if(group.dataset.signature===signature)return;group.dataset.signature=signature;
@@ -34,6 +36,13 @@ function renderPanePullRequest(view,agent){
   // Sending the log is opt in: it is pasted into the agent's prompt and waits for Enter.
   const send=group.querySelector('.pane-pr-log');send.hidden=!(checks==='failing'&&pr.logs&&view.term);
   send.title='Paste the failed check’s log into this agent’s prompt';send.setAttribute('aria-label',send.title);
+}
+
+// The pane title comes first. While it would be cut short, the tab drops its words: the review,
+// then the checks word, then the state, then the pull request icon, leaving the number and the checks icon.
+function fitPullRequest(view){
+  const group=view.node.querySelector('.pane-pr'),title=view.node.querySelector('.pane-title');if(!group||view.renaming)return;
+  for(const fit of ['0','1','2','3','4']){group.dataset.fit=fit;if(title.scrollWidth<=title.clientWidth+1)return;}
 }
 
 async function pastePullRequestFailure(id,button){

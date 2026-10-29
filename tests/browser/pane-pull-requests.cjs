@@ -64,7 +64,10 @@ const check = (name, fn) => {fn();results.push(name);console.log('  PASS  ' + na
   await chip.waitFor();
   await until(async () => (await chip.getAttribute('data-checks')) === 'pending', 'Pending checks were not shown');
   const header = () => page.evaluate(id => {const n = document.querySelector(`[data-pane-id="${id}"]`), c = n.querySelector('.pane-pr'), bar = n.querySelector('.terminal-bar').getBoundingClientRect(), box = c?.getBoundingClientRect();
-    return {text: c?.querySelector('.pane-pr-link').innerText.replace(/\s+/g, ' ').trim(), href: c?.querySelector('a').href, target: c?.querySelector('a').target,
+    // Every word the tab carries, shown or not: in a narrow pane some give way to the title.
+    const t = n.querySelector('.pane-title');
+    return {text: c && [...c.querySelectorAll('.pane-pr-link b, .pane-pr-word')].map(word => word.textContent).join(' '), shown: c?.querySelector('.pane-pr-link').innerText.replace(/\s+/g, ' ').trim(),
+      fit: c?.dataset.fit, titleCut: t.scrollWidth > t.clientWidth + 1, href: c?.querySelector('a').href, target: c?.querySelector('a').target,
       label: c?.querySelector('a').getAttribute('aria-label'), log: c ? !c.querySelector('.pane-pr-log').hidden : null,
       inside: !!box && box.left >= bar.left && box.right <= bar.right && box.top >= bar.top && box.bottom <= bar.bottom, overflow: document.documentElement.scrollWidth > innerWidth};}, ids.pr);
   let seen = await header();
@@ -142,9 +145,15 @@ const check = (name, fn) => {fn();results.push(name);console.log('  PASS  ' + na
     await page.setViewportSize({width, height});await pause();
     seen = await header();
     check(`the chip sits inside the pane header at ${width}px`, () => {assert.ok(seen.inside);assert.equal(seen.overflow, false);});
+    if (width === 1440) check('in a half-width pane the tab drops words rather than cut the title', () => {assert.equal(seen.titleCut, false);assert.notEqual(seen.fit, '0');assert.equal(seen.shown, '#42 Open Failing');});
     await page.screenshot({path: evidence(`pr-chip-changes-${width}.png`)});
   }
   await page.setViewportSize({width: 1440, height: 900});
+  await page.evaluate(id => toggleFullscreen(id), ids.pr);
+  await until(async () => (await header()).fit === '0', 'A full-screen pane did not get every word back');
+  seen = await header();
+  check('a full-screen pane shows every word', () => assert.equal(seen.shown, '#42 Open Failing Changes requested'));
+  await page.evaluate(id => toggleFullscreen(id), ids.pr);
   answer('pr-example-repo.json', {state: 'MERGED', statusCheckRollup: [run('unit tests', 'COMPLETED', 'FAILURE')]});
   await until(async () => (await header()).text === '#42 Merged', 'Merged was not shown');
   const merged = await chip.getAttribute('data-state');
