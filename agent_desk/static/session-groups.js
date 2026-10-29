@@ -99,20 +99,43 @@ function startGroupRename(id){
 }
 function closeGroupMenu(restoreFocus){
   const menu=$('#session-group-menu');if(!menu||menu.hidden)return;
-  menu.hidden=true;
+  closeGroupSubmenu(false);menu.hidden=true;
   if(restoreFocus)menu.returnFocus?.focus({preventScroll:true});
 }
 function openGroupMenu(x,y,items,returnFocus){
   let menu=$('#session-group-menu');
   if(!menu){menu=document.createElement('div');menu.id='session-group-menu';menu.setAttribute('role','menu');document.body.append(menu);}
   menu.returnFocus=returnFocus;
-  menu.innerHTML=items.map(([label,,danger],index)=>`<button type="button" role="menuitem" data-menu-index="${index}" class="${danger?'danger':''}">${escapeHTML(label)}</button>`).join('');
-  menu.querySelectorAll('[data-menu-index]').forEach(button=>button.onclick=()=>{closeGroupMenu(false);items[+button.dataset.menuIndex][1]();});
+  menu.innerHTML=items.map(([label,,danger,fill],index)=>`<button type="button" role="menuitem" data-menu-index="${index}" class="${danger?'danger':''}"${fill?' aria-haspopup="menu" aria-expanded="false"':''}>${escapeHTML(label)}${fill?submenuChevron:''}</button>`).join('');
+  menu.querySelectorAll('[data-menu-index]').forEach(button=>{
+    const [,run,,fill]=items[+button.dataset.menuIndex];
+    button.onclick=()=>{if(fill){openGroupSubmenu(button,fill);$('#session-group-submenu button')?.focus();}else{closeGroupMenu(false);run();}};
+    button.onpointerenter=()=>{if(fill)openGroupSubmenu(button,fill);else closeGroupSubmenu(false);};
+  });
   menu.hidden=false;
   const box=menu.getBoundingClientRect();
   menu.style.left=Math.max(8,Math.min(x,innerWidth-box.width-8))+'px';
   menu.style.top=Math.max(8,Math.min(y,innerHeight-box.height-8))+'px';
   menu.querySelector('button')?.focus();
+}
+const submenuChevron='<svg class="menu-more" viewBox="0 0 16 16" aria-hidden="true"><path d="m6.5 4.5 3.5 3.5-3.5 3.5"/></svg>';
+// An item with a submenu (its fourth entry fills the panel) opens it beside the menu, or over it
+// where there is no room beside, below the item so the item stays readable.
+function openGroupSubmenu(button,fill){
+  let sub=$('#session-group-submenu');
+  if(!sub){sub=document.createElement('div');sub.id='session-group-submenu';sub.setAttribute('role','menu');document.body.append(sub);}
+  if(!sub.hidden&&sub.parentButton===button)return;
+  sub.parentButton?.setAttribute('aria-expanded','false');sub.parentButton=button;button.setAttribute('aria-expanded','true');
+  fill(sub);sub.hidden=false;
+  const menu=$('#session-group-menu').getBoundingClientRect(),at=button.getBoundingClientRect(),box=sub.getBoundingClientRect();
+  const right=menu.right+4,left=menu.left-box.width-4,beside=right+box.width<=innerWidth-8||left>=8;
+  sub.style.left=(right+box.width<=innerWidth-8?right:left>=8?left:Math.max(8,innerWidth-box.width-8))+'px';
+  sub.style.top=Math.max(8,Math.min(beside?at.top-6:at.bottom+4,innerHeight-box.height-8))+'px';
+}
+function closeGroupSubmenu(restoreFocus){
+  const sub=$('#session-group-submenu');if(!sub||sub.hidden)return;
+  sub.hidden=true;sub.parentButton?.setAttribute('aria-expanded','false');
+  if(restoreFocus)sub.parentButton?.focus();
 }
 document.addEventListener('DOMContentLoaded',()=>{
   const grid=$('#agent-grid');
@@ -137,12 +160,17 @@ document.addEventListener('DOMContentLoaded',()=>{
       openGroupMenu(...at,[...(groupOf(id)?[['Remove from group',()=>removeFromGroup(id)]]:[]),...deskMoveItems([id],`“${sessionTitle(agent)}”`)],row);
     }
   });
-  document.addEventListener('pointerdown',event=>{if(!event.target.closest('#session-group-menu'))closeGroupMenu(false);},true);
+  document.addEventListener('pointerdown',event=>{if(!event.target.closest('#session-group-menu,#session-group-submenu'))closeGroupMenu(false);},true);
   document.addEventListener('keydown',event=>{
     const menu=$('#session-group-menu');if(!menu||menu.hidden)return;
-    const items=[...menu.querySelectorAll('button')],index=items.indexOf(document.activeElement);
+    const sub=$('#session-group-submenu'),inSub=!!sub&&!sub.hidden&&sub.contains(document.activeElement);
+    // Escape or ← steps back out of a submenu before a second Escape closes the menu.
+    if(inSub&&(event.key==='Escape'||event.key==='ArrowLeft'&&!event.target.closest('input'))){event.preventDefault();closeGroupSubmenu(true);return;}
+    if(event.target.closest('#session-group-submenu form'))return;
+    const items=[...(inSub?sub:menu).querySelectorAll('button')],index=items.indexOf(document.activeElement);
     if(event.key==='Escape'){event.preventDefault();closeGroupMenu(true);}
     else if(event.key==='ArrowDown'||event.key==='ArrowUp'){event.preventDefault();items[(index+(event.key==='ArrowDown'?1:items.length-1))%items.length].focus();}
+    else if(event.key==='ArrowRight'&&document.activeElement?.getAttribute('aria-haspopup')==='menu'){event.preventDefault();document.activeElement.click();}
     else if(event.key==='Tab')closeGroupMenu(false);
   });
   window.addEventListener('blur',()=>closeGroupMenu(false));

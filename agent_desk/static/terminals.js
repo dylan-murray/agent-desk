@@ -429,6 +429,15 @@ function createPane(agent){
       toast(result.protected?'Protected: only you can read or type into this session':'No longer protected: agents and local tools can reach this session');}
     catch(error){toast(error.message);}
   };
+  // The header's context menu is the sidebar's: move this session to another desk, or to a new one.
+  const bar=node.querySelector('.terminal-bar');bar.title='Drag this header to move the pane · right-click to move it to another desk';
+  bar.addEventListener('contextmenu',event=>{
+    if(demo||annotating||view.renaming||agent.harness_internal||event.target.closest('input'))return;
+    event.preventDefault();
+    const at=event.clientX||event.clientY?[event.clientX,event.clientY]:(box=>[box.x+16,box.bottom])(bar.getBoundingClientRect());
+    const latest=current().find(a=>a.id===agent.id)||agent;
+    openGroupMenu(...at,[...(groupOf(agent.id)?[['Remove from group',()=>removeFromGroup(agent.id)]]:[]),...deskMoveItems([agent.id],`“${sessionTitle(latest)}”`)],bar);
+  });
   node.addEventListener('pointerdown',()=>{selectedId=agent.id;focusCoordinatorFor(agent.id);highlightPanes();});
   node.addEventListener('focusin',()=>{selectedId=agent.id;focusCoordinatorFor(agent.id);highlightPanes();});
   return view;

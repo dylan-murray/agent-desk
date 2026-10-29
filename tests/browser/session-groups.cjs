@@ -101,7 +101,7 @@ async function menu(page,targetSel,item){
   await page.locator('[data-group-toggle]').first().click({button:'right'});
   const menuItems=await page.$$eval('#session-group-menu:not([hidden]) [role=menuitem]',items=>items.map(item=>item.textContent));
   const menuFocus=await page.evaluate(()=>document.activeElement?.textContent);
-  check('right-clicking a folder offers Rename, Collapse, moving it to a desk, and Ungroup',()=>assert.deepEqual(menuItems,['Rename','Collapse','Move to a new desk…','Ungroup']));
+  check('right-clicking a folder offers Rename, Collapse, moving it to a desk, and Ungroup',()=>assert.deepEqual(menuItems,['Rename','Collapse','Move to desk','Ungroup']));
   check('the menu opens with its first item focused',()=>assert.equal(menuFocus,'Rename'));
   await page.screenshot({path:path.join(OUT,'session-groups-menu.png'),clip:{x:0,y:380,width:300,height:260}});
   await page.click('#session-group-menu [role=menuitem]:text-is("Rename")');
@@ -146,7 +146,7 @@ async function menu(page,targetSel,item){
   await group2.locator('[data-group-toggle]').click();await page.waitForTimeout(150);
   await page.locator(rowSel('grp-a')).click({button:'right'});
   const ungroupedMenu=await page.$$eval('#session-group-menu:not([hidden]) [role=menuitem]',items=>items.map(item=>item.textContent));
-  check('an ungrouped session\'s menu only offers moving it to a desk',()=>assert.deepEqual(ungroupedMenu,['Move to a new desk…']));
+  check('an ungrouped session\'s menu only offers moving it to a desk',()=>assert.deepEqual(ungroupedMenu,['Move to desk']));
   await page.keyboard.press('Escape');
   await menu(page,rowSel('grp-e'),'Remove from group');
   const removed=await layout(page);
