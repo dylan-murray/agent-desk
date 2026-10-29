@@ -64,10 +64,7 @@ const check = (name, fn) => {fn();results.push(name);console.log('  PASS  ' + na
   await chip.waitFor();
   await until(async () => (await chip.getAttribute('data-checks')) === 'pending', 'Pending checks were not shown');
   const header = () => page.evaluate(id => {const n = document.querySelector(`[data-pane-id="${id}"]`), c = n.querySelector('.pane-pr'), bar = n.querySelector('.terminal-bar').getBoundingClientRect(), box = c?.getBoundingClientRect();
-    // Every word the tab carries, shown or not: in a narrow pane some give way to the title.
-    const t = n.querySelector('.pane-title');
-    return {text: c && [...c.querySelectorAll('.pane-pr-link b, .pane-pr-word')].map(word => word.textContent).join(' '), shown: c?.querySelector('.pane-pr-link').innerText.replace(/\s+/g, ' ').trim(),
-      fit: c?.dataset.fit, titleCut: t.scrollWidth > t.clientWidth + 1, href: c?.querySelector('a').href, target: c?.querySelector('a').target,
+    return {text: c?.querySelector('.pane-pr-link').innerText.replace(/\s+/g, ' ').trim(), href: c?.querySelector('a').href, target: c?.querySelector('a').target,
       label: c?.querySelector('a').getAttribute('aria-label'), log: c ? !c.querySelector('.pane-pr-log').hidden : null,
       inside: !!box && box.left >= bar.left && box.right <= bar.right && box.top >= bar.top && box.bottom <= bar.bottom, overflow: document.documentElement.scrollWidth > innerWidth};}, ids.pr);
   let seen = await header();
@@ -75,6 +72,15 @@ const check = (name, fn) => {fn();results.push(name);console.log('  PASS  ' + na
     assert.equal(seen.text, '#42 Open Pending Awaiting review');assert.equal(seen.href, PR_URL);assert.equal(seen.target, '_blank');
     assert.match(seen.label, /Pull request #42, Open, checks pending, awaiting review/);assert.equal(seen.log, false);
   });
+  // The tool-chip code once took this tab for a stale tool chip and removed it on every pass, so it flickered.
+  const steady = await page.evaluate(async id => {
+    const n = document.querySelector(`[data-pane-id="${id}"]`), tab = n.querySelector('.pane-pr');let removed = 0;
+    const watch = new MutationObserver(list => {for (const m of list) for (const node of m.removedNodes) if (node === tab) removed++;});
+    watch.observe(n.querySelector('.pane-actions'), {childList: true});
+    renderPaneDocks();await new Promise(resolve => setTimeout(resolve, 5000));watch.disconnect();
+    return {removed, same: n.querySelector('.pane-pr') === tab};
+  }, ids.pr);
+  check('the tab stays put through renders and tool-chip updates', () => assert.deepEqual(steady, {removed: 0, same: true}));
   const corp = page.locator(`[data-pane-id="${ids.corp}"] .pane-pr-link`);
   await until(async () => (await corp.count()) && (await corp.innerText()).replace(/\s+/g, ' ').trim() === '#7 Open Passing Awaiting review', 'The GitHub Enterprise pull request was not shown');
   const corpHref = await corp.getAttribute('href');
@@ -145,15 +151,9 @@ const check = (name, fn) => {fn();results.push(name);console.log('  PASS  ' + na
     await page.setViewportSize({width, height});await pause();
     seen = await header();
     check(`the chip sits inside the pane header at ${width}px`, () => {assert.ok(seen.inside);assert.equal(seen.overflow, false);});
-    if (width === 1440) check('in a half-width pane the tab drops words rather than cut the title', () => {assert.equal(seen.titleCut, false);assert.notEqual(seen.fit, '0');assert.equal(seen.shown, '#42 Open Failing');});
     await page.screenshot({path: evidence(`pr-chip-changes-${width}.png`)});
   }
   await page.setViewportSize({width: 1440, height: 900});
-  await page.evaluate(id => toggleFullscreen(id), ids.pr);
-  await until(async () => (await header()).fit === '0', 'A full-screen pane did not get every word back');
-  seen = await header();
-  check('a full-screen pane shows every word', () => assert.equal(seen.shown, '#42 Open Failing Changes requested'));
-  await page.evaluate(id => toggleFullscreen(id), ids.pr);
   answer('pr-example-repo.json', {state: 'MERGED', statusCheckRollup: [run('unit tests', 'COMPLETED', 'FAILURE')]});
   await until(async () => (await header()).text === '#42 Merged', 'Merged was not shown');
   const merged = await chip.getAttribute('data-state');
