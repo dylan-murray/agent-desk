@@ -1,12 +1,12 @@
 // Desks: named groups of sessions (say, one for work and one for personal projects), with one
 // switcher to change the current view to any desk and to create a new one. Runs against a real isolated backend with real shell terminals: launches go
 // through the launcher dialog, desks are made, renamed, switched and deleted from the switcher,
-// a session is moved with a real right-click, and placement is read back from /api/agents.
+// a session is moved with a real right-click from the sidebar and from its pane header, and placement is read back from /api/agents.
 const {chromium}=require('playwright');const assert=require('node:assert/strict');const os=require('node:os');const path=require('node:path');
 const APP=process.env.AGENT_DESK_TEST_URL||'http://127.0.0.1:4310/';
 const OUT=process.env.AGENT_DESK_EVIDENCE_DIR||os.tmpdir();
 const tag=Math.random().toString(36).slice(2,6);
-const RESEARCH='Research '+tag,EXPERIMENTS='Experiments '+tag;
+const RESEARCH='Research '+tag,EXPERIMENTS='Experiments '+tag,SPINOFF='Spinoff '+tag;
 const rows=page=>page.$$eval('#agent-grid .session-row',nodes=>nodes.map(n=>n.querySelector('.session-name').textContent));
 const panes=page=>page.$$eval('#terminal .terminal-pane',nodes=>nodes.map(n=>n.dataset.paneId));
 const deskName=page=>page.textContent('#desk-button .desk-name');
@@ -108,9 +108,13 @@ async function pickDesk(page,name){
   await page.evaluate(id=>document.querySelector(`.session-row[data-agent-id="${id}"]`)?.scrollIntoView({block:'nearest'}),bravo);await page.waitForTimeout(150);
   await page.click(`.session-row[data-agent-id="${bravo}"]`,{button:'right'});
   const items=await page.$$eval('#session-group-menu [role=menuitem]',n=>n.map(x=>x.textContent));
-  check('a session\'s menu offers the other desks and a new one, never its own',()=>{
-    assert.ok(items.includes('Move to '+RESEARCH));assert.equal(items.at(-1),'Move to a new desk…');assert.equal(items.includes('Move to '+first.name),false);});
-  await page.click(`#session-group-menu [role=menuitem]:text-is("Move to ${RESEARCH}")`);
+  check('a session\'s menu has one Move to desk item',()=>assert.deepEqual(items,['Move to desk']));
+  await page.hover('#session-group-menu [role=menuitem]:text-is("Move to desk")');
+  const desksOffered=await page.$$eval('#session-group-submenu:not([hidden]) [role=menuitem]',n=>n.map(x=>x.lastElementChild.textContent));
+  check('...whose submenu lists the other desks, then a new one, never its own',()=>{
+    assert.ok(desksOffered.includes(RESEARCH));assert.equal(desksOffered.at(-1),'New desk…');assert.equal(desksOffered.includes(first.name),false);});
+  await page.screenshot({path:path.join(OUT,'desks-04b-move-submenu.png')});
+  await page.click(`#session-group-submenu [role=menuitem]:has(span:text-is("${RESEARCH}"))`);
   await page.waitForFunction(id=>!document.querySelector(`.session-row[data-agent-id="${id}"]`),bravo);
   data=await server(page);
   const left=await panes(page);
@@ -155,13 +159,51 @@ async function pickDesk(page,name){
   const after=await page.$$eval('#agent-grid .session-row',n=>n.map(x=>x.dataset.agentId));
   check('...and show in this desk\'s sidebar',()=>{for(const id of [alpha,bravo,researcher])assert.ok(after.includes(id),id);});
 
+  // A pane's header has the same menu: starting a new desk from a terminal takes the terminal with it.
+  await page.keyboard.press('Escape');
+  if(!(await panes(page)).includes(alpha))await page.click(`.session-row[data-agent-id="${alpha}"]`);
+  await page.click(`.terminal-pane[data-pane-id="${alpha}"] .pane-title`,{button:'right'});
+  const paneItems=await page.$$eval('#session-group-menu [role=menuitem]',n=>n.map(x=>x.textContent));
+  check('right-clicking a pane header offers Move to desk',()=>assert.ok(paneItems.includes('Move to desk')));
+  // From the keyboard: → opens the submenu on its first desk, ← steps back to Move to desk.
+  await page.focus('#session-group-menu [role=menuitem]:text-is("Move to desk")');await page.keyboard.press('ArrowRight');
+  const subOpened=await page.evaluate(()=>[document.activeElement.closest('#session-group-submenu')!==null,document.querySelector('#session-group-menu [aria-haspopup]').getAttribute('aria-expanded')]);
+  await page.keyboard.press('ArrowLeft');
+  const back=await page.evaluate(()=>[document.activeElement.textContent,document.querySelector('#session-group-submenu').hidden,document.querySelector('#session-group-menu').hidden]);
+  check('→ opens the desk submenu and ← steps back to Move to desk with the menu still open',()=>assert.deepEqual([subOpened,back],[[true,'true'],['Move to desk',true,false]]));
+  await page.click('#session-group-menu [role=menuitem]:text-is("Move to desk")');
+  await page.click('#session-group-submenu [role=menuitem]:has-text("New desk…")');
+  await page.waitForSelector('#session-group-submenu .desk-name-input');
+  const inPlace=await page.evaluate(()=>[document.activeElement.matches('#session-group-submenu .desk-name-input'),document.getElementById('desk-menu').hidden]);
+  check('New desk… is named in place in the submenu, without opening the desk switcher',()=>assert.deepEqual(inPlace,[true,true]));
+  await page.keyboard.type(SPINOFF);
+  await page.screenshot({path:path.join(OUT,'desks-06-pane-menu.png')});
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(id=>!document.querySelector(`.terminal-pane[data-pane-id="${id}"]`),alpha);
+  data=await server(page);
+  const spinoff=data.desks.find(d=>d.name===SPINOFF);
+  check('the new desk is made and the terminal is on it, still running',()=>{assert.ok(spinoff);const a=data.agents.find(x=>x.id===alpha);assert.deepEqual([a.desk,a.exit_code],[spinoff.id,null]);});
+  const stay=[await deskName(page),await panes(page)];
+  check('...this tab stays on its desk without that pane',()=>{assert.equal(stay[0],first.name);assert.equal(stay[1].includes(alpha),false);});
+  const menusOpen=await page.evaluate(()=>['session-group-menu','session-group-submenu'].map(id=>!document.getElementById(id).hidden));
+  check('...and the menu and its submenu are closed',()=>assert.deepEqual(menusOpen,[false,false]));
+
   // Narrow layout: the logo keeps its centred row; the switcher spans the row under it.
   await page.setViewportSize({width:390,height:844});await page.waitForTimeout(300);
   await page.click('#desk-button');await page.waitForTimeout(150);
   const narrow=await page.evaluate(()=>{const brand=document.querySelector('.sidebar .brand').getBoundingClientRect(),button=document.getElementById('desk-button').getBoundingClientRect(),menu=document.getElementById('desk-menu').getBoundingClientRect(),search=document.querySelector('.sidebar .search').getBoundingClientRect();
     return {belowLogo:button.top>=brand.bottom-1,aboveSessions:button.bottom<=search.top,fullWidth:document.getElementById('desk-switcher').getBoundingClientRect().width>=innerWidth-40,menuOnScreen:menu.left>=0&&menu.right<=innerWidth};});
   check('on a phone the switcher is a full-width row between the logo and the sessions, and its menu stays on screen',()=>assert.deepEqual(narrow,{belowLogo:true,aboveSessions:true,fullWidth:true,menuOnScreen:true}));
-  await page.screenshot({path:path.join(OUT,'desks-06-narrow.png')});
+  await page.keyboard.press('Escape');
+  await page.evaluate(id=>document.querySelector(`.session-row[data-agent-id="${id}"]`)?.scrollIntoView({block:'nearest'}),bravo);await page.waitForTimeout(150);
+  await page.click(`.session-row[data-agent-id="${bravo}"]`,{button:'right'});
+  await page.click('#session-group-menu [role=menuitem]:text-is("Move to desk")');
+  const phoneSub=await page.evaluate(()=>{const sub=document.getElementById('session-group-submenu').getBoundingClientRect(),item=document.querySelector('#session-group-menu [aria-haspopup]').getBoundingClientRect();
+    return {onScreen:sub.left>=0&&sub.right<=innerWidth&&sub.top>=0&&sub.bottom<=innerHeight,itemVisible:sub.top>=item.bottom-1||sub.left>=item.right-1||sub.right<=item.left+1};});
+  check('on a phone the desk submenu stays on screen and leaves Move to desk visible',()=>assert.deepEqual(phoneSub,{onScreen:true,itemVisible:true}));
+  await page.screenshot({path:path.join(OUT,'desks-08-narrow-submenu.png')});
+  await page.keyboard.press('Escape');await page.keyboard.press('Escape');
+  await page.screenshot({path:path.join(OUT,'desks-07-narrow.png')});
   check('no page errors',()=>assert.deepEqual(errors,[]));
  }catch(error){failures.push('run');console.log('  FAIL  run :: '+(error.stack||error.message));}
  finally{
