@@ -621,7 +621,7 @@ class Handler(SimpleHTTPRequestHandler):
                 managed = [a for a in TERMINALS.list() if a['id'] not in hidden]
                 for agent in managed:
                     agent.update(folder_context(agent['cwd']))
-                    agent['pull_request'] = PULL_REQUESTS.status(agent['repo']) if agent['repo'] else None
+                    agent['pull_request'] = PULL_REQUESTS.status(agent['repo'], agent['id'])
                     if agent['id'] in PROTECTED_PANES:
                         agent['protected'] = True
                 known_pids = {a.get('pid') for a in reported} | TERMINALS.child_pids()
@@ -939,7 +939,10 @@ class Handler(SimpleHTTPRequestHandler):
                 if self.path == '/api/pull-requests/review':
                     return self.send_json(PULL_REQUESTS.review(payload))
                 if self.path == '/api/pull-requests/failure-log':
-                    return self.send_json(PULL_REQUESTS.failure_log(folder_context(TERMINALS.get(payload.get('id', '')).cwd)['repo']))
+                    cwd = TERMINALS.get(payload.get('id', '')).cwd
+                    return self.send_json(PULL_REQUESTS.failure_log(cwd, folder_context(cwd)['repo'], payload['id'], payload.get('url')))
+                if self.path == '/api/pull-requests/forget':
+                    return self.send_json(PULL_REQUESTS.forget(payload.get('id'), payload.get('url')))
                 if self.path == '/api/inbox/clear-history':
                     return self.send_json({'keys': clear_inbox_history(payload.get('keys'))})
                 if self.path == '/api/projects/create':
@@ -1145,7 +1148,7 @@ def main():
     coordinator_file = 'coordinators.sqlite3' if key == 4310 else f'coordinators-{key}.sqlite3'
     COORDINATORS = CoordinatorRuntime(DATA_DIR / coordinator_file, TERMINALS, MAILBOX)
     DESKS = Desks(DATA_DIR / ('desks.json' if key == 4310 else f'desks-{key}.json'))
-    PULL_REQUESTS = PullRequests(DATA_DIR / ('pull-requests.json' if key == 4310 else f'pull-requests-{key}.json'))
+    PULL_REQUESTS = PullRequests(DATA_DIR / ('pull-requests.json' if key == 4310 else f'pull-requests-{key}.json'), output=lambda identity, cursor: TERMINALS.output(identity, cursor))
     atexit.register(COORDINATORS.close)
     DEVELOPMENT = not args.production
     WORKFLOWS.desk = desk_url(key)

@@ -85,6 +85,47 @@ const check = (name, fn) => {fn();results.push(name);console.log('  PASS  ' + na
   await until(async () => (await corp.count()) && (await corp.innerText()).replace(/\s+/g, ' ').trim() === '#7 Open Passing Awaiting review', 'The GitHub Enterprise pull request was not shown');
   const corpHref = await corp.getAttribute('href');
   check('a GitHub Enterprise remote shows its pull request too', () => assert.equal(corpHref, CORP_URL));
+
+  // A terminal that prints other pull request links lists them behind +N; one that needs you turns it red.
+  const link = number => `https://github.com/example-org/example-repo/pull/${number}`;
+  fs.writeFileSync(path.join(fake, 'pr-url-28.json'), JSON.stringify({code: 0, stdout: {number: 28, title: 'Retry backoff for payment client', url: link(28), state: 'OPEN', isDraft: false, reviewDecision: '', headRefName: 'fix/retry-backoff', statusCheckRollup: [run('unit tests', 'COMPLETED', 'FAILURE')], latestReviews: []}}));
+  fs.writeFileSync(path.join(fake, 'pr-url-29.json'), JSON.stringify({code: 0, stdout: {number: 29, title: 'Docs: checkout config', url: link(29), state: 'OPEN', isDraft: false, reviewDecision: 'APPROVED', headRefName: 'docs/checkout-config', statusCheckRollup: [run('lint', 'COMPLETED', 'SUCCESS')], latestReviews: []}}));
+  await page.evaluate(({id, text}) => terminalRequest('/api/terminals/input', {id, data: btoa(text)}), {id: ids.corp, text: `printf '%s\\n' ${link(28)} ${link(29)}\r`});
+  const corpPane = page.locator(`[data-pane-id="${ids.corp}"]`), more = corpPane.locator('.pane-pr-more');
+  await until(async () => (await more.isVisible()) && (await more.innerText()).trim() === '+2', 'Printed pull requests did not join the tab');
+  const moreState = {alert: await more.evaluate(node => node.classList.contains('alert')), label: await more.getAttribute('aria-label')};
+  check('printed pull requests show as +2, red when one needs you', () => assert.deepEqual(moreState, {alert: true, label: '2 more pull requests from this terminal · 1 needs you'}));
+  await more.click();
+  const list = page.locator('.pane-pr-list');
+  await list.waitFor();
+  const rows = () => list.locator('.pane-pr-row').evaluateAll(nodes => nodes.map(row => ({number: row.querySelector('.pane-pr-row-title b').textContent, meta: row.querySelector('.pane-pr-row-meta').innerText.replace(/\s+/g, ' '),
+    actions: [...row.querySelectorAll('[data-role]')].map(node => node.dataset.role)})));
+  const listed = await rows();
+  check('the list leads with the branch pull request and shows each one’s state and actions', () => {
+    assert.deepEqual(listed.map(row => row.number), ['#7', '#29', '#28']);
+    assert.match(listed[0].meta, /Open Passing Awaiting review this folder’s branch/);
+    assert.match(listed[2].meta, /^fix\/retry-backoff Open Failing printed (just now|1m ago)/);
+    assert.deepEqual(listed.map(row => row.actions), [['open'], ['open', 'forget'], ['log', 'open', 'forget']]);
+  });
+  const fits = await list.evaluate(node => {const box = node.getBoundingClientRect();return box.left >= 0 && box.right <= innerWidth;});
+  check('the list fits the window at 1440px', () => assert.ok(fits));
+  await page.screenshot({path: evidence('pr-list-1440.png')});
+  await list.locator('.pane-pr-row', {hasText: '#29'}).locator('[data-role=forget]').click();
+  await until(async () => (await more.innerText()).trim() === '+1', 'Forgetting a pull request did not remove it');
+  const remaining = (await rows()).map(row => row.number);
+  check('× stops showing a printed pull request in this terminal', () => assert.deepEqual(remaining, ['#7', '#28']));
+  await page.keyboard.press('Escape');
+  const closed = {list: await list.count(), focus: await page.evaluate(() => document.activeElement?.classList.contains('pane-pr-more'))};
+  check('Escape closes the list and returns to +N', () => assert.deepEqual(closed, {list: 0, focus: true}));
+  await page.setViewportSize({width: 390, height: 844});
+  await page.evaluate(id => selectPane(id), ids.corp);
+  await more.click();await list.waitFor();
+  const phone = await list.evaluate(node => {const box = node.getBoundingClientRect();return box.left >= 0 && box.right <= innerWidth && document.documentElement.scrollWidth <= innerWidth;});
+  check('the list fits the window at 390px', () => assert.ok(phone));
+  await page.screenshot({path: evidence('pr-list-390.png')});
+  await page.keyboard.press('Escape');
+  await page.setViewportSize({width: 1440, height: 900});
+  await page.evaluate(ids => {for (const id of Object.values(ids)) selectPane(id, true);selectPane(ids.pr, true);}, ids);
   await pause();await pause();
   const strays = await page.locator(`[data-pane-id="${ids.none}"] .pane-pr, [data-pane-id="${ids.plain}"] .pane-pr`).count();
   check('a folder with no pull request or no GitHub remote shows nothing', () => assert.equal(strays, 0));
@@ -142,7 +183,7 @@ const check = (name, fn) => {fn();results.push(name);console.log('  PASS  ' + na
   await detail.locator('button', {hasText: 'Mark reviewed'}).click();
   await until(async () => (await page.locator('.inbox-row', {hasText: 'fixture-reviewer approved #42'}).count()) === 0, 'Mark reviewed did not move the item out of Open');
   const saved = JSON.parse(fs.readFileSync(path.join(state, 'data', `pull-requests-${port}.json`), 'utf8'));
-  check('Mark reviewed is saved on the server', () => assert.deepEqual(saved.map(e => [e.kind, e.state]), [['checks', 'review'], ['review', 'done']]));
+  check('Mark reviewed is saved on the server', () => assert.deepEqual(saved.events.map(e => [e.kind, e.state]), [['checks', 'review'], ['review', 'done']]));
 
   await page.evaluate(id => selectPane(id), ids.pr);
   answer('pr-example-repo.json', {statusCheckRollup: [run('unit tests', 'COMPLETED', 'FAILURE')], reviewDecision: 'CHANGES_REQUESTED'});

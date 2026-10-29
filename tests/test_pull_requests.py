@@ -7,7 +7,9 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from agent_desk.pull_requests import PullRequests, checks_of
+import base64
+
+from agent_desk.pull_requests import PullRequests, checks_of, links_in
 
 FAKE_GH = Path(__file__).with_name('fixtures') / 'fake_gh.py'
 PR_URL = 'https://github.com/example-org/example-repo/pull/42'
@@ -34,7 +36,8 @@ class ChecksTests(unittest.TestCase):
         self.assertEqual(failed, [{'name': 'deploy', 'url': 'https://ci.example.test/1'}])
 
 
-class PullRequestPollTests(unittest.TestCase):
+class GhFixture(unittest.TestCase):
+    """Fixture Git repositories and a stub gh on PATH that answers from JSON files."""
     def setUp(self):
         self.folder = Path(tempfile.mkdtemp())
         self.addCleanup(subprocess.run, ['rm', '-rf', str(self.folder)])
@@ -72,6 +75,8 @@ class PullRequestPollTests(unittest.TestCase):
         log = self.fake / 'calls.log'
         return [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
 
+
+class PullRequestPollTests(GhFixture):
     def test_a_branch_pull_request_is_summarised_for_its_folder(self):
         self.answer(pull_request([run('lint', 'COMPLETED', 'SUCCESS')], isDraft=True, reviewDecision='APPROVED'))
         self.poll()
@@ -103,7 +108,7 @@ class PullRequestPollTests(unittest.TestCase):
         self.assertEqual((status['number'], status['url'], status['checks'], status['logs']),
                          (7, 'https://ghe.example-corp.test/platform/corp-repo/pull/7', 'failing', True))
         self.answer('build\tCompile\t2026-10-28T10:00:00Z error: fixture', name='log.json')
-        self.assertEqual(self.prs.failure_log(enterprise)['log'], 'error: fixture')
+        self.assertEqual(self.prs.failure_log(enterprise, enterprise, 'term-1')['log'], 'error: fixture')
         self.assertEqual(self.calls()[-1][1:], ['run', 'view', '--job', '31', '--log-failed'])
 
     def test_a_host_gh_does_not_know_is_asked_rarely_and_a_local_remote_never(self):
@@ -148,7 +153,7 @@ class PullRequestPollTests(unittest.TestCase):
         self.assertEqual(events[1]['title'], 'fixture-reviewer requested changes on #42 Fixture change')
         self.assertEqual(events[1]['category'], 'attention')
         saved = json.loads((self.folder / 'data' / 'pull-requests.json').read_text())
-        self.assertEqual([e['id'] for e in saved], [e['id'] for e in events])
+        self.assertEqual([e['id'] for e in saved['events']], [e['id'] for e in events])
         self.prs.review({'id': events[0]['id'], 'state': 'done'})
         reopened = PullRequests(self.folder / 'data' / 'pull-requests.json')
         self.assertEqual(reopened.snapshot()['events'][0]['state'], 'done')
@@ -170,15 +175,96 @@ class PullRequestPollTests(unittest.TestCase):
         self.poll()
         lines = ''.join(f'unit\tRun tests\t2026-10-28T10:00:{i:02d}Z line {i}\n' for i in range(80))
         self.answer(lines, name='log.json')
-        failure = self.prs.failure_log(self.repo, lines=5)
+        failure = self.prs.failure_log(self.repo, self.repo, 'term-1', lines=5)
         self.assertEqual(failure['check'], 'unit')
         self.assertEqual(failure['log'].splitlines(), [f'line {i}' for i in range(75, 80)])
         self.assertEqual(self.calls()[-1][1:], ['run', 'view', '--job', '11', '--log-failed'])
         self.answer(pull_request([run('unit', 'COMPLETED', 'SUCCESS')]))
         self.poll()
         with self.assertRaisesRegex(ValueError, 'no failing checks'):
-            self.prs.failure_log(self.repo)
+            self.prs.failure_log(self.repo, self.repo, 'term-1')
 
+
+
+class PrintedLinkTests(GhFixture):
+    """Pull request links a terminal prints join its tab beside the branch pull request."""
+    def setUp(self):
+        super().setUp()
+        self.screen = {'term-1': b''}
+        self.prs.output = lambda terminal, cursor: {'data': base64.b64encode(self.screen[terminal][cursor:]).decode(), 'cursor': len(self.screen[terminal])}
+
+    def prints(self, text, terminal='term-1'):
+        self.screen[terminal] += text.encode()
+
+    def link(self, number, **fields):
+        url = f'https://github.com/example-org/example-repo/pull/{number}'
+        self.answer(pull_request(url=url, number=number, title=f'Fixture {number}', headRefName=f'fixture-{number}', **fields), name=f'pr-url-{number}.json')
+        return url
+
+    def test_links_are_read_through_colour_and_hyperlinks_but_not_wrapped_numbers(self):
+        text = ('\x1b[34mhttps://github.com/example-org/example-repo/pull/28\x1b[0m done\r\n'
+                '\x1b]8;;https://ghe.example-corp.test/platform/corp-repo/pull/7\x07see it\x1b]8;;\x07\r\n'
+                'https://github.com/example-org/example-repo/pull/3\r\n1 more line\r\n'
+                'Opened https://github.com/example-org/example-repo/pull/29/.')
+        self.assertEqual(links_in(text), ['https://ghe.example-corp.test/platform/corp-repo/pull/7',
+                                          'https://github.com/example-org/example-repo/pull/28',
+                                          'https://github.com/example-org/example-repo/pull/29'])
+
+    def test_printed_pull_requests_list_beside_the_branch_one(self):
+        self.answer(pull_request())
+        failing = self.link(28, statusCheckRollup=[run('unit', 'COMPLETED', 'FAILURE')])
+        self.link(29)
+        self.prints(f'$ gh pr create\r\n{failing}\r\n')
+        self.poll()
+        self.prints(f'{PR_URL}\r\nhttps://github.com/example-org/example-repo/pull/29\r\n')
+        self.poll()
+        status = self.prs.status(self.repo, 'term-1')
+        self.assertEqual(status['number'], 42)
+        self.assertEqual([(o['number'], o['checks'], o['branch']) for o in status['others']], [(29, None, 'fixture-29'), (28, 'failing', 'fixture-28')])
+        asked = [c[3] for c in self.calls() if c[1:3] == ['pr', 'view'] and len(c) > 3 and c[3].startswith('https://')]
+        self.assertNotIn(PR_URL, asked, 'the branch pull request is not asked about twice')
+        self.answer('unit\tTest\t2026-10-28T10:00:00Z boom', name='log.json')
+        self.assertEqual(self.prs.failure_log(self.repo, self.repo, 'term-1', failing)['check'], 'unit')
+
+    def test_a_terminal_without_a_branch_pull_request_leads_with_a_printed_one(self):
+        self.answer(code=1, stderr='no pull requests found for branch "feature/fixture"')
+        self.prints(self.link(28) + '\r\n')
+        self.poll()
+        status = self.prs.status(self.repo, 'term-1')
+        self.assertEqual((status['number'], status['others']), (28, []))
+
+    def test_forgotten_links_stay_gone_and_closed_ones_leave_after_a_day(self):
+        self.answer(pull_request())
+        self.prints(self.link(28) + '\r\n' + self.link(29, state='MERGED') + '\r\n')
+        self.poll()
+        self.prs.forget('term-1', 'https://github.com/example-org/example-repo/pull/28')
+        self.prints('https://github.com/example-org/example-repo/pull/28\r\n')
+        self.poll()
+        self.assertEqual([o['number'] for o in self.prs.status(self.repo, 'term-1', now=self.now)['others']], [29])
+        saved = json.loads((self.folder / 'data' / 'pull-requests.json').read_text())
+        self.assertEqual(saved['forgotten'], {'term-1': ['https://github.com/example-org/example-repo/pull/28']})
+        self.assertEqual(self.prs.status(self.repo, 'term-1', now=self.now + 86401)['others'], [])
+        with self.assertRaisesRegex(ValueError, 'not printed'):
+            self.prs.forget('term-1', 'https://github.com/example-org/example-repo/pull/99')
+
+    def test_a_printed_pull_request_reaches_the_inbox_for_the_terminal_that_printed_it(self):
+        self.answer(pull_request())
+        url = self.link(28, statusCheckRollup=[run('unit', 'IN_PROGRESS')])
+        self.prints(url + '\r\n')
+        self.poll()
+        self.link(28, statusCheckRollup=[run('unit', 'COMPLETED', 'FAILURE')])
+        self.poll()
+        events = self.prs.snapshot()['events']
+        self.assertEqual([(e['kind'], e['number'], e['terminal'], e['repo'], e['branch']) for e in events], [('checks', 28, 'term-1', 'example-repo', 'fixture-28')])
+
+    def test_an_exited_terminal_stops_its_links_being_polled(self):
+        self.prints(self.link(28) + '\r\n')
+        self.poll()
+        before = len(self.calls())
+        self.now += 60
+        self.prs.poll([{'id': 'term-1', 'exit_code': 0, 'repo': self.repo}], self.now)
+        self.assertEqual(len(self.calls()), before)
+        self.assertIsNone(self.prs.status(self.repo, 'term-1'))
 
 if __name__ == '__main__':
     unittest.main()
