@@ -942,7 +942,8 @@ class Handler(SimpleHTTPRequestHandler):
                     cwd = TERMINALS.get(payload.get('id', '')).cwd
                     return self.send_json(PULL_REQUESTS.failure_log(cwd, folder_context(cwd)['repo'], payload['id'], payload.get('url')))
                 if self.path == '/api/pull-requests/forget':
-                    return self.send_json(PULL_REQUESTS.forget(payload.get('id'), payload.get('url')))
+                    cwd = TERMINALS.get(payload.get('id', '')).cwd
+                    return self.send_json(PULL_REQUESTS.forget(payload['id'], payload.get('url'), folder_context(cwd)['repo']))
                 if self.path == '/api/inbox/clear-history':
                     return self.send_json({'keys': clear_inbox_history(payload.get('keys'))})
                 if self.path == '/api/projects/create':

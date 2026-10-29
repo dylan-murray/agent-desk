@@ -244,8 +244,18 @@ class PrintedLinkTests(GhFixture):
         saved = json.loads((self.folder / 'data' / 'pull-requests.json').read_text())
         self.assertEqual(saved['forgotten'], {'term-1': ['https://github.com/example-org/example-repo/pull/28']})
         self.assertEqual(self.prs.status(self.repo, 'term-1', now=self.now + 86401)['others'], [])
-        with self.assertRaisesRegex(ValueError, 'not printed'):
+        with self.assertRaisesRegex(ValueError, 'not showing'):
             self.prs.forget('term-1', 'https://github.com/example-org/example-repo/pull/99')
+
+    def test_a_hidden_branch_pull_request_stays_hidden_until_the_branch_has_a_new_one(self):
+        self.answer(pull_request(state='MERGED'))
+        self.poll()
+        self.prs.forget('term-1', PR_URL, self.repo)
+        self.assertIsNone(self.prs.status(self.repo, 'term-1'))
+        self.assertIsNotNone(self.prs.status(self.repo, 'term-2'), 'other terminals in the folder still show it')
+        self.answer(pull_request(number=44, url='https://github.com/example-org/example-repo/pull/44'))
+        self.poll()
+        self.assertEqual(self.prs.status(self.repo, 'term-1')['number'], 44)
 
     def test_a_printed_pull_request_reaches_the_inbox_for_the_terminal_that_printed_it(self):
         self.answer(pull_request())

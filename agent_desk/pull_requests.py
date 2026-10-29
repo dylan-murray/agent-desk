@@ -121,11 +121,12 @@ class PullRequests:
         now = time.time() if now is None else now
         with self.lock:
             entry = self.folders.get(repo) if repo else None
-            main = dict(entry['pr'], branch=entry['branch'], seen=None) if entry and entry['pr'] else None
+            hidden = self.forgotten.get(terminal, ())
+            main = dict(entry['pr'], branch=entry['branch'], seen=None) if entry and entry['pr'] and entry['pr']['url'] not in hidden else None
             others = []
             for url, seen in reversed(list(self.printed.get(terminal, {}).items())):
                 link = self.links.get(url)
-                if not link or not link['pr'] or url in self.forgotten.get(terminal, ()) or (main and url == main['url']):
+                if not link or not link['pr'] or url in hidden or (main and url == main['url']):
                     continue
                 if link['closed'] and now - link['closed'] > CLOSED_KEPT:
                     continue
@@ -150,13 +151,15 @@ class PullRequests:
             self.save()
             return dict(event)
 
-    def forget(self, terminal, url):
-        """Stop showing a printed pull request in this terminal, even if it is printed again."""
+    def forget(self, terminal, url, repo=None):
+        """Stop showing a pull request in this terminal, even if it is printed again: one it printed, or
+        its folder's branch pull request. A new pull request on that branch has a new URL, so it still shows."""
         with self.lock:
-            if url not in self.printed.get(terminal, {}):
-                raise ValueError('This terminal has not printed that pull request')
+            entry = self.folders.get(repo) if repo else None
+            if url not in self.printed.get(terminal, {}) and not (entry and entry['pr'] and entry['pr']['url'] == url):
+                raise ValueError('This terminal is not showing that pull request')
             self.forgotten.setdefault(terminal, set()).add(url)
-            self.printed[terminal].pop(url)
+            self.printed.get(terminal, {}).pop(url, None)
             self.save()
         return {'ok': True}
 

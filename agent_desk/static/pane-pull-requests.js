@@ -25,7 +25,7 @@ function renderPanePullRequest(view,agent){
   if(!group){
     group=document.createElement('span');group.className='pane-tool pane-pr';
     // Its own classes, not the tool chip's: pane-docks.js finds and removes .pane-tool-toggle chips by class.
-    group.innerHTML='<a class="pane-pr-link" target="_blank" rel="noopener noreferrer"></a><button type="button" class="pane-pr-log" hidden>'+prIcons.log+'</button><button type="button" class="pane-pr-more" aria-haspopup="true" aria-expanded="false" hidden></button>';
+    group.innerHTML='<a class="pane-pr-link" target="_blank" rel="noopener noreferrer"></a><button type="button" class="pane-pr-log" hidden>'+prIcons.log+'</button><button type="button" class="pane-pr-more" aria-haspopup="true" aria-expanded="false" hidden></button><button type="button" class="pane-pr-hide" hidden>'+prIcons.close+'</button>';
     view.node.querySelector('.pane-actions').prepend(group);
     group.querySelector('.pane-pr-log').onclick=event=>pastePullRequestFailure(agent.id,event.currentTarget);
     group.querySelector('.pane-pr-more').onclick=event=>prList?.id===agent.id?closePullRequestList():openPullRequestList(agent.id,event.currentTarget);
@@ -48,6 +48,9 @@ function renderPanePullRequest(view,agent){
   more.classList.toggle('alert',!!alerts);more.innerHTML=(alerts?'<span class="pane-pr-dot"></span>':'')+'+'+others.length;
   more.title=`${others.length} more pull request${others.length===1?'':'s'} from this terminal`+(alerts?` · ${alerts} need${alerts===1?'s':''} you`:'');
   more.setAttribute('aria-label',more.title);
+  // A merged or closed pull request has nothing left to watch, so it can be put away; a new one on the branch still shows.
+  const hide=group.querySelector('.pane-pr-hide');hide.hidden=live;
+  hide.title=`Stop showing #${pr.number} here`;hide.setAttribute('aria-label',hide.title);hide.onclick=()=>forgetPullRequest(agent.id,pr.url);
   if(!others.length&&prList?.id===agent.id)closePullRequestList();
 }
 
@@ -82,11 +85,11 @@ function renderPullRequestList(pr,view){
     prList.node.dataset.signature=signature;
     const focused=document.activeElement?.closest('.pane-pr-list [data-url]')?.dataset.url,focusRole=document.activeElement?.dataset.role;
     prList.node.innerHTML=`<p class="pane-pr-list-title"><span>Pull requests from this terminal</span><span>${rows.length}</span></p>`+rows.map(item=>{
-      const {checks,review}=prParts(item),url=escapeHTML(item.url);
+      const {live,checks,review}=prParts(item),url=escapeHTML(item.url);
       return `<div class="pane-pr-row" data-url="${url}" data-state="${item.state}" data-checks="${checks||''}"><span class="pane-pr-icon">${item.state==='merged'?prIcons.merged:prIcons.pr}</span>`+
         `<a class="pane-pr-row-title" data-role="open" href="${url}" target="_blank" rel="noopener noreferrer" title="Open the pull request"><b>#${escapeHTML(String(item.number))}</b>${escapeHTML(item.title)}</a>`+
         `<span class="pane-pr-row-actions">${checks==='failing'&&item.logs&&view?.term?`<button type="button" data-role="log" title="Paste the failed check’s log into this agent’s prompt" aria-label="Paste the failed log of #${escapeHTML(String(item.number))} into this agent’s prompt">${prIcons.log}</button>`:''}`+
-        `${item.seen?`<button type="button" data-role="forget" title="Stop showing this pull request here" aria-label="Stop showing #${escapeHTML(String(item.number))} here">${prIcons.close}</button>`:''}</span>`+
+        `${item.seen||!live?`<button type="button" data-role="forget" title="Stop showing this pull request here" aria-label="Stop showing #${escapeHTML(String(item.number))} here">${prIcons.close}</button>`:''}</span>`+
         `<span class="pane-pr-row-meta">${item.branch?`<code>${escapeHTML(item.branch)}</code>`:''}<span>${prStates[item.state]}</span>${checks?`<span class="pane-pr-checks">${prIcons[checks]}${prChecks[checks]}</span>`:''}${review?`<span class="pane-pr-review" data-review="${review}">${prReviews[review]}</span>`:''}<span class="pane-pr-row-why" title="${item.seen?escapeHTML(new Date(item.seen*1000).toLocaleString()):''}">${item.seen?'printed '+deskSince(item.seen):'this folder’s branch'}</span></span></div>`;
     }).join('');
     for(const button of prList.node.querySelectorAll('[data-role=log]'))button.onclick=()=>pastePullRequestFailure(prList.id,button,button.closest('[data-url]').dataset.url);
