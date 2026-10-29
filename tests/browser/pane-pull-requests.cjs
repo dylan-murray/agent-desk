@@ -236,6 +236,9 @@ const check = (name, fn) => {fn();results.push(name);console.log('  PASS  ' + na
   await until(async () => (await pane.locator('.pane-pr').count()) === 0, 'A signed-out gh left the chip up');
   const headerState = await pane.locator('.pane-state').textContent();
   check('a signed-out gh clears the chip without an error in the header', () => assert.equal(headerState, ''));
+  // Coming back from GitHub, say after merging there, asks the server to re-check the open panes before the next poll.
+  const [recheck] = await Promise.all([page.waitForRequest(request => request.url().endsWith('/api/pull-requests/refresh')), page.evaluate(() => {prRechecked = 0;dispatchEvent(new Event('focus'));})]);
+  check('coming back to the desk asks for an early re-check of the open panes', () => assert.ok(JSON.parse(recheck.postData()).ids.includes(ids.pr)));
   check('no page errors', () => assert.deepEqual(errors, []));
   console.log(`PASS: ${results.length} pull request checks`);
 })().catch(error => {console.error(error);process.exitCode = 1;}).finally(async () => {

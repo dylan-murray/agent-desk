@@ -27,6 +27,8 @@ PR_LINK = re.compile(r'https://[\w.-]+/[\w.-]+/[\w.-]+/pull/\d+')
 # Hyperlinks a TUI draws (OSC 8) carry the whole address even when the visible text is wrapped.
 OSC8 = re.compile(r'\x1b\]8;[^;\x07\x1b]*;(https://[^\x07\x1b]+)(?:\x07|\x1b\\)')
 ESCAPES = re.compile(r'\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b\[[0-?]*[ -/]*[@-~]|\x1b[@-_]')
+# What `gh pr merge` prints once GitHub has merged ("Squashed and merged pull request ...", "... was already merged").
+MERGED = re.compile(r'\bmerged pull request\b|\bwas already merged\b', re.I)
 # gh prefixes each log line with its job, step and timestamp.
 STAMP = re.compile(r'^\d{4}-\d\d-\d\dT[\d:.]+Z ')
 EVENT_LIMIT = 200
@@ -39,6 +41,10 @@ CLOSED_KEPT = 86400
 LINKS_PER_TERMINAL = 20
 SCAN_CHUNKS = 32
 SCAN_OVERLAP = 400
+# Coming back to the desk re-checks before the next poll, but not more often than this. A merge printed in a
+# terminal is rarer, so it waits less; a redrawn screen can print the same line again.
+RECHECK_GAP = 15
+MERGE_RECHECK_GAP = 3
 
 
 def run(argv, cwd, timeout=20):
@@ -106,7 +112,9 @@ class PullRequests:
         self.printed = {}
         self.cursors = {}
         self.overlap = {}
+        self.repos = {}
         self.stopping = threading.Event()
+        self.woken = threading.Event()
         try:
             saved = json.loads(self.path.read_text())
         except (OSError, ValueError):
@@ -170,7 +178,7 @@ class PullRequests:
         os.replace(temp, self.path)
 
     def scan(self, terminal, now):
-        """Read the terminal's new output for pull request links."""
+        """Read the terminal's new output for pull request links. True when it shows a merge."""
         cursor, text = self.cursors.get(terminal, 0), ''
         for _ in range(SCAN_CHUNKS):
             chunk = self.output(terminal, cursor)
@@ -181,7 +189,7 @@ class PullRequests:
             text += data.decode(errors='replace')
         self.cursors[terminal] = cursor
         if not text:
-            return
+            return False
         # A link split across two reads is found in the overlap kept from the last one.
         text = self.overlap.get(terminal, '') + text
         self.overlap[terminal] = text[-SCAN_OVERLAP:]
@@ -192,18 +200,35 @@ class PullRequests:
                 printed.setdefault(url, now)
             for url in list(printed)[:-LINKS_PER_TERMINAL]:
                 printed.pop(url)
+        return bool(MERGED.search(ESCAPES.sub('', text)))
+
+    def hurry(self, terminals, now=None, gap=RECHECK_GAP):
+        """Check these terminals' pull requests at the next tick instead of the next poll: a merge or a
+        review on GitHub usually comes just before someone looks. Ones checked in the last gap seconds wait."""
+        now = time.time() if now is None else now
+        with self.lock:
+            repos = {self.repos.get(terminal) for terminal in terminals}
+            entries = [self.folders[repo] for repo in repos if repo in self.folders]
+            entries += [self.links[url] for terminal in terminals for url in self.printed.get(terminal, {}) if url in self.links]
+            for entry in entries:
+                # A remote gh doesn't know keeps its long wait.
+                if entry['next'] - now <= self.interval:
+                    entry['next'] = min(entry['next'], max(now, entry['next'] - self.interval + gap))
+        self.woken.set()
 
     def poll(self, terminals, now=None):
         """terminals: running local sessions with their repo; one gh call per due repo or printed link."""
         now = time.time() if now is None else now
         gh = shutil.which('gh')
-        repos, running = {}, {}
+        repos, running, repo_of = {}, {}, {}
         for terminal in terminals:
             if terminal.get('exit_code') is None:
                 running[terminal['id']] = terminal.get('cwd')
                 if terminal.get('repo'):
                     repos.setdefault(terminal['repo'], terminal['id'])
+                    repo_of[terminal['id']] = terminal['repo']
         with self.lock:
+            self.repos = repo_of
             for repo in [r for r in self.folders if r not in repos or not gh]:
                 del self.folders[repo]
             for store in (self.printed, self.cursors, self.overlap):
@@ -213,12 +238,16 @@ class PullRequests:
             with self.lock:
                 self.links.clear()
             return
+        merged = []
         if self.output:
             for terminal in running:
                 try:
-                    self.scan(terminal, now)
+                    if self.scan(terminal, now):
+                        merged.append(terminal)
                 except (OSError, ValueError, KeyError, TypeError):
                     continue
+        if merged:
+            self.hurry(merged, now, MERGE_RECHECK_GAP)
         for repo, terminal in repos.items():
             if self.stopping.is_set():
                 break
@@ -338,5 +367,6 @@ class PullRequests:
                     self.poll(terminals())
                 except Exception:
                     pass
-                self.stopping.wait(min(5, self.interval))
+                self.woken.wait(min(5, self.interval))
+                self.woken.clear()
         threading.Thread(target=loop, daemon=True).start()

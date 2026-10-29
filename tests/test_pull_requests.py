@@ -247,6 +247,26 @@ class PrintedLinkTests(GhFixture):
         with self.assertRaisesRegex(ValueError, 'not showing'):
             self.prs.forget('term-1', 'https://github.com/example-org/example-repo/pull/99')
 
+    def test_a_merge_printed_in_the_terminal_is_checked_before_the_next_poll(self):
+        self.answer(pull_request())
+        self.poll()
+        self.answer(pull_request(state='MERGED'))
+        self.prints('\x1b[32m✓\x1b[0m Squashed and merged pull request example-org/example-repo#42 (Fixture change)\r\n')
+        self.poll(advance=20)
+        self.assertEqual(self.prs.status(self.repo, 'term-1')['state'], 'merged')
+
+    def test_coming_back_to_the_desk_rechecks_now_but_not_twice_within_seconds(self):
+        self.answer(pull_request())
+        self.poll()
+        self.answer(pull_request(state='MERGED'))
+        self.poll(advance=5)
+        self.prs.hurry(['term-1'], self.now)
+        self.poll(advance=0)
+        self.assertEqual(self.prs.status(self.repo, 'term-1')['state'], 'open', 'checked 5 seconds ago, so it waits')
+        self.poll(advance=11)
+        self.assertEqual(self.prs.status(self.repo, 'term-1')['state'], 'merged')
+        self.assertEqual(len([c for c in self.calls() if c[1:3] == ['pr', 'view']]), 2, 'the long poll did not run in between')
+
     def test_a_hidden_branch_pull_request_stays_hidden_until_the_branch_has_a_new_one(self):
         self.answer(pull_request(state='MERGED'))
         self.poll()

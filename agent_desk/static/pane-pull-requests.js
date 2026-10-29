@@ -106,6 +106,14 @@ document.addEventListener('pointerdown',event=>{if(prList&&!event.target.closest
 document.addEventListener('keydown',event=>{if(prList&&event.key==='Escape'){event.preventDefault();closePullRequestList(true);}});
 addEventListener('resize',placePullRequestList);
 document.addEventListener('scroll',placePullRequestList,true);
+// Coming back to the desk, often from merging or reviewing on GitHub, re-checks the open panes' pull requests
+// now instead of at the next poll. The server skips any it checked in the last few seconds.
+let prRechecked=0;
+function recheckPullRequests(){
+  if(demo||document.hidden||!openPaneIds.length||Date.now()-prRechecked<15000)return;
+  prRechecked=Date.now();terminalRequest('/api/pull-requests/refresh',{ids:openPaneIds}).catch(()=>{});
+}
+addEventListener('focus',recheckPullRequests);document.addEventListener('visibilitychange',recheckPullRequests);
 
 async function pastePullRequestFailure(id,button,url){
   const view=paneViews.get(id);if(!view?.term)return;
