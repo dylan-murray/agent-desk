@@ -69,9 +69,12 @@ function closePullRequestList(focus=false){
 function placePullRequestList(){
   if(!prList)return;
   if(!prList.button.isConnected){closePullRequestList();return;}
-  // Right-aligned under the tab, but always whole inside the window.
+  // Right-aligned under the tab, or above it when there is more room there, and always inside the window:
+  // a long list scrolls rather than running off the edge.
   const box=prList.button.closest('.pane-pr').getBoundingClientRect(),width=prList.node.offsetWidth;
-  prList.node.style.top=Math.round(box.bottom+6)+'px';
+  const below=innerHeight-box.bottom-14,above=box.top-14,up=below<200&&above>below;
+  prList.node.style.maxHeight=Math.max(120,Math.round(up?above:below))+'px';
+  prList.node.style.top=Math.round(up?box.top-6-prList.node.offsetHeight:box.bottom+6)+'px';
   prList.node.style.left=Math.round(Math.max(8,Math.min(box.right-width,innerWidth-width-8)))+'px';
 }
 function renderPullRequestList(pr,view){

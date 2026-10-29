@@ -109,6 +109,14 @@ const check = (name, fn) => {fn();results.push(name);console.log('  PASS  ' + na
   });
   const fits = await list.evaluate(node => {const box = node.getBoundingClientRect();return box.left >= 0 && box.right <= innerWidth;});
   check('the list fits the window at 1440px', () => assert.ok(fits));
+  // A list taller than the room below its tab scrolls inside the window instead of running off it.
+  await page.setViewportSize({width: 1440, height: 480});
+  await more.evaluate(node => node.scrollIntoView({block: 'end'}));
+  const inside = () => list.evaluate(node => {const box = node.getBoundingClientRect();return box.top >= 0 && box.bottom <= innerHeight + 1;});
+  await until(inside, 'The list ran outside a short window');
+  const opensUp = await list.evaluate(node => node.getBoundingClientRect().bottom <= document.querySelector('.pane-pr-more[aria-expanded=true]').getBoundingClientRect().top);
+  check('near the bottom of a short window the list opens upward and stays inside it', () => assert.ok(opensUp));
+  await page.setViewportSize({width: 1440, height: 900});
   await page.screenshot({path: evidence('pr-list-1440.png')});
   await list.locator('.pane-pr-row', {hasText: '#29'}).locator('[data-role=forget]').click();
   await until(async () => (await more.innerText()).trim() === '+1', 'Forgetting a pull request did not remove it');
