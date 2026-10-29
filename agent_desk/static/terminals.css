@@ -457,6 +457,14 @@ body.pane-dragging-active .pane-edges{visibility:hidden}
 @media(max-width:1050px){.pane-tool{max-width:140px}}
 @media(prefers-reduced-motion:reduce){.pane-divider::before{transition:none}}
 @media(max-width:760px){.pane-tool-toggle{padding:0 6px}.pane-tool-toggle span{display:none}.pane-dock-side{display:none}}
+.pane-pr{max-width:300px}.pane-pr-link{text-decoration:none}.pane-pr-link b{font-weight:600;color:var(--ink-1);font-variant-numeric:tabular-nums}
+.pane-pr-icon,.pane-pr-checks{display:inline-flex;align-items:center;gap:4px;flex-shrink:0}.pane-pr-checks svg{width:11px;height:11px}
+.pane-pr[data-state=open] .pane-pr-icon{color:var(--good)}.pane-pr[data-state=draft] .pane-pr-icon{color:var(--ink-muted)}.pane-pr[data-state=merged] .pane-pr-icon{color:var(--lavender)}.pane-pr[data-state=closed] .pane-pr-icon{color:var(--danger)}
+.pane-pr[data-checks=passing] .pane-pr-checks{color:var(--good)}.pane-pr[data-checks=pending] .pane-pr-checks{color:var(--amber)}.pane-pr[data-checks=failing] .pane-pr-checks{color:var(--danger)}
+.pane-pr[data-checks=failing]{border-color:#e6676740}.pane-pr-review[data-review=approved]{color:var(--good)}.pane-pr-review[data-review=review_required]{color:var(--ink-muted)}.pane-pr-review[data-review=changes_requested]{color:var(--amber)}
+.pane-pr-log{width:22px}.pane-pr-log[hidden]{display:none}.pane-pr-log svg{width:11px;height:11px;stroke-linejoin:round}.pane-pr-log:hover{background:#ffffff0a;color:var(--ink-1)}.pane-pr-log:disabled{opacity:.5}
+@media(max-width:1050px){.pane-pr{max-width:200px}}
+@media(max-width:760px){.pane-tool-toggle .pane-pr-checks,.pane-tool-toggle .pane-pr-icon{display:inline-flex}.pane-pr-link{gap:5px}}
 #launch-terminal-form .launch-readouts{align-items:flex-start}#launch-terminal-form .launch-readouts input{flex:none;width:14px;height:14px;min-height:0;margin:2px 0 0;padding:0}#launch-terminal-form .launch-readouts small{display:block;margin-top:2px;font-size:11px;line-height:1.5;color:var(--ink-muted)}
 .terminal-pane.focused:not(.pane-fullscreen,.pane-dragging){border-color:color-mix(in srgb,var(--agent-color) 80%,transparent);box-shadow:0 0 0 1px color-mix(in srgb,var(--agent-color) min(100%,calc(30% * var(--glow,1))),transparent),0 0 18px -2px color-mix(in srgb,var(--agent-color) min(100%,calc(35% * var(--glow,1))),transparent)}
 .terminal-pane.terminal-file-target{outline:2px solid #9ccaff;outline-offset:-3px}

@@ -5,12 +5,13 @@ try{
  const params=new URLSearchParams(location.search),id=params.get('item'),kind=params.get('kind');
  if(!id)throw Error('Choose a message from your Inbox.');
  const auth=await fetch('/api/terminal-auth');if(!auth.ok)throw Error('Could not connect to Agent Desk.');const {token}=await auth.json();
- const paths={automation:'/api/special-agents',worker:'/api/coordinator-events?task='+encodeURIComponent(id),workflow:'/api/workflows',session:'/api/agents'};
+ const paths={automation:'/api/special-agents',worker:'/api/coordinator-events?task='+encodeURIComponent(id),workflow:'/api/workflows',session:'/api/agents',pr:'/api/pull-requests'};
  if(!paths[kind])throw Error('Unknown report type.');
  const response=await fetch(paths[kind],{headers:{'X-Agent-Desk-Terminal':token}});if(!response.ok)throw Error('This report is unavailable. Open Agent Desk and try again.');const data=await response.json();let item;
  if(kind==='automation')item=[...(data.inbox||[]),...(data.inbox||[]).flatMap(i=>i.findings||[])].find(i=>i.id===id);
  if(kind==='worker'){const t=(data.tasks||[]).find(t=>t.id===id);if(t)item={title:t.task,detail:t.result||'No report yet.',created:t.updated};}
  if(kind==='workflow'){const t=(data.executions||[]).find(t=>t.id===id);if(t)item={title:(data.configs||[]).find(c=>c.id===t.config_id)?.name||'Workflow report',detail:t.detail,created:t.finished||t.created};}
+ if(kind==='pr')item=(data.events||[]).find(t=>t.id===id);
  if(kind==='session'){const t=(data.agents||[]).find(t=>t.id===id);if(t)item={title:t.name,detail:t.question||'This session has no current response request.',created:t.updated};}
  if(!item)throw Error('This message is no longer available.');
  root.replaceChildren(text('p','AGENT DESK / INBOX','document-kicker'),text('h1',item.title));document.title=item.title+' · Agent Desk';

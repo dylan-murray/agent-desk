@@ -464,6 +464,7 @@ function deskDuration(seconds){return seconds<120?Math.round(seconds)+'s':second
 function updatePane(view,a){
   updatePaneReadouts(view,a.readouts);
   window.renderPaneDock?.(view,a);
+  window.renderPanePullRequest?.(view,a);
   if(!view.renaming)view.node.querySelector('.pane-title').textContent=a.project+' / '+sessionTitle(a);
   view.node.querySelector('.pane-path').textContent=(a.remote_node?'Remote · '+a.remote_name+(a.remote_connected===false?' · disconnected':'')+' / ':'')+shortPath(a.cwd||'Folder unavailable');
   view.node.querySelector('.pane-directory').title=a.cwd||'';
