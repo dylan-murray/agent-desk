@@ -8,7 +8,6 @@ const prIcons={
   failing:'<svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4.5 4.5 7 7M11.5 4.5l-7 7"/></svg>',
   pending:'<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5"/><path d="M8 5.5V8l1.6 1.2"/></svg>',
   log:'<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4.5 5.5 7.5l-3 3M7.5 11.5h6"/></svg>',
-  open:'<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M9.5 2.5h4v4M13.5 2.5 7.5 8.5"/><path d="M12 9.5v3a1 1 0 0 1-1 1H3.5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h3"/></svg>',
   close:'<svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8"/></svg>'
 };
 const prStates={open:'Open',draft:'Draft',merged:'Merged',closed:'Closed'};
@@ -85,9 +84,8 @@ function renderPullRequestList(pr,view){
     prList.node.innerHTML=`<p class="pane-pr-list-title"><span>Pull requests from this terminal</span><span>${rows.length}</span></p>`+rows.map(item=>{
       const {checks,review}=prParts(item),url=escapeHTML(item.url);
       return `<div class="pane-pr-row" data-url="${url}" data-state="${item.state}" data-checks="${checks||''}"><span class="pane-pr-icon">${item.state==='merged'?prIcons.merged:prIcons.pr}</span>`+
-        `<span class="pane-pr-row-title"><b>#${escapeHTML(String(item.number))}</b>${escapeHTML(item.title)}</span>`+
+        `<a class="pane-pr-row-title" data-role="open" href="${url}" target="_blank" rel="noopener noreferrer" title="Open the pull request"><b>#${escapeHTML(String(item.number))}</b>${escapeHTML(item.title)}</a>`+
         `<span class="pane-pr-row-actions">${checks==='failing'&&item.logs&&view?.term?`<button type="button" data-role="log" title="Paste the failed check’s log into this agent’s prompt" aria-label="Paste the failed log of #${escapeHTML(String(item.number))} into this agent’s prompt">${prIcons.log}</button>`:''}`+
-        `<a data-role="open" href="${url}" target="_blank" rel="noopener noreferrer" title="Open the pull request" aria-label="Open pull request #${escapeHTML(String(item.number))}">${prIcons.open}</a>`+
         `${item.seen?`<button type="button" data-role="forget" title="Stop showing this pull request here" aria-label="Stop showing #${escapeHTML(String(item.number))} here">${prIcons.close}</button>`:''}</span>`+
         `<span class="pane-pr-row-meta">${item.branch?`<code>${escapeHTML(item.branch)}</code>`:''}<span>${prStates[item.state]}</span>${checks?`<span class="pane-pr-checks">${prIcons[checks]}${prChecks[checks]}</span>`:''}${review?`<span class="pane-pr-review" data-review="${review}">${prReviews[review]}</span>`:''}<span class="pane-pr-row-why" title="${item.seen?escapeHTML(new Date(item.seen*1000).toLocaleString()):''}">${item.seen?'printed '+deskSince(item.seen):'this folder’s branch'}</span></span></div>`;
     }).join('');

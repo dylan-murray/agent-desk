@@ -98,26 +98,29 @@ const check = (name, fn) => {fn();results.push(name);console.log('  PASS  ' + na
   await more.click();
   const list = page.locator('.pane-pr-list');
   await list.waitFor();
-  const rows = () => list.locator('.pane-pr-row').evaluateAll(nodes => nodes.map(row => ({number: row.querySelector('.pane-pr-row-title b').textContent, meta: row.querySelector('.pane-pr-row-meta').innerText.replace(/\s+/g, ' '),
+  const rows = () => list.locator('.pane-pr-row').evaluateAll(nodes => nodes.map(row => ({number: row.querySelector('.pane-pr-row-title b').textContent, href: row.querySelector('a.pane-pr-row-title')?.href, arrows: row.querySelectorAll('.pane-pr-row-actions a').length, meta: row.querySelector('.pane-pr-row-meta').innerText.replace(/\s+/g, ' '),
     actions: [...row.querySelectorAll('[data-role]')].map(node => node.dataset.role)})));
   const listed = await rows();
   check('the list leads with the branch pull request and shows each one’s state and actions', () => {
     assert.deepEqual(listed.map(row => row.number), ['#7', '#29', '#28']);
     assert.match(listed[0].meta, /Open Passing Awaiting review this folder’s branch/);
     assert.match(listed[2].meta, /^fix\/retry-backoff Open Failing printed (just now|1m ago)/);
-    assert.deepEqual(listed.map(row => row.actions), [['open'], ['open', 'forget'], ['log', 'open', 'forget']]);
+    assert.deepEqual(listed.map(row => row.actions), [['open'], ['open', 'forget'], ['open', 'log', 'forget']]);
+    assert.deepEqual(listed.map(row => [row.href, row.arrows]), [[CORP_URL, 0], [link(29), 0], [link(28), 0]], 'the title is the link; there is no separate arrow');
   });
   const fits = await list.evaluate(node => {const box = node.getBoundingClientRect();return box.left >= 0 && box.right <= innerWidth;});
   check('the list fits the window at 1440px', () => assert.ok(fits));
+  await page.screenshot({path: evidence('pr-list-1440.png')});
   // A list taller than the room below its tab scrolls inside the window instead of running off it.
   await page.setViewportSize({width: 1440, height: 480});
   await more.evaluate(node => node.scrollIntoView({block: 'end'}));
-  const inside = () => list.evaluate(node => {const box = node.getBoundingClientRect();return box.top >= 0 && box.bottom <= innerHeight + 1;});
-  await until(inside, 'The list ran outside a short window');
-  const opensUp = await list.evaluate(node => node.getBoundingClientRect().bottom <= document.querySelector('.pane-pr-more[aria-expanded=true]').getBoundingClientRect().top);
-  check('near the bottom of a short window the list opens upward and stays inside it', () => assert.ok(opensUp));
+  // Below the tab unless it is cramped there and roomier above; inside the window either way.
+  const placed = () => list.evaluate(node => {const box = node.getBoundingClientRect(), tab = document.querySelector('.pane-pr-more[aria-expanded=true]').closest('.pane-pr').getBoundingClientRect();
+    const below = innerHeight - tab.bottom - 14, above = tab.top - 14, up = below < 200 && above > below;
+    return {inside: box.top >= 0 && box.bottom <= innerHeight + 1, side: up ? box.bottom <= tab.top : box.top >= tab.bottom};});
+  await until(async () => {const now = await placed();return now.inside && now.side;}, 'The list ran outside a short window or sat on the wrong side of its tab');
+  check('in a short window the list stays inside it, opening upward when there is more room above', () => {});
   await page.setViewportSize({width: 1440, height: 900});
-  await page.screenshot({path: evidence('pr-list-1440.png')});
   await list.locator('.pane-pr-row', {hasText: '#29'}).locator('[data-role=forget]').click();
   await until(async () => (await more.innerText()).trim() === '+1', 'Forgetting a pull request did not remove it');
   const remaining = (await rows()).map(row => row.number);
@@ -134,6 +137,17 @@ const check = (name, fn) => {fn();results.push(name);console.log('  PASS  ' + na
   await page.keyboard.press('Escape');
   await page.setViewportSize({width: 1440, height: 900});
   await page.evaluate(ids => {for (const id of Object.values(ids)) selectPane(id, true);selectPane(ids.pr, true);}, ids);
+  // In a pane that is not highlighted the hidden buttons take no room, so the tab sits beside ×; hovering brings them back.
+  const placement = () => corpPane.evaluate(n => {const tab = n.querySelector('.pane-pr').getBoundingClientRect(), close = n.querySelector('.pane-close').getBoundingClientRect();
+    return {gap: Math.round(close.left - tab.right), expand: getComputedStyle(n.querySelector('.pane-expand')).opacity};});
+  await page.mouse.move(2, 2);
+  await until(async () => (await placement()).gap <= 14, 'The tab did not move beside × in an idle pane');
+  const idle = await placement();
+  await corpPane.locator('.pane-body').hover();
+  await until(async () => {const now = await placement();return now.expand === '1' && now.gap > 60;}, 'Hovering did not bring the buttons back');
+  const hovered = await placement();
+  check('an idle pane’s tab sits beside × and moves over when the buttons appear', () => {assert.ok(idle.gap <= 14, JSON.stringify(idle));assert.ok(hovered.gap > 60, JSON.stringify(hovered));});
+  await page.mouse.move(2, 2);
   await pause();await pause();
   const strays = await page.locator(`[data-pane-id="${ids.none}"] .pane-pr, [data-pane-id="${ids.plain}"] .pane-pr`).count();
   check('a folder with no pull request or no GitHub remote shows nothing', () => assert.equal(strays, 0));
