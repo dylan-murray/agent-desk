@@ -4,6 +4,9 @@ Every agent is on exactly one desk. It is on the desk it was put on; otherwise o
 parent's, so a coordinator's workers and a terminal's subagents follow it wherever it
 goes; otherwise on the first desk. Membership is recorded only for agents that were
 explicitly placed, so an agent that has not been placed needs no record at all.
+
+A desk can be saved and closed: its sessions are stopped and what reopening it needs (each
+terminal's restart record, its coordinators and its pane layout) is kept with it until it reopens.
 """
 import json
 import os
@@ -33,6 +36,7 @@ class Desks:
         self.lock = threading.Lock()
         self.desks = None
         self.placed = None
+        self.saved = None
 
     def _load(self):
         if self.desks is not None:
@@ -40,7 +44,7 @@ class Desks:
         try:
             data = json.loads(self.path.read_text())
         except FileNotFoundError:
-            self.desks, self.placed = [dict(FIRST)], {}
+            self.desks, self.placed, self.saved = [dict(FIRST)], {}, {}
             return
         except (OSError, ValueError) as exc:
             # Never quietly start over on top of someone's desks: keep the unreadable file
@@ -48,7 +52,7 @@ class Desks:
             aside = self.path.with_name(f'{self.path.name}.unreadable-{int(time.time())}')
             os.replace(self.path, aside)
             print(f'Could not read {self.path} ({exc}); moved it to {aside} and started with one desk', flush=True)
-            self.desks, self.placed = [dict(FIRST)], {}
+            self.desks, self.placed, self.saved = [dict(FIRST)], {}, {}
             return
         desks, seen = [], set()
         for item in data.get('desks', []) if isinstance(data, dict) else []:
@@ -63,11 +67,13 @@ class Desks:
         known = {d['id'] for d in self.desks}
         placed = data.get('placed', {}) if isinstance(data, dict) else {}
         self.placed = {k: v for k, v in placed.items() if isinstance(k, str) and v in known} if isinstance(placed, dict) else {}
+        saved = data.get('saved', {}) if isinstance(data, dict) else {}
+        self.saved = {k: v for k, v in saved.items() if k in known and isinstance(v, dict)} if isinstance(saved, dict) else {}
 
     def _save(self):
         self.path.parent.mkdir(parents=True, exist_ok=True)
         temp = self.path.with_name(self.path.name + '.tmp')
-        temp.write_text(json.dumps(dict(desks=self.desks, placed=self.placed), indent=2) + '\n')
+        temp.write_text(json.dumps(dict(desks=self.desks, placed=self.placed, saved=self.saved), indent=2) + '\n')
         os.replace(temp, self.path)
 
     def _desk(self, identity):
@@ -80,10 +86,14 @@ class Desks:
         if any(d['name'].casefold() == name.casefold() and d['id'] != identity for d in self.desks):
             raise ValueError(f'There is already a desk called “{name}”')
 
+    def _public(self):
+        """The desks as the page sees them: a saved desk says when it was saved."""
+        return [dict(d, saved_at=self.saved[d['id']]['at']) if d['id'] in self.saved else dict(d) for d in self.desks]
+
     def snapshot(self):
         with self.lock:
             self._load()
-            return [dict(d) for d in self.desks]
+            return self._public()
 
     def _resolve(self, agents):
         by_id = {a['id']: a for a in agents if isinstance(a.get('id'), str)}
@@ -110,13 +120,15 @@ class Desks:
             for agent in agents:
                 if agent.get('id') in resolved:
                     agent['desk'] = resolved[agent['id']]
-            return [dict(d) for d in self.desks]
+            return self._public()
 
     def desk_for(self, identity):
-        """The desk a new agent should be placed on: the one named, or the first."""
+        """The desk a new agent should be placed on: the one named, or the first open one."""
         with self.lock:
             self._load()
-            return self._desk(identity)['id'] if identity is not None else self.desks[0]['id']
+            if identity is not None:
+                return self._desk(identity)['id']
+            return next((d['id'] for d in self.desks if d['id'] not in self.saved), self.desks[0]['id'])
 
     def create(self, name):
         name = desk_name(name)
@@ -174,5 +186,34 @@ class Desks:
                 if desk == identity:
                     self.placed[agent] = move_to
             self.desks = [d for d in self.desks if d['id'] != identity]
+            self.saved.pop(identity, None)
             self._save()
-            return [dict(d) for d in self.desks]
+            return self._public()
+
+    def keep(self, identity, record):
+        """Mark a desk saved, with what reopening it needs. At least one desk stays open."""
+        with self.lock:
+            self._load()
+            self._desk(identity)
+            if identity in self.saved:
+                raise ValueError('That desk is already saved')
+            if all(d['id'] == identity or d['id'] in self.saved for d in self.desks):
+                raise ValueError('Open another desk first: the last open desk cannot be saved and closed')
+            self.saved[identity] = dict(record, at=time.time())
+            self._save()
+            return self._public()
+
+    def saved_record(self, identity):
+        with self.lock:
+            self._load()
+            self._desk(identity)
+            if identity not in self.saved:
+                raise ValueError('That desk is not saved')
+            return dict(self.saved[identity])
+
+    def unsave(self, identity):
+        with self.lock:
+            self._load()
+            self.saved.pop(identity, None)
+            self._save()
+            return self._public()

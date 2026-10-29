@@ -395,8 +395,9 @@ setInterval(()=>{for(const [id,view] of paneViews){const agent=!view.disposed&&a
 function renderTerminal(){
   if(paneMode!==paneStoreKey())loadPanes();
   const all=current();
-  // Don't discard restored selection while the initial process fetch is pending.
-  if(all.length||agents.length||demo||typeof agentsLoaded!=='undefined'&&agentsLoaded){openPaneIds=openPaneIds.filter(id=>webPages.has(id)||all.some(a=>a.id===id));if(!openPaneIds.length&&!paneInitialized&&selectedId)openPaneIds=[selectedId];paneInitialized=true;if(!demo)openSpawnedPanes(all);}
+  // Don't discard restored selection while the initial process fetch is pending, nor a session this
+  // tab just started that a list fetched before it started does not have yet.
+  if(all.length||agents.length||demo||typeof agentsLoaded!=='undefined'&&agentsLoaded){openPaneIds=openPaneIds.filter(id=>webPages.has(id)||freshTerminalIds.has(id)||all.some(a=>a.id===id));if(!openPaneIds.length&&!paneInitialized&&selectedId)openPaneIds=[selectedId];paneInitialized=true;if(!demo)openSpawnedPanes(all);}
   if(!openPaneIds.includes(selectedId))selectedId=openPaneIds[0]||null;
   const workspace=$('#terminal');workspace.dataset.count=openPaneIds.length;
   $('#pane-count').textContent=`${openPaneIds.length} / ${PANE_LIMIT} open`;

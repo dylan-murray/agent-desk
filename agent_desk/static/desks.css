@@ -36,7 +36,21 @@
 .desk-shutdown-name small{overflow:hidden;color:var(--ink-muted);font-size:10.5px;white-space:nowrap;text-overflow:ellipsis}
 .desk-shutdown-outcome{flex-shrink:0;padding:2px 7px;border:1px solid #56404499;border-radius:5px;color:#efb0b7;font-size:10px;white-space:nowrap}
 .desk-shutdown-list li.kept .desk-shutdown-outcome{border-color:var(--border);color:var(--ink-muted)}
+.desk-shutdown-list li.saved .desk-shutdown-outcome{border-color:#35557b;color:#b4cff0}
 .desk-shutdown-list li.failed{background:#e6676714}
+.desk-shutdown-list li.dropped .desk-shutdown-name{opacity:.55}
+.desk-shutdown-list li.child{padding-left:calc(8px + var(--depth) * 22px)}
+.desk-shutdown-drop{flex-shrink:0;width:24px;height:24px}
+.desk-shutdown-drop.danger:hover,.desk-shutdown-drop.danger:focus-visible{background:#e667671a}
+#shutdown-desk-dialog.saving .desk-shutdown-mark{display:none}
+#shutdown-desk-dialog .desk-save-name{display:flex;flex-direction:column;gap:6px;margin:18px 0 0;color:var(--ink-2);font-size:11.5px}
+#shutdown-desk-dialog .desk-save-name[hidden]{display:none}
+.desk-save-field{display:flex;align-items:center;gap:9px;min-height:40px;padding:0 10px;border:1px solid #ffffff14;border-radius:9px;background:#101012}
+/* The field, not the bare input inside it, shows focus, as the search box does. */
+.desk-save-field:focus-within{border-color:var(--field-focus);box-shadow:var(--field-ring)}
+#save-desk-name:focus{box-shadow:none!important}
+.desk-save-field .desk-mark{width:22px;height:22px;border-radius:6px;font-size:11px}
+#save-desk-name{flex:1;min-width:0;padding:9px 0;border:0;background:none;box-shadow:none;color:#dce0ea;font:13px -apple-system,BlinkMacSystemFont,sans-serif}
 .desk-shutdown-list li.failed .desk-shutdown-outcome{border-color:#d7ad7380;color:#ffc964}
 #shutdown-desk-dialog .desk-shutdown-others{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin:12px 2px 0;color:var(--ink-2);font-size:12px}
 .desk-shutdown-other{display:inline-flex;align-items:center;gap:6px;color:var(--ink-1)}
@@ -55,7 +69,7 @@
 .desk-menu-heading{padding:5px 8px 4px;color:var(--ink-muted);font-size:9px;font-weight:600;letter-spacing:1.1px;text-transform:uppercase}
 .desk-options{display:flex;flex-direction:column;gap:2px;max-height:min(360px,60vh);overflow:auto}
 .desk-option{position:relative;display:flex;align-items:center;border-radius:6px}
-.desk-option>button[data-desk-id]{display:flex;align-items:center;gap:8px;flex:1;min-width:0;min-height:36px;margin:0;padding:4px 8px 4px 5px;border:0;border-radius:6px;background:none;box-shadow:none;color:var(--ink-2);font-size:12px;text-align:left;cursor:pointer}
+.desk-option>button[data-desk-id],.desk-option>button[data-desk-reopen]{display:flex;align-items:center;gap:8px;flex:1;min-width:0;min-height:36px;margin:0;padding:4px 8px 4px 5px;border:0;border-radius:6px;background:none;box-shadow:none;color:var(--ink-2);font-size:12px;text-align:left;cursor:pointer}
 .desk-option .desk-mark{width:24px;height:24px;border-radius:7px;font-size:11px}
 .desk-option-name{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .desk-option-count{min-width:16px;color:var(--ink-muted);font-size:10px;font-variant-numeric:tabular-nums;text-align:right}
@@ -66,7 +80,12 @@
 .desk-option:hover,.desk-option:has(:focus-visible){background:#ffffff08}
 .desk-option.current>button[data-desk-id],.desk-option:hover>button[data-desk-id]{color:var(--ink-1)}
 .desk-option.current .desk-option-name{color:#a8c9f4}
-.desk-option>button[data-desk-id]:focus-visible,.desk-new:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+/* A saved desk is closed: its mark and name are quieter, and it says Saved where an open desk counts its sessions. */
+.desk-option.saved .desk-mark{opacity:.55}
+.desk-option.saved>button[data-desk-reopen]{color:var(--ink-muted)}
+.desk-option.saved:hover>button[data-desk-reopen]{color:var(--ink-1)}
+.desk-option-saved{padding:1px 6px;border:1px solid var(--border);border-radius:5px;color:var(--ink-muted);font-size:9.5px;letter-spacing:.2px}
+.desk-option>button[data-desk-id]:focus-visible,.desk-option>button[data-desk-reopen]:focus-visible,.desk-new:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 /* Rename and delete cover the count on hover or keyboard focus, so at rest the list reads
    as a plain list with its counts flush right. */
 .desk-option-actions{position:absolute;top:50%;right:4px;display:flex;gap:1px;padding-left:10px;border-radius:5px;background:linear-gradient(90deg,transparent,#222225 10px);transform:translateY(-50%);opacity:0;pointer-events:none}
@@ -80,7 +99,8 @@
 .desk-option.editing{gap:8px;padding:4px 6px 4px 5px;background:#ffffff08}
 .desk-menu-divider{height:1px;margin:3px 4px;background:#ffffff12}
 .desk-new{display:flex;align-items:center;gap:8px;min-height:34px;margin:0;padding:6px 10px;border:0;border-radius:6px;background:none;box-shadow:none;color:var(--ink-2);font-size:12px;text-align:left;cursor:pointer}
-.desk-new:hover{background:#ffffff08;color:var(--ink-1)}
+.desk-new:hover:not(:disabled){background:#ffffff08;color:var(--ink-1)}
+.desk-new:disabled{opacity:.45;cursor:default}
 .desk-new-form{display:flex;align-items:center;gap:8px;margin:0;padding:4px 4px 4px 10px;color:var(--ink-2)}
 .desk-name-input{flex:1;min-width:0;height:28px;padding:0 8px;border:1px solid var(--accent);border-radius:6px;background:#111113;color:var(--ink-1);font-size:12px;outline:none}
 .desk-name-input:disabled{opacity:.6}
