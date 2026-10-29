@@ -130,10 +130,27 @@ function moveSessionsTo(ids,desk,label){
   if(single){single.ids=single.ids.filter(id=>id!==ids[0]);saveSessionGroups(settledGroups(groups));}
   placeOnDesk(ids,desk,label).catch(error=>toast('Could not move '+label+': '+error.message));
 }
-// Context-menu entries for moving a session (or a folder of them) to each other desk.
-function deskMoveItems(ids,label){
-  return [...desks.filter(d=>d.id!==activeDesk().id).map(desk=>[`Move to ${desk.name}`,()=>moveSessionsTo(ids,desk,label)]),
-    ['Move to a new desk…',()=>startNewDesk({ids,label})]];
+// The context-menu entry for moving a session (or a folder of them): one Move to desk item whose
+// submenu lists the other desks, then a new desk named in place, so the move never leaves the menu.
+function deskMoveItems(ids,label){return [['Move to desk',null,false,sub=>fillDeskMoveMenu(sub,ids,label)]];}
+function fillDeskMoveMenu(sub,ids,label){
+  const others=desks.filter(d=>d.id!==activeDesk().id);
+  sub.innerHTML=others.map(desk=>`<button type="button" role="menuitem" data-move-desk="${escapeHTML(desk.id)}">${deskMark(desk)}<span>${escapeHTML(desk.name)}</span></button>`).join('')
+    +(others.length?'<div class="desk-menu-divider" role="separator"></div>':'')
+    +`<button type="button" role="menuitem" data-move-new>${deskIcons.plus}<span>New desk…</span></button>`;
+  sub.querySelectorAll('[data-move-desk]').forEach(button=>button.onclick=()=>{
+    const desk=desks.find(d=>d.id===button.dataset.moveDesk);closeGroupMenu(false);if(desk)moveSessionsTo(ids,desk,label);});
+  sub.querySelector('[data-move-new]').onclick=event=>{
+    const form=document.createElement('form');form.className='desk-new-form';
+    form.innerHTML=`${deskIcons.plus}<input class="desk-name-input" maxlength="40" spellcheck="false" placeholder="Name, e.g. Research" aria-label="New desk name"><button type="submit" class="desk-new-save">Create</button>`;
+    event.currentTarget.replaceWith(form);const input=form.querySelector('input');input.focus();
+    form.onsubmit=async submit=>{
+      submit.preventDefault();const name=input.value.trim();if(!name){input.focus();return;}
+      input.disabled=true;
+      try{const desk=await terminalRequest('/api/desks/create',{name});desks=[...desks,desk];closeGroupMenu(false);moveSessionsTo(ids,desk,label);}
+      catch(error){input.disabled=false;input.focus();toast('Could not create the desk: '+error.message);}
+    };
+  };
 }
 // Shutting a desk down. What happens to each session on this desk, in the words the dialog uses.
 // Subagents inside a harness are not listed: they end with the session that runs them.
