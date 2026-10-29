@@ -255,6 +255,25 @@ class PrintedLinkTests(GhFixture):
         self.poll(advance=20)
         self.assertEqual(self.prs.status(self.repo, 'term-1')['state'], 'merged')
 
+    def test_the_same_merge_redrawn_on_screen_is_checked_once(self):
+        self.answer(pull_request())
+        self.poll()
+        line = '✓ Merged pull request example-org/example-repo#42 (Fixture change)\r\n'
+        self.prints(line)
+        self.poll(advance=20)
+        self.prints('\x1b[H' + line)
+        self.poll(advance=20)
+        self.assertEqual(len([c for c in self.calls() if c[1:3] == ['pr', 'view']]), 2, 'one poll and one re-check, none for the redraw')
+
+    def test_coming_back_does_not_ask_about_merged_or_closed_pull_requests_again(self):
+        self.answer(pull_request(state='MERGED'))
+        self.prints(self.link(28, state='CLOSED') + '\r\n')
+        self.poll()
+        asked = len(self.calls())
+        self.prs.hurry(['term-1'], self.now + 20)
+        self.poll(advance=20)
+        self.assertEqual(len(self.calls()), asked)
+
     def test_coming_back_to_the_desk_rechecks_now_but_not_twice_within_seconds(self):
         self.answer(pull_request())
         self.poll()

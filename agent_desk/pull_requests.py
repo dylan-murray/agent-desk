@@ -27,8 +27,9 @@ PR_LINK = re.compile(r'https://[\w.-]+/[\w.-]+/[\w.-]+/pull/\d+')
 # Hyperlinks a TUI draws (OSC 8) carry the whole address even when the visible text is wrapped.
 OSC8 = re.compile(r'\x1b\]8;[^;\x07\x1b]*;(https://[^\x07\x1b]+)(?:\x07|\x1b\\)')
 ESCAPES = re.compile(r'\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b\[[0-?]*[ -/]*[@-~]|\x1b[@-_]')
-# What `gh pr merge` prints once GitHub has merged ("Squashed and merged pull request ...", "... was already merged").
-MERGED = re.compile(r'\bmerged pull request\b|\bwas already merged\b', re.I)
+# What `gh pr merge` prints once GitHub has merged: "Squashed and merged pull request owner/repo#42 (title)",
+# "Merged pull request #42 (title)" or "Pull request owner/repo#42 was already merged".
+MERGED = re.compile(r'\bmerged pull request (\S*#\d+)|\bpull request (\S*#\d+) was already merged', re.I)
 # gh prefixes each log line with its job, step and timestamp.
 STAMP = re.compile(r'^\d{4}-\d\d-\d\dT[\d:.]+Z ')
 EVENT_LIMIT = 200
@@ -113,6 +114,7 @@ class PullRequests:
         self.cursors = {}
         self.overlap = {}
         self.repos = {}
+        self.merges = {}
         self.stopping = threading.Event()
         self.woken = threading.Event()
         try:
@@ -178,7 +180,7 @@ class PullRequests:
         os.replace(temp, self.path)
 
     def scan(self, terminal, now):
-        """Read the terminal's new output for pull request links. True when it shows a merge."""
+        """Read the terminal's new output for pull request links. True when it shows a merge it hasn't shown before."""
         cursor, text = self.cursors.get(terminal, 0), ''
         for _ in range(SCAN_CHUNKS):
             chunk = self.output(terminal, cursor)
@@ -200,19 +202,24 @@ class PullRequests:
                 printed.setdefault(url, now)
             for url in list(printed)[:-LINKS_PER_TERMINAL]:
                 printed.pop(url)
-        return bool(MERGED.search(ESCAPES.sub('', text)))
+            # A screen that is redrawn prints the same merge again; only the first time counts.
+            seen = self.merges.setdefault(terminal, set())
+            merges = {a or b for a, b in MERGED.findall(ESCAPES.sub('', text))} - seen
+            seen.update(merges)
+        return bool(merges)
 
     def hurry(self, terminals, now=None, gap=RECHECK_GAP):
         """Check these terminals' pull requests at the next tick instead of the next poll: a merge or a
-        review on GitHub usually comes just before someone looks. Ones checked in the last gap seconds wait."""
+        review on GitHub usually comes just before someone looks. Only open and draft pull requests are asked
+        about again, since merged and closed ones rarely change, and ones checked in the last gap seconds wait."""
         now = time.time() if now is None else now
         with self.lock:
             repos = {self.repos.get(terminal) for terminal in terminals}
             entries = [self.folders[repo] for repo in repos if repo in self.folders]
             entries += [self.links[url] for terminal in terminals for url in self.printed.get(terminal, {}) if url in self.links]
             for entry in entries:
-                # A remote gh doesn't know keeps its long wait.
-                if entry['next'] - now <= self.interval:
+                # A folder with no pull request, or a remote gh doesn't know, keeps its usual wait.
+                if entry['pr'] and entry['pr']['state'] in ('open', 'draft') and entry['next'] - now <= self.interval:
                     entry['next'] = min(entry['next'], max(now, entry['next'] - self.interval + gap))
         self.woken.set()
 
@@ -231,7 +238,7 @@ class PullRequests:
             self.repos = repo_of
             for repo in [r for r in self.folders if r not in repos or not gh]:
                 del self.folders[repo]
-            for store in (self.printed, self.cursors, self.overlap):
+            for store in (self.printed, self.cursors, self.overlap, self.merges):
                 for terminal in [t for t in store if t not in running]:
                     del store[terminal]
         if not gh:
