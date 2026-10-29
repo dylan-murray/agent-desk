@@ -134,6 +134,17 @@ const check = (name, fn) => {fn();results.push(name);console.log('  PASS  ' + na
   await page.keyboard.press('Escape');
   await page.setViewportSize({width: 1440, height: 900});
   await page.evaluate(ids => {for (const id of Object.values(ids)) selectPane(id, true);selectPane(ids.pr, true);}, ids);
+  // In a pane that is not highlighted the hidden buttons take no room, so the tab sits beside ×; hovering brings them back.
+  const placement = () => corpPane.evaluate(n => {const tab = n.querySelector('.pane-pr').getBoundingClientRect(), close = n.querySelector('.pane-close').getBoundingClientRect();
+    return {gap: Math.round(close.left - tab.right), expand: getComputedStyle(n.querySelector('.pane-expand')).opacity};});
+  await page.mouse.move(2, 2);
+  await until(async () => (await placement()).gap <= 14, 'The tab did not move beside × in an idle pane');
+  const idle = await placement();
+  await corpPane.locator('.pane-body').hover();
+  await until(async () => {const now = await placement();return now.expand === '1' && now.gap > 60;}, 'Hovering did not bring the buttons back');
+  const hovered = await placement();
+  check('an idle pane’s tab sits beside × and moves over when the buttons appear', () => {assert.ok(idle.gap <= 14, JSON.stringify(idle));assert.ok(hovered.gap > 60, JSON.stringify(hovered));});
+  await page.mouse.move(2, 2);
   await pause();await pause();
   const strays = await page.locator(`[data-pane-id="${ids.none}"] .pane-pr, [data-pane-id="${ids.plain}"] .pane-pr`).count();
   check('a folder with no pull request or no GitHub remote shows nothing', () => assert.equal(strays, 0));

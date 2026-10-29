@@ -478,6 +478,11 @@ body.pane-dragging-active .pane-edges{visibility:hidden}
 .pane-pr-row-meta{grid-column:2;display:flex;gap:8px;align-items:center;min-width:0;overflow:hidden;white-space:nowrap;font-size:10.5px;color:var(--ink-muted)}.pane-pr-row-meta code{font-size:10.5px;color:#a9a7a0;overflow:hidden;text-overflow:ellipsis}
 .pane-pr-row-meta .pane-pr-checks svg{width:11px;height:11px}.pane-pr-row[data-checks=passing] .pane-pr-checks{color:var(--good)}.pane-pr-row[data-checks=pending] .pane-pr-checks{color:var(--amber)}.pane-pr-row[data-checks=failing] .pane-pr-checks{color:var(--danger)}
 .pane-pr-row-why{color:#6f6e69}
+/* With a PR tab, the hover buttons give up their space while hidden, so the tab sits beside × instead of
+   mid-header over an empty gap, and slides left when they come back on hover or focus. It holds still while its list is open. */
+.terminal-bar:has(.pane-pr) :is(.pane-expand,.pane-stop,.pane-protect){max-width:80px;transition:opacity .15s,max-width .15s,margin .15s}
+.terminal-pane:not(:hover,.focused) .terminal-bar:has(.pane-pr) .pane-actions:not(:focus-within,:has(.pane-pr-more[aria-expanded=true])) :is(.pane-expand,.pane-stop,.pane-protect:not([aria-pressed=true])){max-width:0;margin-left:-6px;padding-left:0;padding-right:0;border-width:0;overflow:hidden}
+@media(prefers-reduced-motion:reduce){.terminal-bar:has(.pane-pr) :is(.pane-expand,.pane-stop,.pane-protect){transition:none}}
 @media(max-width:1050px){.pane-pr{max-width:200px}}
 @media(max-width:760px){.pane-pr-link{gap:5px;padding:0 6px}.pane-pr-word{display:none}.pane-pr-row-meta .pane-pr-review,.pane-pr-row-why{display:none}}
 #launch-terminal-form .launch-readouts{align-items:flex-start}#launch-terminal-form .launch-readouts input{flex:none;width:14px;height:14px;min-height:0;margin:2px 0 0;padding:0}#launch-terminal-form .launch-readouts small{display:block;margin-top:2px;font-size:11px;line-height:1.5;color:var(--ink-muted)}
