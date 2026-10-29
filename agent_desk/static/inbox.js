@@ -1,9 +1,9 @@
 (() => {
-  let workflowData={configs:[],executions:[]},coordinatorTasks=[];
+  let workflowData={configs:[],executions:[]},coordinatorTasks=[],pullRequestEvents=[];
   let saved={roles:[],inbox:[],runs:[]},filter='open',selected=null,signature='';
   // History items cleared from the Inbox. They are only hidden: the reports, runs and results stay where they live.
   let cleared=new Set(),showCleared=false;
-  const historyKey=item=>(item.coord?'coord:':item.workflow?'run:':'report:')+item.id;
+  const historyKey=item=>(item.coord?'coord:':item.workflow?'run:':item.pr?'pr:':'report:')+item.id;
   const el=id=>document.getElementById(id);
   const text=(tag,value,className='')=>{const node=document.createElement(tag);node.textContent=value;node.className=className;return node;};
   const renderDocument=window.renderDeskDocument;
@@ -35,7 +35,10 @@
       const delivery=task.acknowledged?'Acknowledged':!active?'Coordinator offline':!task.connection?'Manual inbox check required':task.connection==='policy-blocked'?'Claude channels blocked by organization policy · open coordinator and request an inbox check':task.connection==='delivery-error'?(task.coordinator_harness==='grok'?'Reply delivery stopped · restart the coordinator or request a manual inbox check':'Event bridge error · inspect coordinator'):task.connection==='disconnected'?'Event bridge disconnected':task.connection==='delivery-paused'?'Reply delivery paused after interrupt · send a new message in the coordinator to resume':task.connection==='editing'?'Reply queued while you are typing':task.connection==='needs-input'?'Reply queued until you answer the coordinator':task.delivery==='sent'?'Notification sent · awaiting acknowledgement':['sending','uncertain'].includes(task.delivery)?'Delivery uncertain · inspect coordinator before retrying':'Notification queued';
       return {id:task.id,title:task.task.slice(0,100),detail:delivery+'\n\n'+task.result,source:'Coordinator · '+task.outcome,category:task.acknowledged?'history':!active||!task.connection||['disconnected','delivery-error','policy-blocked','delivery-paused','needs-input'].includes(task.connection)||['blocked','failed'].includes(task.outcome)||['sending','uncertain'].includes(task.delivery)?'attention':'review',state:task.acknowledged?'done':'review',terminal:active?task.controller:null,created:task.updated,coord:task.controller,connection:task.connection,harness:task.coordinator_harness,delivery:task.delivery};
     });
-    return [...live,...reports,...workflowItems,...coordinatorItems].map(item=>item.category==='history'&&cleared.has(historyKey(item))?{...item,cleared:true}:item).sort((a,b)=>(a.category==='attention'?0:1)-(b.category==='attention'?0:1)||b.created-a.created);
+    // A pull request's checks failing or a new review on it, seen by the server's gh poll.
+    const pullRequestItems=(demo?[]:pullRequestEvents).map(event=>({id:event.id,title:event.title,detail:event.detail,source:'Pull request · '+event.repo+' #'+event.number,
+      category:event.state!=='review'?'history':event.category,state:event.state,terminal:event.terminal,created:event.created,url:event.url,pr:true}));
+    return [...live,...reports,...workflowItems,...coordinatorItems,...pullRequestItems].map(item=>item.category==='history'&&cleared.has(historyKey(item))?{...item,cleared:true}:item).sort((a,b)=>(a.category==='attention'?0:1)-(b.category==='attention'?0:1)||b.created-a.created);
   }
   function matches(item,key){if(item.cleared&&!(showCleared&&key==='history'))return false;return key==='open'?item.state==='review':key==='all'?true:item.category===key;}
   function render(){
@@ -61,7 +64,7 @@
     if(!visible.length)list.append(text('div',query?'No matching items.':filter==='open'?'You’re caught up. New findings and requests will appear here.':'No items in this view.','special-empty'));
     for(const item of visible){
       const row=document.createElement('button');row.className='inbox-row';row.dataset.inboxItem=item.id;row.setAttribute('aria-pressed',item.id===selected);
-      row.append(text('span',item.category==='attention'?'Needs you':item.category==='history'?(item.state==='done'?'Reviewed':'Dismissed'):'Ready for review','inbox-category '+item.category),text('strong',item.title),text('span',item.source,'special-meta'),text('span',item.detail.replace(/^[#=─_-]+\s*/gm,'').replace(/[*`]/g,'').slice(0,160),'inbox-excerpt'));
+      row.append(text('span',item.category==='attention'?'Needs you':item.category==='history'?(item.state==='done'?'Reviewed':'Dismissed'):'Ready for review','inbox-category '+item.category),text('strong',item.title),text('span',item.source,'special-meta'),text('span',item.detail.replace(/^[#=─_-]+\s*/gm,'').replace(/\[([^\]]+)\]\([^)]*\)/g,'$1').replace(/[*`]/g,'').slice(0,160),'inbox-excerpt'));
       row.onclick=()=>{selected=item.id;render();};list.append(row);
     }
     list.scrollTop=scroll;
@@ -69,9 +72,9 @@
     const previous=detail.dataset.item;detail.replaceChildren();detail.dataset.item=selected||'';
     const item=visible.find(item=>item.id===selected);
     if(!item){detail.append(text('div','Select an item to see its context and next steps.','special-empty'));return;}
-    detail.append(text('p',item.live?'SESSION · RESPONSE REQUESTED':item.coord?'WORKER REPLY · '+item.source:'AUTOMATION · '+item.source,'inbox-kicker'),text('h2',item.title));
+    detail.append(text('p',item.live?'SESSION · RESPONSE REQUESTED':item.coord?'WORKER REPLY · '+item.source:item.pr?item.source.toUpperCase():'AUTOMATION · '+item.source,'inbox-kicker'),text('h2',item.title));
     if(item.created)detail.append(text('p',new Date(item.created*1000).toLocaleString(),'special-meta'));
-    const popout=text('a','Open as document ↗','inbox-popout');popout.href='/inbox-document.html?kind='+(item.live?'session':item.coord?'worker':item.workflow?'workflow':'automation')+'&item='+encodeURIComponent(item.live?item.terminal:item.id);popout.target='_blank';popout.rel='noopener noreferrer';detail.append(popout);
+    const popout=text('a','Open as document ↗','inbox-popout');popout.href='/inbox-document.html?kind='+(item.live?'session':item.coord?'worker':item.workflow?'workflow':item.pr?'pr':'automation')+'&item='+encodeURIComponent(item.live?item.terminal:item.id);popout.target='_blank';popout.rel='noopener noreferrer';detail.append(popout);
     const body=document.createElement('article');body.className='inbox-body';renderDocument(body,item.detail);detail.append(body);
     for(const finding of item.findings||[]){
       const section=document.createElement('details');section.className='inbox-finding';section.open=true;section.append(text('summary',finding.title));
@@ -80,7 +83,7 @@
       detail.append(section);
     }
     if(item.url&&/^https?:\/\//.test(item.url)){
-      const link=text('a','View source ↗');link.href=item.url;link.target='_blank';link.rel='noreferrer';detail.append(link);
+      const link=text('a',item.pr?'Open on GitHub ↗':'View source ↗');link.href=item.url;link.target='_blank';link.rel='noreferrer';detail.append(link);
     }
     const actions=document.createElement('div');actions.className='special-actions';
     if(item.terminal){const button=action(item.live?'Open session to respond':'Open session',()=>openSession(item.terminal));button.dataset.inboxAction='session';actions.append(button);}
@@ -95,7 +98,7 @@
       }
     }else if(!item.live){
       for(const [label,state] of item.state==='review'?[['Mark reviewed','done'],['Dismiss','dismissed']]:[['Reopen','review']]){
-        const button=action(label,async()=>{await terminalRequest(item.workflow?'/api/workflows/review':'/api/special-agents/review',{id:item.id,state});if(item.workflow)await window.refreshWorkflows();else await window.refreshAutomations();});button.dataset.inboxAction=state;actions.append(button);
+        const button=action(label,async()=>{await terminalRequest(item.workflow?'/api/workflows/review':item.pr?'/api/pull-requests/review':'/api/special-agents/review',{id:item.id,state});if(item.workflow)await window.refreshWorkflows();else if(item.pr)await refreshPullRequests();else await window.refreshAutomations();});button.dataset.inboxAction=state;actions.append(button);
       }
     }
     detail.append(actions);
@@ -126,7 +129,7 @@
   dismissDialog.addEventListener('cancel',event=>{if(dismissing)event.preventDefault();});
   function dismissItem(item){
     if(item.coord)return terminalRequest('/api/coordinator-events/ack',{id:item.id,controller:item.coord});
-    return terminalRequest(item.workflow?'/api/workflows/review':'/api/special-agents/review',{id:item.id,state:'dismissed'});
+    return terminalRequest(item.workflow?'/api/workflows/review':item.pr?'/api/pull-requests/review':'/api/special-agents/review',{id:item.id,state:'dismissed'});
   }
   dismissDialog.querySelector('.inbox-dismiss-confirm').onclick=async()=>{
     if(dismissing)return;dismissing=true;
@@ -136,7 +139,7 @@
     // Refresh every source: one view can mix automation, workflow and coordinator items.
     try{await window.refreshAutomations?.();}catch(error){failure=failure||error;}
     try{await window.refreshWorkflows?.();}catch(error){failure=failure||error;}
-    await refreshCoordinatorEvents();
+    await refreshCoordinatorEvents();await refreshPullRequests();
     dismissing=false;buttons.forEach(button=>button.disabled=false);
     if(failure)dismissDialog.querySelector('[role=alert]').textContent=`Dismissed ${done} of ${pending.length}. ${failure.message}`;
     else{dismissDialog.close();toast(`Dismissed ${done} item${done===1?'':'s'}.`);}
@@ -146,9 +149,13 @@
     try{const data=await terminalRequest('/api/coordinator-events');coordinatorTasks=Array.isArray(data.tasks)?data.tasks:[];window.updateWorkerCompletions?.(coordinatorTasks);render();}
     catch(error){if(error.message!=='Not found')console.warn('Coordinator inbox unavailable:',error.message);}
   }
+  async function refreshPullRequests(){
+    try{const data=await terminalRequest('/api/pull-requests');pullRequestEvents=Array.isArray(data.events)?data.events:[];render();}
+    catch(error){if(error.message!=='Not found')console.warn('Pull request inbox unavailable:',error.message);}
+  }
   window.refreshCoordinatorEvents=refreshCoordinatorEvents;
-  setInterval(()=>{if(!demo)refreshCoordinatorEvents();},5000);
-  refreshCoordinatorEvents();
+  setInterval(()=>{if(!demo){refreshCoordinatorEvents();refreshPullRequests();}},5000);
+  refreshCoordinatorEvents();refreshPullRequests();
   const clearDialog=document.createElement('dialog');clearDialog.className='schedule-delete-dialog inbox-dismiss-dialog';clearDialog.setAttribute('aria-labelledby','inbox-clear-title');
   clearDialog.innerHTML='<h2 id="inbox-clear-title">Clear History?</h2><p class="inbox-clear-scope"></p><p class="muted">Nothing is deleted. Run output stays in Run &amp; Schedule, coordinator results stay with their coordinator, and History can show cleared items again.</p><p class="error-banner" role="alert"></p><div class="dialog-actions"><button type="button" class="button inbox-clear-cancel">Cancel</button><button type="button" class="button danger inbox-clear-confirm">Clear history</button></div>';
   document.body.append(clearDialog);
@@ -175,7 +182,7 @@
   window.renderWorkInbox=render;
   window.updateAutomationInbox=data=>{saved=data;render();};
   window.setInboxStatus=message=>{el('inbox-status').textContent=message;};
-  el('open-inbox').onclick=()=>{switchPage('inbox');render();window.refreshAutomations?.();refreshCoordinatorEvents();};
+  el('open-inbox').onclick=()=>{switchPage('inbox');render();window.refreshAutomations?.();refreshCoordinatorEvents();refreshPullRequests();};
   el('refresh-inbox').onclick=async()=>{await refresh();await monitorTerminals();await window.refreshAutomations?.();render();};
   el('inbox-search').oninput=render;
   render();
