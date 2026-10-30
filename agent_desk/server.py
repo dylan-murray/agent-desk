@@ -37,6 +37,8 @@ from agent_desk.remote_environments import RemoteEnvironments
 from agent_desk.launch_profiles import remote_native
 from agent_desk import accounts, model_router
 from agent_desk.desks import Desks
+from agent_desk.pull_requests import PullRequests
+from agent_desk import saved_desks
 
 
 class ThreadingHTTPServer(http.server.ThreadingHTTPServer):
@@ -109,6 +111,9 @@ atexit.register(COORDINATORS.close)
 atexit.register(TERMINALS.close)
 SESSIONS = {}
 DESKS = Desks(DATA_DIR / 'desks.json')
+PULL_REQUESTS = PullRequests(DATA_DIR / 'pull-requests.json')
+# The terminal supervisor's restart records for this port, which saving a desk reads.
+SESSION_RECORDS = DATA_DIR / 'terminal-sessions-4310.json'
 LOCK = threading.Lock()
 STATES = {'working', 'needs_input', 'idle', 'completed', 'error', 'unknown'}
 FEEDBACK_FILE = DATA_DIR / 'feedback.json'
@@ -552,6 +557,10 @@ class Handler(SimpleHTTPRequestHandler):
             if not self.terminal_authorized():
                 return self.send_json({'error': 'Terminal authentication required'}, 403)
             return self.send_json({'launchers': [{k:v for k,v in item.items() if k not in ('script','args')} for item in TOOL_RUNTIME.catalog()]})
+        if route == '/api/pull-requests':
+            if not self.terminal_authorized():
+                return self.send_json({'error': 'Terminal authentication required'}, 403)
+            return self.send_json(PULL_REQUESTS.snapshot())
         if route == '/api/inbox/cleared':
             return self.send_json({'keys': read_inbox_cleared()})
         if route == '/api/skill-uis':
@@ -615,6 +624,7 @@ class Handler(SimpleHTTPRequestHandler):
                 managed = [a for a in TERMINALS.list() if a['id'] not in hidden]
                 for agent in managed:
                     agent.update(folder_context(agent['cwd']))
+                    agent['pull_request'] = PULL_REQUESTS.status(agent['repo'], agent['id'])
                     if agent['id'] in PROTECTED_PANES:
                         agent['protected'] = True
                 known_pids = {a.get('pid') for a in reported} | TERMINALS.child_pids()
@@ -738,7 +748,7 @@ class Handler(SimpleHTTPRequestHandler):
             return self.send_json({'error': 'Cross-site requests are not allowed'}, 403)
         if self.path == '/api/readouts':
             return self.set_readouts()
-        if self.path.startswith('/api/event-bus/') or self.path.startswith('/api/remote/') or self.path.startswith('/api/accounts/') or self.path.startswith('/api/conversations/') or self.path.startswith('/api/terminals/') or self.path == '/api/projects/create' or self.path.startswith('/api/inbox/') or self.path.startswith('/api/tools/') or self.path.startswith('/api/special-agents/') or self.path.startswith('/api/skills/') or self.path.startswith('/api/workflows/') or self.path.startswith('/api/coordinator-events/') or self.path.startswith('/api/coordinators/') or self.path.startswith('/api/model-router/') or self.path.startswith('/api/desks/'):
+        if self.path.startswith('/api/event-bus/') or self.path.startswith('/api/remote/') or self.path.startswith('/api/accounts/') or self.path.startswith('/api/conversations/') or self.path.startswith('/api/terminals/') or self.path == '/api/projects/create' or self.path.startswith('/api/inbox/') or self.path.startswith('/api/pull-requests/') or self.path.startswith('/api/tools/') or self.path.startswith('/api/special-agents/') or self.path.startswith('/api/skills/') or self.path.startswith('/api/workflows/') or self.path.startswith('/api/coordinator-events/') or self.path.startswith('/api/coordinators/') or self.path.startswith('/api/model-router/') or self.path.startswith('/api/desks/'):
             if not self.terminal_authorized():
                 return self.send_json({'error': 'Terminal authentication required'}, 403)
             try:
@@ -929,6 +939,17 @@ class Handler(SimpleHTTPRequestHandler):
                         temp.write_text(json.dumps(records, indent=2) + '\n')
                         os.replace(temp, SKILL_UIS_FILE)
                     return self.send_json({'ok': True})
+                if self.path == '/api/pull-requests/review':
+                    return self.send_json(PULL_REQUESTS.review(payload))
+                if self.path == '/api/pull-requests/failure-log':
+                    cwd = TERMINALS.get(payload.get('id', '')).cwd
+                    return self.send_json(PULL_REQUESTS.failure_log(cwd, folder_context(cwd)['repo'], payload['id'], payload.get('url')))
+                if self.path == '/api/pull-requests/refresh':
+                    PULL_REQUESTS.hurry([identity for identity in payload.get('ids') or [] if isinstance(identity, str)])
+                    return self.send_json({'ok': True})
+                if self.path == '/api/pull-requests/forget':
+                    cwd = TERMINALS.get(payload.get('id', '')).cwd
+                    return self.send_json(PULL_REQUESTS.forget(payload['id'], payload.get('url'), folder_context(cwd)['repo']))
                 if self.path == '/api/inbox/clear-history':
                     return self.send_json({'keys': clear_inbox_history(payload.get('keys'))})
                 if self.path == '/api/projects/create':
@@ -1068,7 +1089,74 @@ def desk_action(action, payload, refusal=lambda identity: None):
         return {'desks': DESKS.delete(payload.get('id'), payload.get('move_to'), every_agent())}
     if action == 'shutdown':
         return shutdown_desk(payload, refusal)
+    if action == 'save-preview':
+        records = saved_desks.session_records(SESSION_RECORDS)
+        return {'sessions': [saved_desks.outcome(records[i]) for i in payload.get('ids') or [] if isinstance(i, str) and i in records]}
+    if action == 'save':
+        return save_desk(payload, refusal)
+    if action == 'reopen':
+        return reopen_desk(payload)
     raise ValueError('Unknown desk action')
+
+
+def save_desk(payload, refusal=lambda identity: None):
+    """Shut a desk down as shutdown_desk does, keeping what reopening it needs: each stopped
+    terminal's restart record, the coordinators it closed, and the page's pane layout."""
+    desk, layout, desks = DESKS.desk_for(payload.get('id')), saved_desks.layout(payload.get('layout')), DESKS.snapshot()
+    # Checked before anything stops, as keep() would only refuse after.
+    if any(d['id'] == desk and d.get('saved_at') for d in desks):
+        raise ValueError('That desk is already saved')
+    if all(d['id'] == desk or d.get('saved_at') for d in desks):
+        raise ValueError('Open another desk first: the last open desk cannot be saved and closed')
+    # A name changed in the dialog is checked and applied before anything stops.
+    if payload.get('name') is not None:
+        DESKS.rename(desk, payload['name'])
+    # Read before stopping: a stopped terminal leaves the supervisor's records. Remote sessions
+    # and coordinators are stopped but not kept, since this desk cannot start them again.
+    records, local = saved_desks.session_records(SESSION_RECORDS), {c['id'] for c in COORDINATORS.agents()}
+    # Sessions left out in the dialog stop with the rest but are not kept. A child cannot reopen
+    # without its parent, so leaving one out leaves out its workers too.
+    drop = {i for i in payload.get('drop') or [] if isinstance(i, str)}
+    while extra := {i for i, item in records.items() if item.get('parent_id') in drop} - drop:
+        drop |= extra
+    result = shutdown_desk(payload, refusal)
+    terminals = [records[i] for i in result['stopped'] if i in records and i not in drop]
+    closed = [i for i in result['closed'] if i in local and i not in drop]
+    DESKS.keep(desk, dict(terminals=terminals, coordinators=closed, layout=layout))
+    return result | {'saved': [t['id'] for t in terminals] + closed, 'desks': DESKS.snapshot()}
+
+
+def reopen_desk(payload):
+    """Start a saved desk's terminals as a restart would and reopen its coordinators. Each
+    terminal gets a new ID, so the result maps the saved IDs to the new ones for the page."""
+    from agent_desk.terminal_restore import plan
+    desk = DESKS.desk_for(payload.get('id'))
+    record = DESKS.saved_record(desk)
+    started, results = {}, []
+    for item in sorted(record.get('terminals', []), key=lambda item: item.get('created') or 0):
+        name = item.get('display_name') or item.get('name') or 'Terminal'
+        try:
+            launch, resumed, detail = plan(item)
+            parent = started.get(item.get('parent_id'))
+            if parent:
+                launch['parent_id'] = parent
+            # A child follows its parent; anything else goes on the desk.
+            session = TERMINALS.launch(launch, desk=None if parent else desk)
+            if item.get('display_name'):
+                session.rename(item['display_name'])
+            started[item['id']] = session.id
+            results.append(dict(id=item['id'], new_id=session.id, name=name, resumed=resumed, detail=detail))
+        except (ValueError, KeyError, TypeError, OSError) as exc:
+            results.append(dict(id=item['id'], name=name, error=str(exc)))
+    for identity in record.get('coordinators', []):
+        try:
+            name = COORDINATORS.reopen(identity)['name']
+            DESKS.place([identity], desk)
+            results.append(dict(id=identity, new_id=identity, name=name, resumed=True, detail='reopened coordinator'))
+        except ValueError as exc:
+            results.append(dict(id=identity, name='Coordinator', error=str(exc)))
+    DESKS.unsave(desk)
+    return dict(desk=desk, layout=record.get('layout'), results=results, desks=DESKS.snapshot())
 
 
 def model_router_action(action, payload):
@@ -1101,7 +1189,7 @@ def model_router_action(action, payload):
 
 
 def main():
-    global COORDINATORS, DESKS, DEVELOPMENT, TERMINALS
+    global COORDINATORS, DESKS, DEVELOPMENT, PULL_REQUESTS, SESSION_RECORDS, TERMINALS
     parser = argparse.ArgumentParser()
     parser.add_argument('--port', type=int, default=4310)
     parser.add_argument('--workspace-id', type=workspace_key, help='Desktop workspace ID; use a private Unix socket instead of TCP')
@@ -1134,6 +1222,8 @@ def main():
     coordinator_file = 'coordinators.sqlite3' if key == 4310 else f'coordinators-{key}.sqlite3'
     COORDINATORS = CoordinatorRuntime(DATA_DIR / coordinator_file, TERMINALS, MAILBOX)
     DESKS = Desks(DATA_DIR / ('desks.json' if key == 4310 else f'desks-{key}.json'))
+    PULL_REQUESTS = PullRequests(DATA_DIR / ('pull-requests.json' if key == 4310 else f'pull-requests-{key}.json'), output=lambda identity, cursor: TERMINALS.output(identity, cursor))
+    SESSION_RECORDS = DATA_DIR / f'terminal-sessions-{key}.json'
     atexit.register(COORDINATORS.close)
     DEVELOPMENT = not args.production
     WORKFLOWS.desk = desk_url(key)
@@ -1167,6 +1257,8 @@ def main():
     cleanup_thread = threading.Thread(target=cleanup_automations, daemon=True)
     cleanup_thread.start()
     WORKFLOWS.start_scheduler()
+    if not remote_native():
+        PULL_REQUESTS.start(lambda: [row | folder_context(row['cwd']) for row in TERMINALS.list()])
     if not args.workspace_id or not server.paused:
         COORDINATORS.start()
     def retire_tool_registrations():

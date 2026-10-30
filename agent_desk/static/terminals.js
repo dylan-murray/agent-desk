@@ -157,7 +157,7 @@ function movePaneBy(id,delta){
 }
 function clearPaneDrag(){
   draggingPaneId=null;
-  document.body.classList.remove('pane-dragging-active');
+  document.body.classList.remove('pane-dragging-active');snapPreview(null);
   for(const node of document.querySelectorAll('.pane-swap-target')){node.style.transform='';node.style.clipPath='';}
   document.querySelectorAll('.pane-dragging,.pane-swap-target').forEach(el=>el.classList.remove('pane-dragging','pane-swap-target'));
 }
@@ -171,8 +171,49 @@ let paneDrag=null;
 function paneSlots(){
   return openPaneIds.map(id=>{const view=paneViews.get(id);return view&&{id,node:view.node,rect:view.node.getBoundingClientRect()};}).filter(Boolean);
 }
+// Slots were measured before any scrolling during the drag, so the pointer is moved into
+// that frame.
 function slotAt(state,clientX,clientY){
+  clientY+=$('#terminal').scrollTop-state.scroll;
   return state.slots.find(slot=>clientX>=slot.rect.left&&clientX<=slot.rect.right&&clientY>=slot.rect.top&&clientY<=slot.rect.bottom);
+}
+// Only two drops are offered beyond the swap: a pane as wide as the workspace splits in two,
+// taking the held pane on its left or right; and of two panes sharing a row, one dropped on
+// the other's bottom edge becomes a full-width row of its own below it. The pointer has to be in
+// a band along that edge (a sixth of the width, at most 180px; a fifth of the height, at most
+// 120px), or, for a held pane about as wide, the held pane itself past the middle: a wide pane
+// held by its title hangs far to the right of the pointer.
+function paneSnapAt(state,slot,clientX,clientY){
+  const cells=state.cells,cell=cells?.[slot.id],own=cells?.[state.id];if(!cell||!own)return null;
+  const home=state.slots.find(item=>item.id===state.id),dx=clientX-state.startX,r=slot.rect,middle=r.left+r.width/2,y=clientY+$('#terminal').scrollTop-state.scroll;
+  const bandX=Math.min(180,r.width/6),bandY=Math.min(120,r.height/5),wide=home.rect.width>=r.width*.75;
+  let side=null;
+  if(cell.w===PANE_GRID)side=clientX>=r.right-bandX?'right':clientX<=r.left+bandX?'left':wide&&home.rect.left+dx>=middle?'right':wide&&home.rect.right+dx<=middle?'left':null;
+  else if(own.y===cell.y&&own.h===cell.h&&y>=r.bottom-bandY)side='bottom';
+  const rects=side&&paneRectsBeside(cells,state.id,slot.id,side);
+  return rects?{side,rects}:null;
+}
+// A side drop shows only once the pointer has stayed in its band for a moment, so passing over an
+// edge on the way somewhere else keeps the ordinary swap preview.
+const PANE_SNAP_DWELL=160;
+function heldSnap(state,snap,id){
+  const key=snap?id+' '+snap.side:'';
+  if(!key){clearTimeout(state.dwell);state.pendingKey=state.snapKey='';return null;}
+  if(key===state.snapKey)return snap;
+  state.snapKey='';
+  if(key!==state.pendingKey){
+    clearTimeout(state.dwell);state.pendingKey=key;
+    state.dwell=setTimeout(()=>{if(paneDrag!==state||state.pendingKey!==key)return;state.snapKey=key;state.target=markPaneSwapTarget(state,state.x,state.y);},PANE_SNAP_DWELL);
+  }
+  return null;
+}
+// The marker is a cell of the pane grid where the held pane will land, so it scrolls and
+// clips with the panes.
+function snapPreview(rect){
+  let node=$('#pane-snap-preview');
+  if(!rect){node?.remove();return;}
+  if(!node){node=document.createElement('div');node.id='pane-snap-preview';node.setAttribute('aria-hidden','true');$('#terminal').append(node);}
+  node.style.gridArea=`${rect.y+1} / ${rect.x+1} / span ${rect.h} / span ${rect.w}`;
 }
 function markPaneSwapTarget(state,clientX,clientY){
   const slot=slotAt(state,clientX,clientY),home=state.slots.find(item=>item.id===state.id);
@@ -181,7 +222,18 @@ function markPaneSwapTarget(state,clientX,clientY){
     if(item.id===state.id||item===chosen)continue;
     if(item.node.classList.contains('pane-swap-target')){item.node.classList.remove('pane-swap-target');item.node.style.transform='';item.node.style.clipPath='';}
   }
-  if(!chosen||!home)return null;
+  if(!chosen||!home){snapPreview(null);return null;}
+  const snap=heldSnap(state,paneSnapAt(state,chosen,clientX,clientY),chosen.id);
+  if(snap){
+    // The hovered pane draws in to the part it keeps (masked, never scaled) and the marker
+    // outlines the space it frees for the held pane.
+    const from=state.cells[chosen.id],to=snap.rects[chosen.id],step=paneGridStep(),inset=(a,b,unit)=>Math.max(0,(a-b)*unit).toFixed(2)+'px';
+    chosen.node.classList.add('pane-swap-target');chosen.node.style.transform='';
+    chosen.node.style.clipPath=`inset(${inset(to.y,from.y,step.row)} ${inset(from.x+from.w,to.x+to.w,step.col)} ${inset(from.y+from.h,to.y+to.h,step.row)} ${inset(to.x,from.x,step.col)} round 9px)`;
+    snapPreview(snap.rects[state.id]);
+    return {id:chosen.id,node:chosen.node,side:snap.side};
+  }
+  snapPreview(null);
   // Move the hovered pane into the slot the held pane left. Panes are not always the same
   // size (a three-pane grid has one tall pane), and scaling one to fill the other's slot
   // distorts the terminal inside it. So the pane is never stretched: it keeps its own
@@ -212,6 +264,7 @@ function settlePane(node){
 function endPaneDrag(commit,clientX,clientY){
   const state=paneDrag;paneDrag=null;
   if(!state)return;
+  clearTimeout(state.dwell);
   if(state.frame)cancelAnimationFrame(state.frame);
   try{state.bar.releasePointerCapture(state.pointerId);}catch{}
   if(!state.active){clearPaneDrag();return;}
@@ -222,7 +275,7 @@ function endPaneDrag(commit,clientX,clientY){
     // the preview already has both panes where they are about to land, so nothing moves.
     clearPaneDrag();
     if(node)node.style.transform='';
-    if(swapPanes(state.id,target.id)){settlePane(node);settlePane(target.node);}
+    if(target.side?placePaneBeside(state.id,target.id,target.side):swapPanes(state.id,target.id)){settlePane(node);settlePane(target.node);}
   }else if(node){
     // Nothing to commit: ease the pane back to the slot it came from instead of snapping.
     node.classList.add('pane-returning');node.style.transform='';
@@ -249,7 +302,9 @@ document.addEventListener('DOMContentLoaded',()=>{
       if(Math.hypot(event.clientX-paneDrag.startX,event.clientY-paneDrag.startY)<5)return;
       paneDrag.active=true;draggingPaneId=paneDrag.id;
       try{paneDrag.bar.setPointerCapture(paneDrag.pointerId);}catch{}
-      paneDrag.slots=paneSlots();
+      paneDrag.slots=paneSlots();paneDrag.scroll=$('#terminal').scrollTop;
+      // Stacked panes on a narrow screen have no row to share.
+      paneDrag.cells=getComputedStyle($('#terminal')).gridTemplateColumns.split(' ').length===PANE_GRID?{...resolvePaneRects(openPaneIds)}:null;
       paneDrag.node.classList.add('pane-dragging');
       document.body.classList.add('pane-dragging-active');
     }
@@ -340,8 +395,9 @@ setInterval(()=>{for(const [id,view] of paneViews){const agent=!view.disposed&&a
 function renderTerminal(){
   if(paneMode!==paneStoreKey())loadPanes();
   const all=current();
-  // Don't discard restored selection while the initial process fetch is pending.
-  if(all.length||agents.length||demo||typeof agentsLoaded!=='undefined'&&agentsLoaded){openPaneIds=openPaneIds.filter(id=>webPages.has(id)||all.some(a=>a.id===id));if(!openPaneIds.length&&!paneInitialized&&selectedId)openPaneIds=[selectedId];paneInitialized=true;if(!demo)openSpawnedPanes(all);}
+  // Don't discard restored selection while the initial process fetch is pending, nor a session this
+  // tab just started that a list fetched before it started does not have yet.
+  if(all.length||agents.length||demo||typeof agentsLoaded!=='undefined'&&agentsLoaded){openPaneIds=openPaneIds.filter(id=>webPages.has(id)||freshTerminalIds.has(id)||all.some(a=>a.id===id));if(!openPaneIds.length&&!paneInitialized&&selectedId)openPaneIds=[selectedId];paneInitialized=true;if(!demo)openSpawnedPanes(all);}
   if(!openPaneIds.includes(selectedId))selectedId=openPaneIds[0]||null;
   const workspace=$('#terminal');workspace.dataset.count=openPaneIds.length;
   $('#pane-count').textContent=`${openPaneIds.length} / ${PANE_LIMIT} open`;
@@ -374,6 +430,15 @@ function createPane(agent){
       toast(result.protected?'Protected: only you can read or type into this session':'No longer protected: agents and local tools can reach this session');}
     catch(error){toast(error.message);}
   };
+  // The header's context menu is the sidebar's: move this session to another desk, or to a new one.
+  const bar=node.querySelector('.terminal-bar');bar.title='Drag this header to move the pane · right-click to move it to another desk';
+  bar.addEventListener('contextmenu',event=>{
+    if(demo||annotating||view.renaming||agent.harness_internal||event.target.closest('input'))return;
+    event.preventDefault();
+    const at=event.clientX||event.clientY?[event.clientX,event.clientY]:(box=>[box.x+16,box.bottom])(bar.getBoundingClientRect());
+    const latest=current().find(a=>a.id===agent.id)||agent;
+    openGroupMenu(...at,[...(groupOf(agent.id)?[['Remove from group',()=>removeFromGroup(agent.id)]]:[]),...deskMoveItems([agent.id],`“${sessionTitle(latest)}”`)],bar);
+  });
   node.addEventListener('pointerdown',()=>{selectedId=agent.id;focusCoordinatorFor(agent.id);highlightPanes();});
   node.addEventListener('focusin',()=>{selectedId=agent.id;focusCoordinatorFor(agent.id);highlightPanes();});
   return view;
@@ -409,6 +474,7 @@ function deskDuration(seconds){return seconds<120?Math.round(seconds)+'s':second
 function updatePane(view,a){
   updatePaneReadouts(view,a.readouts);
   window.renderPaneDock?.(view,a);
+  window.renderPanePullRequest?.(view,a);
   if(!view.renaming)view.node.querySelector('.pane-title').textContent=a.project+' / '+sessionTitle(a);
   view.node.querySelector('.pane-path').textContent=(a.remote_node?'Remote · '+a.remote_name+(a.remote_connected===false?' · disconnected':'')+' / ':'')+shortPath(a.cwd||'Folder unavailable');
   view.node.querySelector('.pane-directory').title=a.cwd||'';

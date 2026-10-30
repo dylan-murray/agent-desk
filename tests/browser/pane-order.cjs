@@ -13,7 +13,8 @@ const saved=page=>page.evaluate(()=>JSON.parse(sessionStorage.getItem('agent-des
 async function dragHeader(page,fromIndex,toIndex,side){
   const from=await page.locator('#terminal > .terminal-pane').nth(fromIndex).locator('.terminal-bar').boundingBox();
   const to=await page.locator('#terminal > .terminal-pane').nth(toIndex).boundingBox();
-  const x=side==='right'?to.x+to.width*0.85:to.x+to.width*0.15,y=to.y+to.height/2;
+  // Near the side of a full-width pane, a drop places the pane beside it (pane-snap.cjs).
+  const x=side==='right'?to.x+to.width*0.65:to.x+to.width*0.35,y=to.y+to.height/2;
   await page.mouse.move(from.x+from.width*0.45,from.y+from.height/2);
   await page.mouse.down();
   await page.mouse.move(from.x+from.width*0.45+30,from.y+from.height/2,{steps:6});
@@ -112,7 +113,7 @@ async function dragHeader(page,fromIndex,toIndex,side){
   await page.mouse.move(ownSlot.x+ownSlot.w/2,ownSlot.y+ownSlot.h/2,{steps:10});
   await page.waitForTimeout(280);
   const overOwnSlot=await page.$$eval('#terminal .pane-swap-target',n=>n.length);
-  await page.mouse.move(thirdBox.x+thirdBox.width*0.85,thirdBox.y+thirdBox.height/2,{steps:10});
+  await page.mouse.move(thirdBox.x+thirdBox.width*0.65,thirdBox.y+thirdBox.height/2,{steps:10});
   await page.waitForTimeout(280);
   await page.mouse.up();
   await page.waitForTimeout(60);

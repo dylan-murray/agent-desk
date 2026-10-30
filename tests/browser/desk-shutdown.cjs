@@ -44,7 +44,7 @@ const DOOMED='Research '+tag,KEPT='Work '+tag,EMPTY='Empty '+tag;
   check('the dialog is titled with this desk',()=>assert.equal(dialog.title,`Shut down the “${DOOMED}” desk?`));
   check('it says what it does, on this desk only',()=>assert.equal(dialog.lede,'Stops 2 terminals and clears 1 finished terminal on this desk only.'));
   check('it lists each session with what happens to it',()=>assert.deepEqual(dialog.rows,[['Data loader','Stops'],['Log watcher','Stops'],['Nightly report','Clears']]));
-  check('it names the desks it leaves running, skipping empty ones',()=>{assert.match(dialog.others,/^Keeps running:/);assert.ok(dialog.others.includes(KEPT+' · 1 session'));assert.equal(dialog.others.includes(EMPTY),false);});
+  check('it names the desks it leaves running, skipping empty ones',()=>{assert.match(dialog.others,/^Other desks keep running:/);assert.ok(dialog.others.includes(KEPT+' · 1 session'));assert.equal(dialog.others.includes(EMPTY),false);});
   check('the destructive button names the desk, and Cancel has focus',()=>assert.deepEqual([dialog.confirm,dialog.focused],[`Shut down ${DOOMED}`,'Cancel']));
   await page.screenshot({path:path.join(OUT,'desk-shutdown-02-dialog.png')});
 
