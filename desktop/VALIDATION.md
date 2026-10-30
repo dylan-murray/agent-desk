@@ -226,3 +226,11 @@ Verified locally (Apple Silicon, disposable profiles, fictional sessions; `AGENT
 Before evidence on the unchanged PR #18 source: Quit after a failed start left the window open with "Could not confirm shutdown"; source Electron had `development: false` with no visible launcher; the pop-out button opened no window. The same scenario after the change exits, shows the launcher, and opens one tool window. Screenshots are local only (some include locally discovered session names) and are not committed.
 
 Not verified: DMG build, Developer ID signing, physical clicks on native menus outside Playwright, and long-running sessions with real agent CLIs. User acceptance is pending.
+
+## Releases from project version bumps (2026-10-30)
+
+Implemented: a `pyproject.toml` change pushed to `main` compares the project version before and after the whole push. Increases trigger the existing desktop validation/build/publish pipeline; unchanged versions skip the build and publishing jobs, and decreases fail. Publishing creates a bare version tag such as `0.2.1` on the tested commit and includes GitHub-generated change notes based on merged PR titles and contributors. PRs, manual runs and local packages remain development builds. Existing tags must resolve to the tested commit, published releases remain unchanged on retry, and only publishing has repository write permission.
+
+Verified locally: all 54 desktop unit tests and all 3 Python version tests passed. Fixture repositories cover version increases, unchanged versions, other metadata edits, multi-commit pushes, malformed/decreased versions, mismatched commits and existing lightweight/annotated tags. Mocked GitHub calls cover tag creation, generated-note arguments, checksum failures, interrupted uploads/publication, retries, tag conflicts and repository/token guards. Workflow YAML parses and `git diff --check` passes. Native About, `npm run package` and the packaged-app fixture passed with disposable profiles and fictional sessions. The first sandboxed unit run encountered socket/process restrictions; the permitted rerun passed.
+
+Not verified: live GitHub tag/release creation, rendered generated notes or downloadable assets. No release was published, no project version was bumped, and the installed app/profile was not replaced. User acceptance is pending.
