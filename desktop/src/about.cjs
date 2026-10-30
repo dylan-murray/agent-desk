@@ -5,7 +5,7 @@ const versionPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 
 function aboutOptions(info) {
   if (!versionPattern.test(info.version) ||
-      !(info.releaseTag === null || info.releaseTag === `desktop-${info.version}` && !info.dirty) ||
+      !(info.releaseTag === null || info.releaseTag === info.version && !info.dirty) ||
       !/^[a-f0-9]{7,40}$/.test(info.commit) || typeof info.dirty !== 'boolean' ||
       !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(info.packagedAt) ||
       !Number.isFinite(Date.parse(info.packagedAt))) throw Error('Invalid desktop build metadata');

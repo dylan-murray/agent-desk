@@ -29,7 +29,7 @@ See [desktop contributor instructions](desktop/AGENTS.md) for desktop changes, c
 
 ## Versioning
 
-`[project].version` in `pyproject.toml` is the shared Python and desktop version. Many commits can share a version; bump it when preparing a new release. Python source imports read the project file, installed wheels use package metadata, remote bundles carry generated version metadata, and desktop packaging derives its version and embeds build identity. Desktop releases use matching tags such as `desktop-0.1.0`; see [the release process](desktop/README.md#desktop-ci-and-automatic-github-releases). Apple signing is controlled separately by `AGENT_DESK_APPLE_SIGNING`.
+`[project].version` in `pyproject.toml` is the shared Python and desktop version. Many commits can share a version; bump it when preparing a new release. Python source imports read the project file, installed wheels use package metadata, remote bundles carry generated version metadata, and desktop packaging derives its version and embeds build identity. Pushing a version increase to `main` automatically builds and publishes a desktop release with a matching tag such as `0.2.1` and generated change notes; see [the release process](desktop/README.md#desktop-ci-and-automatic-github-releases). Apple signing is controlled separately by `AGENT_DESK_APPLE_SIGNING`.
 
 ## Checks
 

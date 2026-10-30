@@ -2,8 +2,10 @@ name: macOS desktop
 on:
   workflow_dispatch:
   push:
-    tags:
-      - 'desktop-*'
+    branches:
+      - main
+    paths:
+      - 'pyproject.toml'
   pull_request:
     paths:
       - 'desktop/**'
@@ -21,10 +23,29 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'push' && github.sha || github.ref }}
   cancel-in-progress: false
 jobs:
+  version:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - name: Detect project version bump
+        id: version
+        run: node desktop/scripts/version.cjs
   desktop:
+    needs: version
+    if: github.event_name != 'push' || needs.version.outputs.tag != ''
     runs-on: macos-15
     timeout-minutes: 30
     env:
@@ -41,7 +62,7 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
-      - name: Validate build identity and release tag
+      - name: Validate build identity and release version
         run: node desktop/scripts/build-info.cjs
       - run: npm ci
       - run: npm ci
@@ -96,11 +117,11 @@ jobs:
       - run: npm run test:dmg
         working-directory: desktop
       - name: Checksum tested DMG
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/desktop-')
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.version.outputs.tag != ''
         working-directory: desktop/out/make
         run: shasum -a 256 Agent-Desk-arm64.dmg > Agent-Desk-arm64.dmg.sha256
       - name: Upload tested release assets
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/desktop-')
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.version.outputs.tag != ''
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: desktop-release
@@ -111,8 +132,8 @@ jobs:
           compression-level: 0
           overwrite: true
   publish:
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/desktop-')
-    needs: desktop
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.version.outputs.tag != ''
+    needs: [version, desktop]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
