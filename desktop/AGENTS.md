@@ -1,6 +1,6 @@
 # Desktop contributor instructions
 
-Read [README.md](README.md) for setup, packaging, release tags, signing, and checks. The repository's [contributor instructions](../CONTRIBUTING.md) and root `AGENTS.md` also apply. [VALIDATION.md](VALIDATION.md) records verification evidence and outstanding acceptance; it is not the setup guide.
+Read [README.md](README.md) for setup, packaging, release tags, signing, and checks. The repository's [contributor instructions](../CONTRIBUTING.md) and root `AGENTS.md` also apply.
 
 After dependency setup, launch from the repository root with `npm --prefix desktop start`, or run `npm start` from this folder.
 
