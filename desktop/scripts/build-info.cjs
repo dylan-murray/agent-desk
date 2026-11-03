@@ -10,7 +10,8 @@ function buildInfo(root, now = new Date(), env = {}) {
   const dirty = git(['status', '--porcelain=v1', '--untracked-files=normal']).length > 0;
   if (tag) {
     if (dirty) throw Error('Desktop release builds require a clean checkout');
-    if (git(['rev-parse', '--verify', `refs/tags/${tag}^{commit}`]) !== git(['rev-parse', 'HEAD'])) {
+    // The publishing job creates new tags after all build checks pass.
+    if (git(['tag', '--list', tag]) && git(['rev-parse', '--verify', `refs/tags/${tag}^{commit}`]) !== git(['rev-parse', 'HEAD'])) {
       throw Error('Desktop release tag must point to the checked-out commit');
     }
   }

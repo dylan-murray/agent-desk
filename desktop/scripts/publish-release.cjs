@@ -10,7 +10,7 @@ const imageName = 'Agent-Desk-arm64.dmg';
 function publishRelease({directory, root = path.resolve(__dirname, '../..'), env = process.env, gh = args => execFileSync('gh', args, {encoding: 'utf8', env})}) {
   const tag = releaseTag(root, env);
   if (!tag) {
-    throw Error('Publishing requires a desktop-* tag push');
+    throw Error('Publishing requires a project version bump pushed to main');
   }
   const repository = env.GH_REPO;
   if (!repository || repository !== env.GITHUB_REPOSITORY || !env.GH_TOKEN) {
@@ -30,8 +30,22 @@ function publishRelease({directory, root = path.resolve(__dirname, '../..'), env
   if (releases.some(release => release.draft === false)) {
     return `Release ${tag} is already published; assets left unchanged.`;
   }
+  const reference = `refs/tags/${tag}`;
+  const refs = JSON.parse(gh(['api', `repos/${repository}/git/matching-refs/tags/${tag}`]));
+  const existing = refs.find(ref => ref.ref === reference);
+  if (existing) {
+    let object = existing.object;
+    while (object.type === 'tag') {
+      object = JSON.parse(gh(['api', `repos/${repository}/git/tags/${object.sha}`])).object;
+    }
+    if (object.type !== 'commit' || object.sha !== env.GITHUB_SHA) {
+      throw Error('Release tag must point to the tested commit; refusing to move it');
+    }
+  } else {
+    gh(['api', '--method', 'POST', `repos/${repository}/git/refs`, '-f', `ref=${reference}`, '-f', `sha=${env.GITHUB_SHA}`]);
+  }
   if (releases.length === 0) {
-    gh(['release', 'create', tag, '--repo', repository, '--verify-tag', '--draft', '--title', tag,
+    gh(['release', 'create', tag, '--repo', repository, '--verify-tag', '--draft', '--title', tag, '--generate-notes',
       '--notes', 'Agent Desk for Apple Silicon, macOS 14+. Ad-hoc signed; not Developer ID signed or notarized. Verify the download with the attached SHA-256 checksum.']);
   }
   // Replace both files on retry so a partial draft cannot publish a previous
