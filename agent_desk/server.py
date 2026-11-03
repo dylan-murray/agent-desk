@@ -114,6 +114,8 @@ DESKS = Desks(DATA_DIR / 'desks.json')
 PULL_REQUESTS = PullRequests(DATA_DIR / 'pull-requests.json')
 # The terminal supervisor's restart records for this port, which saving a desk reads.
 SESSION_RECORDS = DATA_DIR / 'terminal-sessions-4310.json'
+# The other Agent Desk app's saved desks, which this one can import (read only).
+PEER = saved_desks.Peer.of(4310)
 LOCK = threading.Lock()
 STATES = {'working', 'needs_input', 'idle', 'completed', 'error', 'unknown'}
 FEEDBACK_FILE = DATA_DIR / 'feedback.json'
@@ -1096,7 +1098,25 @@ def desk_action(action, payload, refusal=lambda identity: None):
         return save_desk(payload, refusal)
     if action == 'reopen':
         return reopen_desk(payload)
+    if action == 'peer':
+        return {'app': PEER.app, 'desks': PEER.saved()}
+    if action == 'import':
+        return import_desk(payload)
+    if action == 'reopen-preview':
+        record = DESKS.saved_record(DESKS.desk_for(payload.get('id')))
+        if not record.get('imported'):
+            raise ValueError('Only an imported desk is checked before it reopens')
+        return {'sessions': saved_desks.reopen_preview(record)}
     raise ValueError('Unknown desk action')
+
+
+def import_desk(payload):
+    """Copy a desk saved in the other app in as a saved desk here, named as it was or as the page
+    renamed it. Nothing starts: reopening it later shows what each terminal comes back as."""
+    name, record = PEER.record(payload.get('source'), payload.get('id'))
+    origin = f"{payload['source']}/{payload['id']}"
+    desk = DESKS.create(name if payload.get('name') is None else payload['name'], saved=saved_desks.imported(record, PEER.app, origin))
+    return {'desk': desk, 'desks': DESKS.snapshot()}
 
 
 def save_desk(payload, refusal=lambda identity: None):
@@ -1106,8 +1126,6 @@ def save_desk(payload, refusal=lambda identity: None):
     # Checked before anything stops, as keep() would only refuse after.
     if any(d['id'] == desk and d.get('saved_at') for d in desks):
         raise ValueError('That desk is already saved')
-    if all(d['id'] == desk or d.get('saved_at') for d in desks):
-        raise ValueError('Open another desk first: the last open desk cannot be saved and closed')
     # A name changed in the dialog is checked and applied before anything stops.
     if payload.get('name') is not None:
         DESKS.rename(desk, payload['name'])
@@ -1132,8 +1150,11 @@ def reopen_desk(payload):
     from agent_desk.terminal_restore import plan
     desk = DESKS.desk_for(payload.get('id'))
     record = DESKS.saved_record(desk)
+    # An imported desk's terminals carry names only; their commands are built from this app's
+    # accounts, and one whose account is missing here waits for the page to pick one.
+    terminals = saved_desks.relaunch_all(record, payload.get('accounts')) if record.get('imported') else record.get('terminals', [])
     started, results = {}, []
-    for item in sorted(record.get('terminals', []), key=lambda item: item.get('created') or 0):
+    for item in sorted(terminals, key=lambda item: item.get('created') or 0):
         name = item.get('display_name') or item.get('name') or 'Terminal'
         try:
             launch, resumed, detail = plan(item)
@@ -1189,7 +1210,7 @@ def model_router_action(action, payload):
 
 
 def main():
-    global COORDINATORS, DESKS, DEVELOPMENT, PULL_REQUESTS, SESSION_RECORDS, TERMINALS
+    global COORDINATORS, DESKS, DEVELOPMENT, PEER, PULL_REQUESTS, SESSION_RECORDS, TERMINALS
     parser = argparse.ArgumentParser()
     parser.add_argument('--port', type=int, default=4310)
     parser.add_argument('--workspace-id', type=workspace_key, help='Desktop workspace ID; use a private Unix socket instead of TCP')
@@ -1224,6 +1245,9 @@ def main():
     DESKS = Desks(DATA_DIR / ('desks.json' if key == 4310 else f'desks-{key}.json'))
     PULL_REQUESTS = PullRequests(DATA_DIR / ('pull-requests.json' if key == 4310 else f'pull-requests-{key}.json'), output=lambda identity, cursor: TERMINALS.output(identity, cursor))
     SESSION_RECORDS = DATA_DIR / f'terminal-sessions-{key}.json'
+    PEER = saved_desks.Peer.of(key)
+    if key == 4310:
+        saved_desks.remember_browser_desk(DATA_DIR)
     atexit.register(COORDINATORS.close)
     DEVELOPMENT = not args.production
     WORKFLOWS.desk = desk_url(key)

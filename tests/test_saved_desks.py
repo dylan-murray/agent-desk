@@ -42,13 +42,17 @@ class SavedDeskStoreTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             again.saved_record(work)
 
-    def test_the_last_open_desk_cannot_be_saved_and_new_agents_go_to_an_open_one(self):
+    def test_the_last_open_desk_can_be_saved_and_an_empty_one_takes_its_place(self):
         work = self.desks.create('Work')['id']
         self.desks.keep('main', {})
-        with self.assertRaises(ValueError) as caught:
-            self.desks.keep(work, {})
-        self.assertIn('last open desk', str(caught.exception))
         self.assertEqual(self.desks.desk_for(None), work)
+        desks = self.desks.keep(work, {})
+        fresh = [d for d in desks if 'saved_at' not in d]
+        self.assertEqual([d['name'] for d in fresh], ['Desk 2'], 'Main is still taken by the saved desk')
+        self.assertEqual(self.desks.desk_for(None), fresh[0]['id'])
+        self.desks.delete('main', fresh[0]['id'], [])
+        self.desks.keep(fresh[0]['id'], {})
+        self.assertEqual([d['name'] for d in self.desks.snapshot() if 'saved_at' not in d], ['Main'])
 
     def test_deleting_a_saved_desk_forgets_its_record(self):
         work = self.desks.create('Work')['id']
@@ -187,10 +191,11 @@ class SavedDeskRouteTests(unittest.TestCase):
             saved = self.post('/api/desks/save', {'id': work, 'ids': [], 'layout': LAYOUT, 'name': ' Later '})
         self.assertEqual(next(d['name'] for d in saved['desks'] if d['id'] == work), 'Later')
 
-    def test_the_last_open_desk_is_refused_before_anything_stops(self):
-        with patch.object(server, 'shutdown_desk') as shutdown:
-            self.assertIn('last open desk', self.error('/api/desks/save', {'id': 'main', 'ids': [], 'layout': LAYOUT}))
-        shutdown.assert_not_called()
+    def test_the_last_open_desk_saves_and_leaves_an_empty_desk_open(self):
+        stopped = dict(stopped=[], closed=[], skipped=[], failed=[])
+        with patch.object(server, 'shutdown_desk', return_value=stopped), patch.object(server, 'COORDINATORS', Mock(agents=Mock(return_value=[]))):
+            saved = self.post('/api/desks/save', {'id': 'main', 'ids': [], 'layout': LAYOUT})
+        self.assertEqual([(d['name'], 'saved_at' in d) for d in saved['desks']], [('Main', True), ('Desk 2', False)])
 
 
 if __name__ == '__main__':

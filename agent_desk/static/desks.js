@@ -4,11 +4,14 @@
 // Inbox, Automations, Skills and Tools stay global, and an agent on another desk that needs you
 // still raises the alert, so switching desks never hides a question. A desk can be saved and closed
 // (its sessions stop) and reopened later from the menu, with its conversations resumed in its panes.
+// A desk saved in the other app (the browser desk or the desktop app) can be imported as a saved desk.
 const DESK_TAB='agent-desk-desk',DESK_LAST='agent-desk-last-desk',DESK_LIST='agent-desk-desks';
 // The last list seen, so a tab on another desk does not open on the first one and then jump.
 let desks=(()=>{try{const saved=JSON.parse(localStorage.getItem(DESK_LIST)||'null');if(Array.isArray(saved)&&saved.length&&saved.every(d=>typeof d?.id==='string'&&typeof d.name==='string'))return saved;}catch{}return [{id:'main',name:'Main'}];})();
 let activeDeskId=(()=>{try{return sessionStorage.getItem(DESK_TAB)||localStorage.getItem(DESK_LAST)||'main';}catch{return 'main';}})();
 let deskEditing=null;
+// The other app's saved desks, as the server read them from its fixed location: names, never paths.
+let peerDesks={app:'',desks:[]};
 function activeDesk(){return desks.find(d=>d.id===activeDeskId)||desks[0];}
 const firstOpenDesk=()=>desks.find(d=>!d.saved_at)||desks[0];
 // An agent the server has not placed yet (one this tab just started) is on the first desk.
@@ -92,17 +95,60 @@ function renderDeskMenu(){
   const create=deskEditing?.id==='new'
     ?`<form class="desk-new-form">${deskIcons.plus}<input class="desk-name-input" data-desk-new-input maxlength="40" spellcheck="false" placeholder="Name, e.g. Research" aria-label="New desk name"><button type="submit" class="desk-new-save">Create</button></form>`
     :`<button type="button" role="menuitem" class="desk-new" data-desk-new>${deskIcons.plus}<span>New desk</span></button>`;
-  const open=desks.filter(d=>!d.saved_at).length,plan=shutdownPlan(),nothing=!plan.stop.length&&!plan.close.length&&!openPaneIds.length;
-  const save=`<button type="button" role="menuitem" class="desk-new" data-desk-save${open<2||nothing?` disabled title="${open<2?'Open another desk first: the last open desk cannot be saved and closed':'Nothing on this desk to save'}"`:''}>${deskIcons.save}<span>Save &amp; close desk</span></button>`;
-  menu.innerHTML=`<div class="desk-menu-heading">Desks</div><div class="desk-options" role="group" aria-label="Desks">${rows}</div><div class="desk-menu-divider" role="separator"></div>${create}${save}<p class="desk-menu-error" role="alert" hidden></p>`;
+  const plan=shutdownPlan(),nothing=!plan.stop.length&&!plan.close.length&&!openPaneIds.length;
+  const save=`<button type="button" role="menuitem" class="desk-new" data-desk-save${nothing?' disabled title="Nothing on this desk to save"':''}>${deskIcons.save}<span>Save &amp; close desk</span></button>`;
+  const peerHeading=`Saved in the ${peerDesks.app}`,peer=peerDesks.desks.length?`<div class="desk-menu-heading desk-peer-heading">${escapeHTML(peerHeading)}</div><div class="desk-options" role="group" aria-label="${escapeHTML(peerHeading)}">${peerDesks.desks.map(peerDeskRow).join('')}</div>`:'';
+  menu.innerHTML=`<div class="desk-menu-heading">Desks</div><div class="desk-options" role="group" aria-label="Desks">${rows}</div>${peer}<div class="desk-menu-divider" role="separator"></div>${create}${save}<p class="desk-menu-error" role="alert" hidden></p>`;
   const input=menu.querySelector('.desk-name-input');
   if(input){input.focus();if(input.value)input.select();}
+}
+// A desk saved in the other app. Choosing it copies it in as a saved desk here; nothing starts. One
+// already copied in and not yet reopened says so, rather than making a second copy.
+function peerDeskRow(desk){
+  if(deskEditing?.id==='import'&&deskEditing.key===desk.key)return `<form class="desk-option editing desk-import-form" data-desk-import-form="${escapeHTML(desk.key)}">${deskMark(desk)}<input class="desk-name-input" data-desk-import-input value="${escapeHTML(deskEditing.name)}" maxlength="40" spellcheck="false" aria-label="Import as"><button type="submit" class="desk-new-save">Import</button></form>`;
+  const here=desks.find(d=>d.imported_from===desk.key&&d.saved_at),sessions=plural(desk.sessions,'session');
+  const title=here?`Already here as “${here.name}” · reopen it from the list above`:`Copy “${desk.name}” (${sessions}) in as a saved desk here · nothing starts until you reopen it`;
+  return `<div class="desk-option saved peer"><button type="button" role="menuitem" data-desk-import="${escapeHTML(desk.key)}"${here?' aria-disabled="true"':''} title="${escapeHTML(title)}">${deskMark(desk)}<span class="desk-option-name">${escapeHTML(desk.name)}</span><span class="desk-option-saved">${here?'Imported':'Import'}</span></button></div>`;
+}
+// The menu is already open when the list arrives: redraw only if it changed, and keep focus where it
+// was so Escape and the arrow keys still reach the menu.
+async function loadPeerDesks(){
+  const before=JSON.stringify(peerDesks);
+  try{peerDesks=await terminalRequest('/api/desks/peer',{});}catch{peerDesks={app:'',desks:[]};}
+  const menu=$('#desk-menu');
+  if(menu.hidden||deskEditing||JSON.stringify(peerDesks)===before)return;
+  const item=menu.contains(document.activeElement)?document.activeElement:null;
+  const same=item&&['data-desk-id','data-desk-reopen','data-desk-import','data-desk-new','data-desk-save'].map(name=>item.hasAttribute(name)&&`[${name}="${CSS.escape(item.getAttribute(name))}"]`).find(Boolean);
+  renderDeskMenu();
+  if(item)((same&&menu.querySelector(same))||menu.querySelector('[aria-checked="true"]'))?.focus();
+}
+const deskNameTaken=name=>desks.some(d=>d.name.toLocaleLowerCase()===name.trim().toLocaleLowerCase());
+// A name already used here is offered for renaming in place, as the Save as field does.
+function renamePeerImport(desk,name,message){
+  deskEditing={id:'import',key:desk.key,name};renderDeskMenu();
+  deskMenuError(message||`There is already a desk called “${desk.name}” here. Import it under another name.`);
+}
+async function importDesk(key,name){
+  const desk=peerDesks.desks.find(d=>d.key===key);
+  if(!desk||desks.some(d=>d.imported_from===key&&d.saved_at))return;
+  if(name===undefined&&deskNameTaken(desk.name))return renamePeerImport(desk,desk.name);
+  try{
+    const result=await terminalRequest('/api/desks/import',{source:desk.source,id:desk.id,...(name===undefined?{}:{name})});
+    deskEditing=null;setDesks(result.desks);renderDeskMenu();renderDeskSwitcher();
+    $(`#desk-menu [data-desk-reopen="${CSS.escape(result.desk.id)}"]`)?.focus();
+    toast(`Imported “${result.desk.name}” from the ${peerDesks.app} · choose it to reopen it here`);
+  }catch(error){
+    if(/already a desk/.test(error.message))return renamePeerImport(desk,name??desk.name,error.message);
+    if(deskEditing?.id==='import'){const input=$('#desk-menu [data-desk-import-input]');if(input){input.disabled=false;input.focus();}}
+    deskMenuError(error.message);
+  }
 }
 function deskMenuError(message){const error=$('#desk-menu .desk-menu-error');if(error){error.textContent=message;error.hidden=!message;}}
 function openDeskMenu(){
   const menu=$('#desk-menu');deskEditing=null;renderDeskMenu();menu.hidden=false;
   $('#desk-button').setAttribute('aria-expanded','true');
   (menu.querySelector('[aria-checked="true"]')||menu.querySelector('button'))?.focus();
+  loadPeerDesks();
 }
 function closeDeskMenu(restoreFocus){
   const menu=$('#desk-menu');if(!menu||menu.hidden)return;
@@ -191,7 +237,7 @@ async function openShutdownDesk(save=false){
   shutdownState={desk:desk.id,plan,save,drop:new Set()};
   dialog.querySelector('.desk-shutdown-mark').innerHTML=deskMark(desk);
   // Saving reads top to bottom on one edge: what happens, the name it is kept under (with its mark), what comes back.
-  dialog.classList.toggle('saving',save);
+  dialog.classList.toggle('saving',save);dialog.classList.remove('reopening');
   dialog.querySelector('h2').textContent=save?'Save and close this desk':`Shut down the “${desk.name}” desk?`;
   const summary=shutdownSummary(plan);
   dialog.querySelector('.desk-save-name').hidden=!save;dialog.querySelector('#save-desk-name').value=desk.name;dialog.querySelector('.desk-save-mark').innerHTML=deskMark(desk);
@@ -274,9 +320,15 @@ async function shutdownDesk(){
 // reopens its coordinators, and this tab puts them back in the panes and sizes they had.
 async function reopenDesk(id){
   const desk=desks.find(d=>d.id===id);if(!desk)return;
-  closeDeskMenu(false);toast(`Reopening “${desk.name}”…`);
+  closeDeskMenu(false);
+  if(desk.imported)return openImportedReopen(desk);
+  toast(`Reopening “${desk.name}”…`);
   let result;
   try{result=await terminalRequest('/api/desks/reopen',{id});}catch(error){toast(`Could not reopen “${desk.name}”: ${error.message}`);return;}
+  await reopened(desk,result);
+}
+async function reopened(desk,result){
+  const id=desk.id;
   setDesks(result.desks);switchDesk(id,{quiet:true,render:false});
   const moved=Object.fromEntries(result.results.filter(r=>r.new_id).map(r=>[r.id,r.new_id])),layout=result.layout||{layout:paneLayoutId,panes:[],pages:[]};
   for(const page of layout.pages)webPages.set(page.id,page);
@@ -291,7 +343,7 @@ async function reopenDesk(id){
   if(!failed.length){toast(`Reopened “${desk.name}”`+(result.results.length?` · ${[resumed&&`${resumed} resumed`,fresh&&`${fresh} started fresh`].filter(Boolean).join(', ')}`:''));return;}
   // Say which sessions did not come back and why; the rest are already open.
   const dialog=$('#shutdown-desk-dialog');
-  dialog.classList.remove('saving');dialog.querySelector('.desk-save-name').hidden=true;
+  dialog.classList.remove('saving','reopening');dialog.querySelector('.desk-save-name').hidden=true;shutdownState=null;
   dialog.querySelector('.desk-shutdown-mark').innerHTML=deskMark(desk);
   dialog.querySelector('h2').textContent=`“${desk.name}” reopened with ${result.results.length-failed.length} of ${plural(result.results.length,'session')}`;
   dialog.querySelector('.desk-shutdown-lede').textContent='The rest are open on the desk.';
@@ -299,6 +351,49 @@ async function reopenDesk(id){
   dialog.querySelector('.desk-shutdown-others').hidden=true;dialog.querySelector('[role=alert]').textContent='';
   dialog.querySelector('#confirm-shutdown-desk').hidden=true;dialog.querySelector('.close-dialog').textContent='Close';
   dialog.showModal();
+}
+// An imported desk is reopened from the same dialog, so nothing starts before it has been seen. Each
+// row says what that session comes back as here. One whose account this app does not have waits for
+// an account to be picked (or to be left out): it never falls back to another account on its own.
+const avatarMarks={codex:'CX',claude:'CC',grok:'GX',opencode:'OC',pi:'PI',cortex:'CO',shell:'SH'};
+const singleCLIs=[['grok','Grok'],['opencode','OpenCode'],['pi','Pi'],['cortex','Cortex Code']];
+function reopenAccountOptions(harness){
+  const choices=[...launchAccounts.map(a=>[a.id,a.label,a.harness]),...singleCLIs.filter(([id])=>!launchAccounts.some(a=>a.id===id)).map(([id,label])=>[id,label,id])];
+  return [...choices.filter(c=>c[2]===harness),...choices.filter(c=>c[2]!==harness)];
+}
+async function openImportedReopen(desk){
+  let sessions;
+  try{sessions=(await terminalRequest('/api/desks/reopen-preview',{id:desk.id})).sessions;}catch(error){toast(`Could not check “${desk.name}”: ${error.message}`);return;}
+  const dialog=$('#shutdown-desk-dialog'),confirm=dialog.querySelector('#confirm-shutdown-desk'),choices=new Map();
+  dialog.classList.remove('saving');dialog.classList.add('reopening');dialog.querySelector('.desk-save-name').hidden=true;
+  dialog.querySelector('.desk-shutdown-mark').innerHTML=deskMark(desk);
+  dialog.querySelector('h2').textContent=`Reopen “${desk.name}” here`;
+  dialog.querySelector('.desk-shutdown-lede').textContent=`Imported from the ${desk.imported}. Each session starts with this app's own accounts and resumes its conversation where it can. Nothing has started yet.`;
+  const row=r=>{
+    const avatar=`<span class="session-avatar" style="--agent-color:${agentColor(r.id)}">${avatarMarks[r.harness]||'AI'}</span>`,folder=escapeHTML(shortPath(r.cwd));
+    if(!r.needs_account)return `<li class="saved">${avatar}<span class="desk-shutdown-name"><strong>${escapeHTML(r.name)}</strong><small>${folder}</small></span><span class="desk-shutdown-outcome" title="${escapeHTML(r.detail)}">${r.resumes?'Resumes':'Starts fresh'}</span></li>`;
+    const picked=choices.get(r.id),options=reopenAccountOptions(r.harness).map(([id,label])=>`<option value="${escapeHTML(id)}"${picked===id?' selected':''}>${escapeHTML(label)}</option>`).join('');
+    return `<li class="needs-account${picked===''?' dropped':''}">${avatar}<span class="desk-shutdown-name"><strong>${escapeHTML(r.name)}</strong><small title="${escapeHTML(r.detail)}">No “${escapeHTML(r.profile)}” account here · ${folder}</small></span>`+
+      `<select class="desk-reopen-account" required data-reopen-account="${escapeHTML(r.id)}" aria-label="Account for ${escapeHTML(r.name)}"><option value="" disabled${picked===undefined?' selected':''}>Pick an account</option>${options}<option value="-"${picked===''?' selected':''}>Leave it out</option></select></li>`;
+  };
+  shutdownState={desk:desk.id,reopen:true,choices,render:()=>{
+    dialog.querySelector('.desk-shutdown-list').innerHTML=sessions.map(row).join('');
+    const waiting=sessions.filter(r=>r.needs_account&&!choices.has(r.id)).length,left=[...choices.values()].filter(v=>v==='').length;
+    confirm.disabled=Boolean(waiting);confirm.title=waiting?`Pick an account for ${plural(waiting,'session')} first`:'';
+    confirm.textContent=left===sessions.length?'Reopen it empty':left?`Reopen ${sessions.length-left} of ${sessions.length}`:'Reopen';
+  },confirm:async()=>{
+    confirm.disabled=true;confirm.textContent='Reopening…';
+    let result;
+    try{result=await terminalRequest('/api/desks/reopen',{id:desk.id,accounts:Object.fromEntries(choices)});}
+    catch(error){dialog.querySelector('[role=alert]').textContent=error.message;shutdownState.render();return;}
+    dialog.close();await reopened(desk,result);
+  }};
+  shutdownState.render();
+  dialog.querySelector('.desk-shutdown-others').hidden=true;dialog.querySelector('[role=alert]').textContent='';
+  confirm.hidden=false;confirm.classList.remove('danger');confirm.classList.add('primary');
+  dialog.querySelector('.close-dialog').textContent='Cancel';
+  dialog.showModal();
+  (dialog.querySelector('[data-reopen-account]')||confirm).focus();
 }
 function confirmDeleteDesk(id){
   const desk=desks.find(d=>d.id===id);if(!desk||desks.length<2)return;
@@ -318,8 +413,9 @@ document.addEventListener('DOMContentLoaded',()=>{
   button.onclick=()=>menu.hidden?openDeskMenu():closeDeskMenu(true);
   button.addEventListener('keydown',event=>{if(event.key==='ArrowDown'&&menu.hidden){event.preventDefault();openDeskMenu();}});
   menu.addEventListener('click',event=>{
-    const pick=event.target.closest('[data-desk-id]'),rename=event.target.closest('[data-desk-rename]'),remove=event.target.closest('[data-desk-delete]'),reopen=event.target.closest('[data-desk-reopen]');
+    const pick=event.target.closest('[data-desk-id]'),rename=event.target.closest('[data-desk-rename]'),remove=event.target.closest('[data-desk-delete]'),reopen=event.target.closest('[data-desk-reopen]'),copy=event.target.closest('[data-desk-import]');
     if(pick){switchDesk(pick.dataset.deskId);$('#desk-button').focus();}
+    else if(copy){if(copy.getAttribute('aria-disabled')!=='true')importDesk(copy.dataset.deskImport);}
     else if(reopen)reopenDesk(reopen.dataset.deskReopen);
     else if(event.target.closest('[data-desk-save]'))openShutdownDesk(true);
     else if(rename){deskEditing={id:rename.dataset.deskRename};renderDeskMenu();}
@@ -328,13 +424,19 @@ document.addEventListener('DOMContentLoaded',()=>{
   });
   menu.addEventListener('submit',event=>{
     event.preventDefault();
+    const importing=event.target.closest('[data-desk-import-form]');
+    if(importing){
+      const input=importing.querySelector('input'),name=input.value.trim();
+      if(!name){deskMenuError('Enter a name for the desk');input.focus();return;}
+      input.disabled=true;deskEditing.name=name;importDesk(importing.dataset.deskImportForm,name);return;
+    }
     const input=menu.querySelector('[data-desk-new-input]'),name=input.value.trim();
     if(!name){deskMenuError('Enter a name for the desk');input.focus();return;}
     input.disabled=true;
     createDesk(name).catch(error=>{input.disabled=false;deskMenuError(error.message);input.focus();});
   });
   menu.addEventListener('keydown',event=>{
-    const renameInput=event.target.closest('[data-desk-rename-input]'),newInput=event.target.closest('[data-desk-new-input]');
+    const renameInput=event.target.closest('[data-desk-rename-input]'),newInput=event.target.closest('[data-desk-new-input],[data-desk-import-input]');
     if(event.key==='Escape'){
       event.preventDefault();event.stopPropagation();
       if(deskEditing){deskEditing=null;renderDeskMenu();(menu.querySelector('[aria-checked="true"]')||menu.querySelector('button'))?.focus();}
@@ -349,15 +451,20 @@ document.addEventListener('DOMContentLoaded',()=>{
     }
     if(renameInput||newInput)return;
     if(event.key==='ArrowDown'||event.key==='ArrowUp'){
-      const items=[...menu.querySelectorAll('[data-desk-id],[data-desk-reopen],[data-desk-new],[data-desk-save]:not(:disabled)')],index=items.indexOf(document.activeElement);
+      const items=[...menu.querySelectorAll('[data-desk-id],[data-desk-reopen],[data-desk-import]:not([aria-disabled="true"]),[data-desk-new],[data-desk-save]:not(:disabled)')],index=items.indexOf(document.activeElement);
       event.preventDefault();items[(index+(event.key==='ArrowDown'?1:items.length-1))%items.length]?.focus();
     }else if(event.key==='Tab'&&!event.target.closest('.desk-new-form'))closeDeskMenu(false);
   });
   document.addEventListener('pointerdown',event=>{if(!menu.hidden&&!event.target.closest('#desk-switcher'))closeDeskMenu(false);},true);
   $('#desk-shutdown').onclick=()=>openShutdownDesk();
-  $('#confirm-shutdown-desk').onclick=shutdownDesk;
+  $('#confirm-shutdown-desk').onclick=()=>shutdownState?.confirm?shutdownState.confirm():shutdownDesk();
   $('#save-desk-name').oninput=event=>{const desk=desks.find(d=>d.id===shutdownState?.desk);if(desk)$('#shutdown-desk-dialog .desk-save-mark').innerHTML=deskMark({...desk,name:event.target.value.trim()||desk.name});};
   $('#save-desk-name').onkeydown=event=>{if(event.key==='Enter'){event.preventDefault();$('#confirm-shutdown-desk').click();}};
+  $('#shutdown-desk-dialog .desk-shutdown-list').onchange=event=>{
+    const select=event.target.closest('[data-reopen-account]');if(!select||!shutdownState?.choices)return;
+    shutdownState.choices.set(select.dataset.reopenAccount,select.value==='-'?'':select.value);
+    shutdownState.render();$(`#shutdown-desk-dialog [data-reopen-account="${CSS.escape(select.dataset.reopenAccount)}"]`)?.focus();
+  };
   $('#shutdown-desk-dialog .desk-shutdown-list').onclick=event=>{
     const button=event.target.closest('[data-shutdown-drop]');if(!button||!shutdownState)return;
     const id=button.dataset.shutdownDrop,ids=[id,...shutdownState.descendants(id)],drop=!shutdownState.drop.has(id);

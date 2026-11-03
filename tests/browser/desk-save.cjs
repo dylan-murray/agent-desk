@@ -87,7 +87,7 @@ const outcomes=page=>page.$$eval('#shutdown-desk-dialog .desk-shutdown-list li',
   await page.click('#desk-button');
   const menu=await page.evaluate(name=>{const row=[...document.querySelectorAll('#desk-menu .desk-option.saved')].find(r=>r.textContent.includes(name));return {tag:row?.querySelector('.desk-option-saved')?.textContent,save:document.querySelector('[data-desk-save]').disabled,saveTitle:document.querySelector('[data-desk-save]').title};},DESK);
   check('the menu lists it as Saved',()=>assert.equal(menu.tag,'Saved'));
-  check('...and will not save the last open desk',()=>assert.deepEqual([menu.save,menu.saveTitle],[true,'Open another desk first: the last open desk cannot be saved and closed']));
+  check('...and the last open desk can still be saved, unless it has nothing on it',()=>assert.ok(!menu.save||menu.saveTitle==='Nothing on this desk to save',menu.saveTitle));
   await page.screenshot({path:path.join(OUT,'desk-save-04-saved-menu.png')});
 
   // Reopen it.
