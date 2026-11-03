@@ -57,6 +57,12 @@
 .desk-shutdown-other .desk-mark{width:18px;height:18px;border-radius:5px;font-size:9px}
 #shutdown-desk-dialog .desk-shutdown-others[hidden],#shutdown-desk-dialog .error-banner:empty,#confirm-shutdown-desk[hidden]{display:none}
 #shutdown-desk-dialog .dialog-actions{margin-top:16px}
+/* Reopening an imported desk: a session whose account is missing here asks for one in its row. */
+.desk-shutdown-list li.needs-account .desk-shutdown-name small{color:#e0b878}
+.desk-reopen-account{flex-shrink:0;max-width:170px;height:28px;padding:0 8px;border:1px solid #d7ad7366;border-radius:6px;background:#101012;color:#dce0ea;font:11.5px -apple-system,BlinkMacSystemFont,sans-serif;cursor:pointer}
+.desk-reopen-account:focus{outline:2px solid #789ed76b;outline-offset:1px;border-color:#789ed770}
+.desk-shutdown-list li.needs-account:has(select:valid) .desk-reopen-account{border-color:#ffffff14}
+#confirm-shutdown-desk:disabled{opacity:.5;cursor:default}
 
 /* Sessions on other desks that need you: the same amber as a folder's alert, with a count. */
 .desk-elsewhere{display:flex;align-items:center;gap:3px;flex-shrink:0;height:20px;padding:0 6px 0 4px;border:1px solid #f0b84f85;border-radius:6px;background:#f0b84f2e;color:#ffc964;font-size:10px;font-variant-numeric:tabular-nums;animation:session-needs-you 1.9s ease-in-out infinite}
@@ -69,7 +75,7 @@
 .desk-menu-heading{padding:5px 8px 4px;color:var(--ink-muted);font-size:9px;font-weight:600;letter-spacing:1.1px;text-transform:uppercase}
 .desk-options{display:flex;flex-direction:column;gap:2px;max-height:min(360px,60vh);overflow:auto}
 .desk-option{position:relative;display:flex;align-items:center;border-radius:6px}
-.desk-option>button[data-desk-id],.desk-option>button[data-desk-reopen]{display:flex;align-items:center;gap:8px;flex:1;min-width:0;min-height:36px;margin:0;padding:4px 8px 4px 5px;border:0;border-radius:6px;background:none;box-shadow:none;color:var(--ink-2);font-size:12px;text-align:left;cursor:pointer}
+.desk-option>button[data-desk-id],.desk-option>button[data-desk-reopen],.desk-option>button[data-desk-import]{display:flex;align-items:center;gap:8px;flex:1;min-width:0;min-height:36px;margin:0;padding:4px 8px 4px 5px;border:0;border-radius:6px;background:none;box-shadow:none;color:var(--ink-2);font-size:12px;text-align:left;cursor:pointer}
 .desk-option .desk-mark{width:24px;height:24px;border-radius:7px;font-size:11px}
 .desk-option-name{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .desk-option-count{min-width:16px;color:var(--ink-muted);font-size:10px;font-variant-numeric:tabular-nums;text-align:right}
@@ -82,10 +88,15 @@
 .desk-option.current .desk-option-name{color:#a8c9f4}
 /* A saved desk is closed: its mark and name are quieter, and it says Saved where an open desk counts its sessions. */
 .desk-option.saved .desk-mark{opacity:.55}
-.desk-option.saved>button[data-desk-reopen]{color:var(--ink-muted)}
-.desk-option.saved:hover>button[data-desk-reopen]{color:var(--ink-1)}
+.desk-option.saved>button[data-desk-reopen],.desk-option.saved>button[data-desk-import]{color:var(--ink-muted)}
+.desk-option.saved:hover>button[data-desk-reopen],.desk-option.saved:hover>button[data-desk-import]:not([aria-disabled=true]){color:var(--ink-1)}
+/* The other app's saved desks: a quiet heading under the list, and rows that copy one in. One already copied in says Imported and does nothing. */
+.desk-peer-heading{margin-top:4px}
+.desk-option.peer>button[aria-disabled=true]{cursor:default}
+.desk-option.peer:has(>button[aria-disabled=true]):hover{background:none}
+.desk-option.peer>button:not([aria-disabled=true]):hover .desk-option-saved{border-color:#35557b;color:#b4cff0}
 .desk-option-saved{padding:1px 6px;border:1px solid var(--border);border-radius:5px;color:var(--ink-muted);font-size:9.5px;letter-spacing:.2px}
-.desk-option>button[data-desk-id]:focus-visible,.desk-option>button[data-desk-reopen]:focus-visible,.desk-new:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.desk-option>button[data-desk-id]:focus-visible,.desk-option>button[data-desk-reopen]:focus-visible,.desk-option>button[data-desk-import]:focus-visible,.desk-new:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 /* Rename and delete cover the count on hover or keyboard focus, so at rest the list reads
    as a plain list with its counts flush right. */
 .desk-option-actions{position:absolute;top:50%;right:4px;display:flex;gap:1px;padding-left:10px;border-radius:5px;background:linear-gradient(90deg,transparent,#222225 10px);transform:translateY(-50%);opacity:0;pointer-events:none}

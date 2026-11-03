@@ -87,8 +87,14 @@ class Desks:
             raise ValueError(f'There is already a desk called “{name}”')
 
     def _public(self):
-        """The desks as the page sees them: a saved desk says when it was saved."""
-        return [dict(d, saved_at=self.saved[d['id']]['at']) if d['id'] in self.saved else dict(d) for d in self.desks]
+        """The desks as the page sees them: a saved desk says when it was saved, and which app it came from if imported."""
+        def public(desk):
+            record = self.saved.get(desk['id'])
+            if record is None:
+                return dict(desk)
+            source = record.get('imported')
+            return dict(desk, saved_at=record['at'], **({'imported': source['app'], 'imported_from': source.get('from')} if isinstance(source, dict) else {}))
+        return [public(d) for d in self.desks]
 
     def snapshot(self):
         with self.lock:
@@ -130,7 +136,8 @@ class Desks:
                 return self._desk(identity)['id']
             return next((d['id'] for d in self.desks if d['id'] not in self.saved), self.desks[0]['id'])
 
-    def create(self, name):
+    def create(self, name, saved=None):
+        """A new desk; with saved, it starts saved and closed with that record (one imported from the other app)."""
         name = desk_name(name)
         with self.lock:
             self._load()
@@ -139,8 +146,10 @@ class Desks:
             self._name_free(name)
             desk = dict(id='desk-' + secrets.token_hex(4), name=name)
             self.desks.append(desk)
+            if saved is not None:
+                self.saved[desk['id']] = dict(saved, at=time.time())
             self._save()
-            return dict(desk)
+            return next(d for d in self._public() if d['id'] == desk['id'])
 
     def rename(self, identity, name):
         name = desk_name(name)
@@ -191,14 +200,17 @@ class Desks:
             return self._public()
 
     def keep(self, identity, record):
-        """Mark a desk saved, with what reopening it needs. At least one desk stays open."""
+        """Mark a desk saved, with what reopening it needs. Saving the last open desk opens an empty
+        one in its place, so there is always a desk to show."""
         with self.lock:
             self._load()
             self._desk(identity)
             if identity in self.saved:
                 raise ValueError('That desk is already saved')
             if all(d['id'] == identity or d['id'] in self.saved for d in self.desks):
-                raise ValueError('Open another desk first: the last open desk cannot be saved and closed')
+                taken = {d['name'].casefold() for d in self.desks}
+                name = next(n for n in ('Main', *(f'Desk {i}' for i in range(2, 200))) if n.casefold() not in taken)
+                self.desks.append(dict(id='desk-' + secrets.token_hex(4), name=name))
             self.saved[identity] = dict(record, at=time.time())
             self._save()
             return self._public()
