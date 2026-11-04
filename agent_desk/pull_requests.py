@@ -74,9 +74,27 @@ def links_in(text):
     return list(dict.fromkeys(link.rstrip('/') for link in links))
 
 
+def latest_runs(rollup):
+    """The newest run of each check. A workflow run again on the same commit (an edited pull request
+    description re-triggers pull_request workflows) leaves the run it superseded in the rollup, usually cancelled."""
+    latest = {}
+    for check in rollup or []:
+        if check.get('__typename') != 'CheckRun':
+            latest[('context', id(check))] = check
+            continue
+        key = ('run', check.get('workflowName') or '', check.get('name') or '')
+        started = str(check.get('startedAt') or '')
+        # A run that hasn't started yet is the newest; GitHub reports its start as missing or year 1.
+        started = started if started and not started.startswith('0001') else '~'
+        if key not in latest or started >= str(latest[key].get('_started')):
+            latest[key] = dict(check, _started=started)
+    return list(latest.values())
+
+
 def checks_of(rollup):
     failed, pending = [], False
-    for check in rollup or []:
+    rollup = latest_runs(rollup)
+    for check in rollup:
         outcome = str(check.get('conclusion') or check.get('state') or '').upper()
         if outcome in FAILED:
             failed.append({'name': str(check.get('name') or check.get('context') or 'Check')[:120],
