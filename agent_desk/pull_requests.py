@@ -163,7 +163,8 @@ class PullRequests:
 
     def forget(self, terminal, url, repo=None):
         """Stop showing a pull request in this terminal, even if it is printed again: one it printed, or
-        its folder's branch pull request. A new pull request on that branch has a new URL, so it still shows."""
+        its folder's branch pull request, open or not. It sends nothing more to the Inbox for this terminal.
+        A new pull request on that branch has a new URL, so it still shows."""
         with self.lock:
             entry = self.folders.get(repo) if repo else None
             if url not in self.printed.get(terminal, {}) and not (entry and entry['pr'] and entry['pr']['url'] == url):
@@ -308,9 +309,11 @@ class PullRequests:
         pr, reviews = (summary(data), reviews_of(data)) if data else (None, {})
         with self.lock:
             self.folders[repo] = {'branch': branch, 'pr': pr, 'reviews': reviews, 'failures': failures, 'next': now + delay}
-            # The first look at a pull request is its baseline: only changes seen while watching reach the Inbox.
-            if previous and previous['pr'] and pr and previous['branch'] == branch and previous['pr']['number'] == pr['number']:
-                self.compare(previous, pr, reviews, Path(repo).name, branch, terminal, now)
+            # The first look at a pull request is its baseline: only changes seen while watching reach the Inbox,
+            # and only for a terminal in the folder that still shows it.
+            watching = [t for t, r in self.repos.items() if r == repo and pr and pr['url'] not in self.forgotten.get(t, ())]
+            if watching and previous and previous['pr'] and previous['branch'] == branch and previous['pr']['number'] == pr['number']:
+                self.compare(previous, pr, reviews, Path(repo).name, branch, terminal if terminal in watching else watching[0], now)
 
     def observe_link(self, gh, url, terminal, cwd, now):
         previous = self.links.get(url)
