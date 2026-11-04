@@ -559,13 +559,16 @@ function mountPTY(view,agent){
     event.preventDefault();input(()=>sendText('\x1b\r'));return false;
   });
   term.onBinary(data=>input(()=>send([btoa(data)])));
-  function resize(force=false){
+  // Another tab, or the desktop app, may show this terminal at another size. A hidden tab keeps its
+  // size to itself, and the tab being looked at claims the terminal again (claimTerminalSizes).
+  function resize(force=false,claim=false){
     if(view.disposed||view.restoring||!target.clientWidth||!target.clientHeight)return;
     // A pane being resized is refitted once, on release, not at every cell it passes.
-    if(writing||paneResize){clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>resize(force),30);return;}
+    if(writing||paneResize){clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>resize(force,claim),30);return;}
     const oldCols=term.cols,oldRows=term.rows;fit.fit();
     if(oldCols!==term.cols||oldRows!==term.rows)dirty=true;
-    if(!view.exited&&(force||oldCols!==term.cols||oldRows!==term.rows)){
+    if(document.hidden&&force)view.redrawOnClaim=true;
+    if(!view.exited&&!document.hidden&&(force||claim||oldCols!==term.cols||oldRows!==term.rows)){
       const cols=term.cols,rows=term.rows;
       view.queue=view.queue.then(async()=>{
         if(view.disposed)return;
@@ -575,6 +578,7 @@ function mountPTY(view,agent){
     }
     view.checkpoint();
   }
+  view.claimSize=()=>{const redraw=!!view.redrawOnClaim;view.redrawOnClaim=false;resize(redraw,true);};
   view.observer=new ResizeObserver(()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>resize(),100);});view.observer.observe(target);
   // Applies one reply from either transport; returns how many bytes it wrote, or null once the session has ended.
   async function consume(output){
@@ -643,7 +647,9 @@ function mountPTY(view,agent){
   })().catch(error=>{status.textContent=error.message;});
 }
 window.addEventListener('pagehide',()=>{for(const view of paneViews.values())view.checkpoint?.();});
-document.addEventListener('visibilitychange',()=>{if(document.hidden)for(const view of paneViews.values())view.checkpoint?.();});
+function claimTerminalSizes(){if(!document.hidden)for(const view of paneViews.values())view.claimSize?.();}
+document.addEventListener('visibilitychange',()=>{if(document.hidden)for(const view of paneViews.values())view.checkpoint?.();else claimTerminalSizes();});
+addEventListener('focus',claimTerminalSizes);
 
 // How each CLI reopens a conversation. One without a picker flag offers only the latest session or an ID.
 const resumeFlags={
