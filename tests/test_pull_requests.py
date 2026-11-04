@@ -35,6 +35,18 @@ class ChecksTests(unittest.TestCase):
         self.assertEqual((state, total), ('failing', 2))
         self.assertEqual(failed, [{'name': 'deploy', 'url': 'https://ci.example.test/1'}])
 
+    def test_a_run_superseded_on_the_same_commit_does_not_count(self):
+        def attempt(conclusion, started, status='COMPLETED', workflow='PR Checks'):
+            return dict(run('PR Checks', status, conclusion), workflowName=workflow, startedAt=started)
+        cancelled, passed = attempt('CANCELLED', '2026-01-02T18:00:25Z'), attempt('SUCCESS', '2026-01-02T18:01:00Z')
+        self.assertEqual(checks_of([cancelled, passed, run('lint', 'COMPLETED', 'SUCCESS')])[0::2], ('passing', 2))
+        self.assertEqual(checks_of([passed, cancelled])[0], 'passing')
+        # A newer run that is still queued, or failed, decides the check.
+        self.assertEqual(checks_of([passed, attempt('', '0001-01-01T00:00:00Z', 'QUEUED')])[0], 'pending')
+        self.assertEqual(checks_of([passed, attempt('FAILURE', '2026-01-02T18:02:00Z')])[0], 'failing')
+        # The same job name in two workflows is two checks, and a lone cancelled run still fails.
+        self.assertEqual(checks_of([passed, attempt('CANCELLED', '2026-01-02T18:02:00Z', workflow='Deploy')])[0], 'failing')
+
 
 class GhFixture(unittest.TestCase):
     """Fixture Git repositories and a stub gh on PATH that answers from JSON files."""
