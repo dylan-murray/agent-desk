@@ -5,7 +5,9 @@
 // out of its way and rise into any gap, and picking a layout again tiles everything afresh.
 // Panes that share the dragged edge give or take the difference, so the row still fills.
 // Whatever changes, the panes cover the whole width and at least one screen: no dead space.
-const PANE_GRID=12,PANE_MIN=3,PANE_MAX_ROWS=24,PANE_LIMIT=16;
+const PANE_GRID=12,PANE_MIN=3,PANE_MAX_ROWS=24;
+// How many panes a desk holds is a server setting (Settings › Desks); each agents poll repeats it.
+let PANE_LIMIT=globalThis.AGENT_DESK_CONFIG?.terminal_limit||32;
 const PANE_LAYOUTS=[
   {id:'grid',label:'2 × 2',cols:2,rows:2,screen:4,growth:'Four quadrants. More panes add rows of two below.'},
   {id:'rows',label:'Rows',cols:1,rows:2,screen:2,growth:'Two stacked rows. Each new pane is added below.'},

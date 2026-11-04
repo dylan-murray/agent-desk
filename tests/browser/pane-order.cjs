@@ -1,10 +1,10 @@
 // Panes reorder by dragging their header row
 // and by keyboard, the order must persist the way pane state already persists, and none of
 // the pane behaviour around it (focus, the pane cap, close, rename) may change. The cap is
-// now 16 panes (pane-layouts.cjs covers layouts and resizing).
+// now 32 panes (pane-layouts.cjs covers layouts and resizing).
 const {chromium}=require('playwright');const assert=require('node:assert/strict');
 const APP=process.env.AGENT_DESK_TEST_URL||'http://127.0.0.1:4310/';
-const IDS=Array.from({length:17},(_,i)=>'pane-fixture-'+String.fromCharCode(97+i));
+const IDS=Array.from({length:33},(_,i)=>'pane-fixture-'+(i+10).toString(36));
 const OPEN=IDS.slice(0,3);
 const agent=id=>({id,terminal_id:id,name:'Pane fixture '+id.slice(-1),cwd:'/tmp/'+id,harness:'codex',status:'unknown',
   source:'terminal',task:'Interactive terminal',project:'fixture',events:[],question:null,exit_code:null,updated:Date.now()/1000});
@@ -278,10 +278,10 @@ async function dragHeader(page,fromIndex,toIndex,side){
   await page.evaluate(id=>selectPane(id,true),IDS[3]);
   await page.waitForTimeout(400);
   const atCap=await order(page);
-  await page.evaluate(ids=>{for(const id of ids)selectPane(id,true);},IDS.slice(4,16));
+  await page.evaluate(ids=>{for(const id of ids)selectPane(id,true);},IDS.slice(4,32));
   await page.waitForTimeout(400);
   const fullCap=await order(page);
-  await page.evaluate(id=>selectPane(id,true),IDS[16]);
+  await page.evaluate(id=>selectPane(id,true),IDS[32]);
   await page.waitForTimeout(400);
   const overCap=await order(page);
   const capToast=await page.textContent('#toast').catch(()=>null);
@@ -289,18 +289,18 @@ async function dragHeader(page,fromIndex,toIndex,side){
   await page.locator('#terminal > .terminal-pane').nth(1).locator('.pane-close').click();
   await page.waitForTimeout(400);
   const afterClose=await order(page);
-  check('focus, the open-pane row highlight, the 16-pane cap and closing are unchanged',()=>{
+  check('focus, the open-pane row highlight, the 32-pane cap and closing are unchanged',()=>{
     assert.equal(focused.length,1,'more or fewer than one pane is focused');
     assert.equal(openRows.length,3,'the open-pane row highlight changed');
     assert.equal(atCap.length,4,'a fourth pane could not be opened');
-    assert.equal(fullCap.length,16,'sixteen panes could not be opened');
-    assert.deepEqual(overCap,fullCap,'a seventeenth pane was opened past the cap');
-    assert.equal(capToast,'16 panes are open. Close a pane to add another.');
+    assert.equal(fullCap.length,32,'thirty-two panes could not be opened');
+    assert.deepEqual(overCap,fullCap,'a thirty-third pane was opened past the cap');
+    assert.equal(capToast,'32 panes are open. Close a pane to add another.');
     assert.deepEqual([...afterClose].sort(),beforeClose.filter((_,i)=>i!==1).sort(),'closing removed the wrong pane');
   });
 
   check('no page errors',()=>assert.deepEqual(errors,[]));
  }finally{await browser.close();}
  if(failures.length){console.log('FAIL: '+failures.join('; '));process.exit(1);}
- console.log('PASS: header-row drag handle, drop feedback, persisted order, keyboard moves, rename/close/focus, 16-pane cap');
+ console.log('PASS: header-row drag handle, drop feedback, persisted order, keyboard moves, rename/close/focus, 32-pane cap');
 })();

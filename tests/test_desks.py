@@ -179,10 +179,10 @@ class DeskRouteTests(unittest.TestCase):
             return json.load(caught.exception)['error']
         with patch.object(server, 'TERMINALS', server.DeskTerminals(backend)), \
              patch('agent_desk.standalone_agent.launch_payload', side_effect=lambda p: p):
-            on_main = [launch(desk='main')['id'] for _ in range(server.TERMINALS_PER_DESK)]
-            self.assertEqual(refused(desk='main'), '16 terminals are already running on Main. Stop one before launching another.')
-            # A full Main desk leaves Research its own sixteen.
-            on_research = [launch(desk=research)['id'] for _ in range(server.TERMINALS_PER_DESK)]
+            on_main = [launch(desk='main')['id'] for _ in range(32)]
+            self.assertEqual(refused(desk='main'), '32 terminals are already running on Main. Stop one before launching another.')
+            # A full Main desk leaves Research its own.
+            on_research = [launch(desk=research)['id'] for _ in range(32)]
             self.assertIn('already running on Research', refused(desk=research))
             # A child sent without a desk counts on its parent's desk.
             self.assertIn('already running on Main', refused(parent_id=on_main[0]))
@@ -192,7 +192,48 @@ class DeskRouteTests(unittest.TestCase):
             self.post('/api/desks/place', {'ids': [on_research[0]], 'desk': 'main'})
             self.assertEqual(launch(desk=research)['desk'], research)
             self.assertIn('already running on Main', refused(desk='main'))
-        self.assertEqual(len(backend.rows), 2 * server.TERMINALS_PER_DESK + 2, "a refused launch starts nothing")
+        self.assertEqual(len(backend.rows), 2 * 32 + 2, "a refused launch starts nothing")
+
+    def test_the_terminal_limit_is_a_setting_only_the_desk_page_changes(self):
+        class Backend:
+            def __init__(self):
+                self.rows = []
+            def list(self):
+                return [dict(row) for row in self.rows]
+            def launch(self, payload, coordinator=None):
+                row = dict(id=f'terminal-{len(self.rows)}', parent_id=None, exit_code=None)
+                self.rows.append(row)
+                return Mock(id=row['id'], info=lambda: dict(row))
+        backend = Backend()
+        launch = lambda: self.post('/api/terminals/launch', {'cwd': '/', 'argv': ['sh'], 'desk': 'main'})
+        def refused():
+            with self.assertRaises(HTTPError) as caught:
+                launch()
+            return json.load(caught.exception)['error']
+        with urlopen(self.base + '/config.js') as response:
+            self.assertIn('"terminal_limit": 32', response.read().decode())
+        # An agent holds the helper token: it may not raise its own desk's limit.
+        with self.assertRaises(HTTPError) as caught:
+            self.post('/api/desks/limit', {'limit': 64}, {'X-Agent-Desk-Terminal': server.HELPER_TOKEN})
+        self.assertEqual(caught.exception.code, 403)
+        caught.exception.close()
+        for bad in (15, 65, '48', 40.0, None):
+            with self.assertRaises(HTTPError, msg=bad) as caught:
+                self.post('/api/desks/limit', {'limit': bad})
+            self.assertEqual(caught.exception.code, 400)
+            caught.exception.close()
+        self.assertEqual(server.DESKS.terminal_limit(), 32)
+        with patch.object(server, 'TERMINALS', server.DeskTerminals(backend)), \
+             patch('agent_desk.standalone_agent.launch_payload', side_effect=lambda p: p):
+            self.assertEqual(self.post('/api/desks/limit', {'limit': 64}), {'terminal_limit': 64})
+            for _ in range(64):
+                launch()
+            self.assertEqual(refused(), '64 terminals are already running on Main. Stop one before launching another.')
+            # Lowering stops nothing; the desk just refuses more until it is under the new limit.
+            self.post('/api/desks/limit', {'limit': 16})
+            self.assertIn('16 terminals are already running on Main', refused())
+            self.assertEqual(sum(row['exit_code'] is None for row in backend.rows), 64)
+        self.assertEqual(Desks(server.DESKS.path).terminal_limit(), 16, 'the setting did not survive a restart')
 
     def test_launching_onto_a_deleted_desk_is_refused_before_anything_starts(self):
         with patch.object(server.TERMINALS, 'launch') as launch:

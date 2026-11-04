@@ -17,6 +17,9 @@ import time
 from pathlib import Path
 
 MAX_DESKS = 32
+# How many terminals a desk holds unless Settings says otherwise, and the most it can be set to.
+# The page keeps one terminal stream subscription per open pane, so a stream allows twice the most.
+TERMINALS_PER_DESK, MOST_TERMINALS_PER_DESK = 32, 64
 # Placements outlive the agents they name (a closed terminal leaves its record behind), so
 # the oldest are dropped past this many. Live agents are re-placed whenever they move.
 MAX_PLACEMENTS = 4096
@@ -37,6 +40,7 @@ class Desks:
         self.desks = None
         self.placed = None
         self.saved = None
+        self.limit = None
 
     def _load(self):
         if self.desks is not None:
@@ -44,7 +48,7 @@ class Desks:
         try:
             data = json.loads(self.path.read_text())
         except FileNotFoundError:
-            self.desks, self.placed, self.saved = [dict(FIRST)], {}, {}
+            self.desks, self.placed, self.saved, self.limit = [dict(FIRST)], {}, {}, TERMINALS_PER_DESK
             return
         except (OSError, ValueError) as exc:
             # Never quietly start over on top of someone's desks: keep the unreadable file
@@ -52,7 +56,7 @@ class Desks:
             aside = self.path.with_name(f'{self.path.name}.unreadable-{int(time.time())}')
             os.replace(self.path, aside)
             print(f'Could not read {self.path} ({exc}); moved it to {aside} and started with one desk', flush=True)
-            self.desks, self.placed, self.saved = [dict(FIRST)], {}, {}
+            self.desks, self.placed, self.saved, self.limit = [dict(FIRST)], {}, {}, TERMINALS_PER_DESK
             return
         desks, seen = [], set()
         for item in data.get('desks', []) if isinstance(data, dict) else []:
@@ -69,11 +73,13 @@ class Desks:
         self.placed = {k: v for k, v in placed.items() if isinstance(k, str) and v in known} if isinstance(placed, dict) else {}
         saved = data.get('saved', {}) if isinstance(data, dict) else {}
         self.saved = {k: v for k, v in saved.items() if k in known and isinstance(v, dict)} if isinstance(saved, dict) else {}
+        limit = data.get('terminal_limit') if isinstance(data, dict) else None
+        self.limit = limit if type(limit) is int and TERMINALS_PER_DESK // 2 <= limit <= MOST_TERMINALS_PER_DESK else TERMINALS_PER_DESK
 
     def _save(self):
         self.path.parent.mkdir(parents=True, exist_ok=True)
         temp = self.path.with_name(self.path.name + '.tmp')
-        temp.write_text(json.dumps(dict(desks=self.desks, placed=self.placed, saved=self.saved), indent=2) + '\n')
+        temp.write_text(json.dumps(dict(desks=self.desks, placed=self.placed, saved=self.saved, terminal_limit=self.limit), indent=2) + '\n')
         os.replace(temp, self.path)
 
     def _desk(self, identity):
@@ -100,6 +106,21 @@ class Desks:
         with self.lock:
             self._load()
             return self._public()
+
+    def terminal_limit(self):
+        with self.lock:
+            self._load()
+            return self.limit
+
+    def set_terminal_limit(self, value):
+        """Lowering the limit stops nothing: a desk over it only refuses new terminals until some close."""
+        if type(value) is not int or not TERMINALS_PER_DESK // 2 <= value <= MOST_TERMINALS_PER_DESK:
+            raise ValueError(f'Choose {TERMINALS_PER_DESK // 2} to {MOST_TERMINALS_PER_DESK} terminals per desk')
+        with self.lock:
+            self._load()
+            self.limit = value
+            self._save()
+            return value
 
     def _resolve(self, agents):
         by_id = {a['id']: a for a in agents if isinstance(a.get('id'), str)}

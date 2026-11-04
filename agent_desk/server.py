@@ -71,11 +71,10 @@ TERMINAL_TOKEN = secrets.token_urlsafe(32)
 # Local helpers get their own token, kept in an owner-only file. The page's token never touches disk,
 # so the two can be told apart: see pane_guard.
 HELPER_TOKEN = secrets.token_urlsafe(32)
-TERMINALS_PER_DESK = 16
 
 
 class DeskTerminals:
-    """The terminals, with at most TERMINALS_PER_DESK running on any one desk. Every launch goes
+    """The terminals, with at most the Settings limit running on any one desk. Every launch goes
     through here, coordinators' workers included, and a terminal started on a named desk is
     placed there before the lock is released, so the next launch counts it on the right desk."""
     def __init__(self, terminals):
@@ -95,9 +94,10 @@ class DeskTerminals:
             arriving = dict(id='\0launching', parent_id=payload.get('parent_id'))
             desks = DESKS.annotate([*rows, arriving])
             target = desk or arriving['desk']
-            if sum(row['exit_code'] is None and row['desk'] == target for row in rows) >= TERMINALS_PER_DESK:
+            limit = DESKS.terminal_limit()
+            if sum(row['exit_code'] is None and row['desk'] == target for row in rows) >= limit:
                 name = next(d['name'] for d in desks if d['id'] == target)
-                raise ValueError(f'{TERMINALS_PER_DESK} terminals are already running on {name}. Stop one before launching another.')
+                raise ValueError(f'{limit} terminals are already running on {name}. Stop one before launching another.')
             session = self.terminals.launch(payload, coordinator=coordinator)
             if desk:
                 DESKS.place([session.id], desk)
@@ -582,7 +582,7 @@ class Handler(SimpleHTTPRequestHandler):
             self.path = '/index.html'
             return super().do_GET()
         if route == '/config.js':
-            body = ('window.AGENT_DESK_CONFIG=' + json.dumps({'development': DEVELOPMENT, 'accounts': [{k: a[k] for k in ('id', 'harness', 'name', 'label')} for a in accounts.accounts()]}) + ';').encode()
+            body = ('window.AGENT_DESK_CONFIG=' + json.dumps({'development': DEVELOPMENT, 'terminal_limit': DESKS.terminal_limit(), 'accounts': [{k: a[k] for k in ('id', 'harness', 'name', 'label')} for a in accounts.accounts()]}) + ';').encode()
             self.send_response(200)
             self.send_header('Content-Type', 'application/javascript')
             self.send_header('Cache-Control', 'no-store')
@@ -634,7 +634,7 @@ class Handler(SimpleHTTPRequestHandler):
                 for agent in internal:
                     agent.update(folder_context(agent['cwd']))
                 every = REMOTES.records('agents') + COORDINATORS.agents() + managed + internal + reported + [a for a in processes if a['pid'] not in known_pids]
-                return self.send_json({'agents': every, 'desks': DESKS.annotate(every)})
+                return self.send_json({'agents': every, 'desks': DESKS.annotate(every), 'terminal_limit': DESKS.terminal_limit()})
             except (OSError, subprocess.SubprocessError) as exc:
                 return self.send_json({'error': str(exc)}, 500)
         if route.startswith('/api/'):
@@ -862,6 +862,8 @@ class Handler(SimpleHTTPRequestHandler):
                     return self.send_json({'error':'Not found'},404)
                 if self.path.startswith('/api/model-router/'):
                     return self.send_json(model_router_action(self.path.rsplit('/', 1)[-1], payload))
+                if self.path == '/api/desks/limit' and not self.at_the_desk():
+                    return self.send_json({'error': 'Only the user, at the desk, can change how many terminals a desk holds'}, 403)
                 if self.path.startswith('/api/desks/'):
                     return self.send_json(desk_action(self.path.rsplit('/', 1)[-1], payload, self.pane_refusal))
                 if self.path.startswith('/api/coordinator-events/'):
@@ -1107,6 +1109,8 @@ def desk_action(action, payload, refusal=lambda identity: None):
         if not record.get('imported'):
             raise ValueError('Only an imported desk is checked before it reopens')
         return {'sessions': saved_desks.reopen_preview(record)}
+    if action == 'limit':
+        return {'terminal_limit': DESKS.set_terminal_limit(payload.get('limit'))}
     raise ValueError('Unknown desk action')
 
 

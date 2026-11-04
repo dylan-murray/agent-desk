@@ -15,7 +15,7 @@ function document({desktop=false,local=storage(),session=storage()}={}){
     ...(desktop?{agentDeskDesktop:{}}:{}),
     location:new URL(desktop?'agent-desk://app/':'http://127.0.0.1:4322/'),
     document:{addEventListener(){}},addEventListener(){},
-    openPaneIds:[],PANE_LIMIT:16,paneViews:new Map(),paneStoreKey:()=> 'live',
+    openPaneIds:[],PANE_LIMIT:32,paneViews:new Map(),paneStoreKey:()=> 'live',
     savePanes(){},switchPage(){},render(){}});
   vm.runInContext('window=globalThis',context);
   vm.runInContext(source,context);
