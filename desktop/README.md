@@ -44,7 +44,7 @@ There is no compile step for the app code. `npm start` serves `agent_desk/static
 
 A source edit therefore reaches both the browser and Agent Desk Dev after the step above. If a backend edit fails to start, fix it and press Retry: the restarted backend reattaches to the surviving terminals, as browser mode does. Quit refuses to close while terminals are running and the backend cannot start, so it never leaves them unmanaged.
 
-Agent Desk Dev turns on development tools, including the annotate-anything launcher and its **Send** to a desk agent, as browser mode does by default. Installed apps keep them off. Annotations are saved to the profile, `~/Library/Application Support/Agent Desk Dev/data/feedback.json` (or `$AGENT_DESK_PROFILE_DIR/data/feedback.json`), not to the checkout's `data/`. Browser mode and each desktop profile keep separate notes. Notes are only notes: an agent must implement them before the code changes. **Send** gives the agent the absolute path of the submitted notes and a command to report back onto each note.
+Agent Desk Dev turns on development tools as browser mode does by default; installed apps keep them off. The annotation tool is the exception: it's for developing the desk in a browser, so neither desktop app loads it. Annotate in browser mode (`python3 -m agent_desk` after `npm ci`) instead.
 
 Installed apps default to `~/Library/Application Support/Agent Desk/`. Source/debug runs default to `~/Library/Application Support/Agent Desk Dev/`, so both can run independently:
 

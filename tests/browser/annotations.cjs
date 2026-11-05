@@ -144,6 +144,15 @@ async function until(fn,timeout=15000,what='condition'){const end=Date.now()+tim
   });
   await empty.close();
 
+  // A checkout without npm ci runs as usual, just without the tool.
+  const uninstalled=await browser.newPage(),missingErrors=[];uninstalled.on('pageerror',error=>missingErrors.push(error.message));
+  await uninstalled.route('**/config.js',async route=>{const response=await route.fetch();return route.fulfill({response,body:(await response.text()).replace('"annotations": true','"annotations": false')});});
+  const asked=[];uninstalled.on('request',request=>{if(request.url().endsWith('/annotate-anything.js'))asked.push(request.url());});
+  await uninstalled.goto(base);await uninstalled.locator('#open-sessions').waitFor();await pause(800);
+  const missingTools=await uninstalled.locator('annotate-anything').count();
+  check('without npm ci the desk runs without the tool, never asks for it, and has no page errors',()=>{assert.equal(missingTools,0);assert.deepEqual(asked,[]);assert.deepEqual(missingErrors,[]);});
+  await uninstalled.close();
+
   // Outside development the tool never loads.
   const production=await browser.newPage();
   await production.route('**/config.js',async route=>{const response=await route.fetch();return route.fulfill({response,body:(await response.text()).replace('"development": true','"development": false')});});

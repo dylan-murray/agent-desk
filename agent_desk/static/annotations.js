@@ -1,8 +1,9 @@
-// Annotate the desk itself with annotate-anything (vendor/annotate-anything.js).
-// Notes sync to the desk's feedback.json, Send goes to an Agent Desk session through the
-// same delivery as other feedback, and agents report back onto the notes.
+// Annotate the desk itself with annotate-anything, the npm package the server serves from
+// node_modules in development. Notes sync to the desk's feedback.json, Send goes to an Agent
+// Desk session through the same delivery as other feedback, and agents report back onto the notes.
 (()=>{
-if(!window.AGENT_DESK_CONFIG.development||!window.AnnotateAnything)return;
+if(!window.AGENT_DESK_CONFIG.development)return;
+if(!window.AGENT_DESK_CONFIG.annotations){console.info('Agent Desk: run npm ci in the checkout to turn on the annotation tool.');return;}
 async function feedbackRequest(path,body){
   const response=await fetch(path,{method:body?'POST':'GET',cache:'no-store',headers:body?{'Content-Type':'application/json','X-Agent-Desk':'feedback'}:{},...(body?{body:JSON.stringify(body)}:{})});
   const data=await response.json().catch(()=>({}));
@@ -33,10 +34,13 @@ const transport={
 window.annotationsOpen=()=>!!document.querySelector('annotate-anything')?.shadowRoot?.querySelector('.toolbar:not([hidden])');
 // Pages aren't in the URL, so a note's route is the page it was left on.
 const route=()=>'/'+(document.querySelector('.page:not(.hidden)')?.id.replace(/-page$/,'')||'agents');
-window.annotations=AnnotateAnything.annotate({
+const script=document.createElement('script');
+script.src='/annotate-anything.js';script.dataset.manual='';
+script.onload=()=>{window.annotations=AnnotateAnything.annotate({
   transport,enabled:true,scope:'agent-desk',route,
   navigate:to=>switchPage(to.replace(/^\//,'')),
   stableAttributes:['data-agent-id','data-testid'],
   theme:{accent:'var(--accent)'},
-});
+});};
+document.head.append(script);
 })();

@@ -373,6 +373,34 @@ class HTTPTests(unittest.TestCase):
                 self.assertEqual(caught.exception.code, 404)
                 caught.exception.close()
 
+    def test_the_annotation_tool_is_served_from_node_modules_only_in_development(self):
+        script = Path(self.temp.name) / 'annotate-anything.iife.js'
+        config = lambda: json.loads(urlopen(self.base+'/config.js').read().decode().split('=', 1)[1].rstrip(';'))  # noqa: E731
+        with patch.object(server, 'ANNOTATOR_SCRIPT', script):
+            self.assertFalse(config()['annotations'])
+            with self.assertRaises(HTTPError) as caught:
+                urlopen(self.base+'/annotate-anything.js')
+            self.assertEqual(caught.exception.code, 404)
+            self.assertIn('npm ci', json.load(caught.exception)['error'])
+            caught.exception.close()
+            script.write_text('window.AnnotateAnything={};')
+            self.assertTrue(config()['annotations'])
+            with urlopen(self.base+'/annotate-anything.js') as response:
+                self.assertEqual(response.headers['Content-Type'], 'application/javascript')
+                self.assertEqual(response.read(), b'window.AnnotateAnything={};')
+            for off in ('DEVELOPMENT', 'DESKTOP'):
+                with patch.object(server, off, off == 'DESKTOP'):
+                    self.assertFalse(config()['annotations'], off)
+                    with self.assertRaises(HTTPError) as caught:
+                        urlopen(self.base+'/annotate-anything.js')
+                    self.assertEqual(caught.exception.code, 404)
+                    caught.exception.close()
+
+    def test_the_checkout_pins_the_annotation_tool_it_serves(self):
+        pinned = json.loads((server.PROJECT_DIR / 'package.json').read_text())['devDependencies']['annotate-anything']
+        self.assertRegex(pinned, r'^\d+\.\d+\.\d+$')
+        self.assertEqual(server.ANNOTATOR_SCRIPT.relative_to(server.PROJECT_DIR).parts[:2], ('node_modules', 'annotate-anything'))
+
     def test_feedback_roundtrip_and_cross_origin_rejection(self):
         body = json.dumps({'notes': [sample_note()]}).encode()
         headers = {'X-Agent-Desk': 'feedback', 'Content-Type': 'application/json'}

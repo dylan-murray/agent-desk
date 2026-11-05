@@ -1,5 +1,5 @@
 """Local agent dashboard. Python standard library only."""
-from agent_desk.paths import DATA_DIR, STATIC_DIR
+from agent_desk.paths import DATA_DIR, PROJECT_DIR, STATIC_DIR
 from agent_desk.local_transport import desk_url, workspace_key
 import argparse
 import atexit
@@ -119,6 +119,10 @@ PEER = saved_desks.Peer.of(4310)
 LOCK = threading.Lock()
 STATES = {'working', 'needs_input', 'idle', 'completed', 'error', 'unknown'}
 FEEDBACK_FILE = DATA_DIR / 'feedback.json'
+# The annotation tool is the annotate-anything npm package, served from the checkout's node_modules in development.
+ANNOTATOR_SCRIPT = PROJECT_DIR / 'node_modules' / 'annotate-anything' / 'dist' / 'annotate-anything.iife.js'
+# A backend the desktop app owns never offers it: the tool is for developing the desk in a browser.
+DESKTOP = False
 DEVELOPMENT = True
 SKILL_UIS_FILE = DATA_DIR / 'skill-uis.json'
 PROTECTED_PANES = pane_guard.ProtectedPanes(DATA_DIR / 'protected-panes.json')
@@ -203,6 +207,11 @@ def register_skill_ui(payload, desk_port):
 def annotations():
     """The page's annotate-anything notes."""
     return AnnotationStore(FEEDBACK_FILE, archive=archive_feedback)
+
+
+def annotations_available():
+    """Whether this server offers the annotation tool to the page."""
+    return DEVELOPMENT and not DESKTOP and ANNOTATOR_SCRIPT.is_file()
 
 
 def process_directories(pids):
@@ -539,8 +548,21 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.send_json({'error': 'Skill UI not registered'}, 404)
             self.path = '/index.html'
             return super().do_GET()
+        if route == '/annotate-anything.js':
+            try:
+                body = ANNOTATOR_SCRIPT.read_bytes() if annotations_available() else None
+            except OSError:
+                body = None
+            if body is None:
+                return self.send_json({'error': 'The annotation tool is not installed; run npm ci in the checkout'}, 404)
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/javascript')
+            self.send_header('Cache-Control', 'no-cache')
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if route == '/config.js':
-            body = ('window.AGENT_DESK_CONFIG=' + json.dumps({'development': DEVELOPMENT, 'terminal_limit': DESKS.terminal_limit(), 'accounts': [{k: a[k] for k in ('id', 'harness', 'name', 'label')} for a in accounts.accounts()]}) + ';').encode()
+            body = ('window.AGENT_DESK_CONFIG=' + json.dumps({'development': DEVELOPMENT, 'annotations': annotations_available(), 'terminal_limit': DESKS.terminal_limit(), 'accounts': [{k: a[k] for k in ('id', 'harness', 'name', 'label')} for a in accounts.accounts()]}) + ';').encode()
             self.send_response(200)
             self.send_header('Content-Type', 'application/javascript')
             self.send_header('Cache-Control', 'no-store')
@@ -1178,7 +1200,7 @@ def model_router_action(action, payload):
 
 
 def main():
-    global COORDINATORS, DESKS, DEVELOPMENT, PEER, PULL_REQUESTS, SESSION_RECORDS, TERMINALS
+    global COORDINATORS, DESKS, DESKTOP, DEVELOPMENT, PEER, PULL_REQUESTS, SESSION_RECORDS, TERMINALS
     parser = argparse.ArgumentParser()
     parser.add_argument('--port', type=int, default=4310)
     parser.add_argument('--workspace-id', type=workspace_key, help='Desktop workspace ID; use a private Unix socket instead of TCP')
@@ -1218,6 +1240,7 @@ def main():
         saved_desks.remember_browser_desk(DATA_DIR)
     atexit.register(COORDINATORS.close)
     DEVELOPMENT = not args.production
+    DESKTOP = bool(args.workspace_id)
     WORKFLOWS.desk = desk_url(key)
     COORDINATORS.desk = WORKFLOWS.desk
     COORDINATORS.event_bus = WORKFLOWS.events

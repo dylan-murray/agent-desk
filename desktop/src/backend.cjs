@@ -48,7 +48,7 @@ class Backend {
     // A browser workspace keeps its port-keyed state and live terminals; the backend also serves that port.
     this.browserPort = browserPort;
     this.source = source;this.python = python;this.node = node;this.originalEnv = env;
-    // Source runs enable development tools (annotations) as the browser does by default.
+    // Source runs enable development tools as the browser does by default (the annotation tool stays browser-only).
     this.development = development;
     this.logDir = path.resolve(logDir || path.join(this.dataDir, '..', 'logs'));
     const identityFile = path.join(this.dataDir, 'desktop-profile.json');
