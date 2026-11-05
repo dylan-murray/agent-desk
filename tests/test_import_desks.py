@@ -160,6 +160,13 @@ class ImportedRecordTests(unittest.TestCase):
                                                dict(id='terminal-b', name='Claude', cwd=good, profile=None, conversation=None)])
         self.assertEqual(record['layout'], dict(layout='grid', panes=[dict(id='terminal-a'), dict(id='terminal-b')], pages=[]), 'a bad layout is dropped, not trusted')
 
+    def test_a_desk_comes_over_with_as_many_terminals_as_a_desk_can_hold(self):
+        most = saved_desks.MOST_TERMINALS_PER_DESK
+        items = [terminal(f'terminal-{n}', str(self.apps.project)) for n in range(most + 1)]
+        record = saved_desks.imported(dict(terminals=items, layout='not a layout'), 'desktop app')
+        self.assertEqual(len(record['terminals']), most)
+        self.assertEqual(record['layout']['panes'], [dict(id=t['id']) for t in record['terminals']], 'a bad layout opens every terminal that came over')
+
     def test_web_pages_keep_to_http_and_panes_to_what_came_over(self):
         pages = [dict(id='web-1', url='https://example.test/', name='Docs'), dict(id='web-2', url='http://localhost:3000/', name='App')]
         record = saved_desks.imported(dict(terminals=[terminal('terminal-a', str(self.apps.project))], layout=dict(
