@@ -23,8 +23,8 @@ LIFECYCLE = ('status', 'sentAt', 'pickedUpAt', 'reply', 'resolvedAt', 'agent')
 MAX_NOTES = 1000
 MAX_DELETED = 5000
 ID = re.compile(r'[\w.-]{1,100}\Z')
-LINE_BREAKS = re.compile('[\u0000-\u001f\u007f-\u009f  ]+')
-CONTROL = re.compile('[\u0000-\u0008\u000b-\u001f\u007f-\u009f  ]')
+LINE_BREAKS = re.compile(r'[\x00-\x1f\x7f-\x9f\u2028\u2029]+')
+CONTROL = re.compile(r'[\x00-\x08\x0b-\x1f\x7f-\x9f\u2028\u2029]')
 
 
 def now():

@@ -76,6 +76,13 @@ class FeedbackTests(unittest.TestCase):
         self.assertEqual({n['id']: n['agent'] for n in saved['notes']}, {'a': 'Docs review', 'b': 'UI planning'})
         self.assertTrue(saved['picks'])
 
+    def test_note_text_loses_control_characters_but_keeps_its_lines(self):
+        note = sample_note('text', comment='Line one\x07\nLine\ttwo\u2028\x9b', targetText='Save\nall\x1b[31m', selector='a\u2029b')
+        saved = server.annotations().sync([note], [])['notes'][0]
+        self.assertEqual(saved['comment'], 'Line one\nLine\ttwo')
+        self.assertEqual(saved['targetText'], 'Save all [31m')
+        self.assertEqual(saved['selector'], 'a b')
+
     def test_a_new_note_always_starts_unsent(self):
         saved = server.annotations().sync([sample_note('fresh', status='resolved', reply='Done', sentAt='2026-09-04T10:00:00.000Z')], [])
         self.assertEqual({k: saved['notes'][0].get(k) for k in ('status', 'reply', 'sentAt')}, {'status': 'open', 'reply': None, 'sentAt': None})
