@@ -230,6 +230,9 @@ class Handler(socketserver.StreamRequestHandler):
 
 class SupervisorServer(socketserver.ThreadingUnixStreamServer):
     daemon_threads = True
+    # Every call is a new connection, and a desk of many panes opening at once sends a burst of
+    # them. The default five pending connections overflow on macOS and report ECONNREFUSED.
+    request_queue_size = 128
 
     def verify_request(self, request, address):
         return not self.draining
