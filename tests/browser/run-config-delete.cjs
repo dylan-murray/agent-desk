@@ -40,9 +40,9 @@ const capture=(page,name)=>page.screenshot({path:path.join(evidence,'2026-09-17-
     assert.equal(await card().count(),1);
     await capture(page,'delete-desktop');
     await page.setViewportSize({width:390,height:844});
-    await page.locator('#annotation-launcher').click();
-    await page.waitForFunction(()=>document.getElementById('annotation-layer').parentElement.id==='run-config-delete-dialog');
-    assert.equal(await page.locator('#annotation-toolbar').isVisible(),true);
+    await page.locator('annotate-anything .launcher').click();
+    await page.waitForFunction(()=>document.querySelector('annotate-anything').parentElement.id==='run-config-delete-dialog');
+    assert.equal(await page.locator('annotate-anything .toolbar').isVisible(),true);
     await page.keyboard.press('Escape');
     assert.equal(await dialog.evaluate(d=>d.open),true);
     assert.ok(await dialog.evaluate(d=>d.getBoundingClientRect().right<=innerWidth));

@@ -120,7 +120,7 @@ function sameKind(drop){
 document.addEventListener('DOMContentLoaded',()=>{
   const grid=document.querySelector('#agent-grid');
   grid.addEventListener('dragstart',event=>{
-    if(annotating||renamingGroup){event.preventDefault();return;}
+    if(renamingGroup){event.preventDefault();return;}
     const toggle=event.target.closest('[data-group-toggle]');
     if(toggle){
       draggingGroup=toggle.dataset.groupToggle;

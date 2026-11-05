@@ -498,7 +498,7 @@ window.mountCoordinatorPane=(view,agent)=>{
  let pointerStart=null;
  view.node.addEventListener('pointerdown',event=>{pointerStart={x:event.clientX,y:event.clientY};});
  view.node.addEventListener('click',event=>{
-  if(event.defaultPrevented||event.button!==0||event.detail>1||annotating)return;
+  if(event.defaultPrevented||event.button!==0||event.detail>1)return;
   if(event.target.closest('button,a,input,textarea,select,summary,[contenteditable],[tabindex]'))return;
   if(pointerStart&&Math.hypot(event.clientX-pointerStart.x,event.clientY-pointerStart.y)>5)return;
   if(window.getSelection()?.isCollapsed===false)return;

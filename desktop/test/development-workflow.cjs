@@ -1,5 +1,5 @@
 'use strict';
-// Source-run Electron development workflow: annotations, backend restart with
+// Source-run Electron development workflow: no annotation tool, backend restart with
 // surviving terminals, tool pop-out isolation, and quitting after a failed start.
 // Disposable profiles, fictional terminals and a stand-in CLI only.
 const assert = require('node:assert/strict');
@@ -18,10 +18,6 @@ const python = process.env.AGENT_DESK_PYTHON || execFileSync('/usr/bin/which', [
 // The stand-in interpreter fails while BROKEN exists, like a backend edit with a syntax error.
 const broken = path.join(base, 'BROKEN'), wrapper = path.join(base, 'python3');
 fs.writeFileSync(wrapper, `#!/bin/sh\n[ -e '${broken}' ] && exit 1\nexec '${python}' "$@"\n`, {mode: 0o700});
-// A fictional coding CLI: it never prints a prompt and records anything delivered to it.
-const bin = path.join(base, 'bin');fs.mkdirSync(bin);
-const delivered = path.join(base, 'delivered.txt');
-fs.writeFileSync(path.join(bin, 'claude'), `#!/bin/sh\nexec /bin/cat > '${delivered}'\n`, {mode: 0o700});
 const skill = path.join(base, 'skills/fixture');fs.mkdirSync(skill, {recursive: true});
 fs.copyFileSync(path.join(root, 'tests/fixtures/desktop/tool.py'), path.join(skill, 'tool.py'));
 fs.writeFileSync(path.join(skill, 'agent-desk-ui.json'), JSON.stringify({runtime: 'python-http', entrypoint: 'tool.py', title: 'Fixture review', target: 'none', transports: ['unix-http-v1']}));
@@ -39,79 +35,23 @@ const exited = (app, ms) => new Promise(resolve => {
 const connected = page => page.waitForFunction(() => document.querySelector('#sync-status')?.textContent.includes('Connected'), null, {timeout: 30000});
 const until = async (check, message, ms = 15000) => {for (const end = Date.now() + ms; Date.now() < end; await new Promise(resolve => setTimeout(resolve, 100))) if (await check()) return;throw Error(message);};
 const alive = pid => {try {process.kill(pid, 0);return true;} catch {return false;}};
-// Leave pin mode so ordinary clicks reach the page again.
-const annotateOff = async page => {if (await page.locator('#annotation-launcher').getAttribute('aria-pressed') === 'true') await page.locator('#annotation-launcher').click();};
 async function stubDialogs(app, answer) {
   await app.evaluate(({dialog}, answer) => {global.fixtureDialogs = [];global.fixtureErrors = [];
     dialog.showMessageBox = async (_window, options) => {global.fixtureDialogs.push(options);return {response: answer};};
     dialog.showErrorBox = (title, detail) => global.fixtureErrors.push(title + ': ' + detail);}, answer);
 }
 
-async function annotations() {
-  const {app, profile} = await launch('annotations');
+// Annotating the desk is for developing it in a browser; the desktop app, Dev included, leaves it out.
+async function noAnnotationTool() {
+  const {app} = await launch('annotations');
   const page = await app.firstWindow();await connected(page);
   assert.equal(await page.evaluate(() => AGENT_DESK_CONFIG.development), true, 'source runs enable development tools');
-  for (const width of [1280, 480]) {
-    await app.evaluate(({BrowserWindow}, width) => BrowserWindow.getAllWindows()[0].setSize(width, 850), width);
-    await page.waitForFunction(width => innerWidth === width, width);
-    assert.equal(await page.locator('#annotation-launcher').isVisible(), true);
-    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-    await page.screenshot({path: path.join(evidence, `agent-desk-dev-annotations-${width}.png`)});
-  }
-  await app.evaluate(({BrowserWindow}) => BrowserWindow.getAllWindows()[0].setSize(1280, 850));
-  await page.waitForFunction(() => innerWidth === 1280);
-  const checkout = path.join(root, 'data/feedback.json');
-  const file = path.join(profile.data, 'feedback.json');
-  const stored = () => {try {return JSON.parse(fs.readFileSync(file, 'utf8'));} catch {return {notes: []};}};
-  // Pin through the existing annotation UI.
-  await page.locator('#annotation-launcher').click();
-  await page.locator('#mode-pin').click();
-  await page.locator('#breadcrumb').click();
-  await page.locator('#annotation-note-panel').waitFor({state: 'visible'});
-  await page.locator('#annotation-note').fill('Fixture note: tighten the header spacing');
-  await page.locator('#annotation-note-save').click();
-  await until(() => stored().notes.some(note => note.note === 'Fixture note: tighten the header spacing'), 'annotation did not reach the desktop profile');
-  await page.screenshot({path: path.join(evidence, 'agent-desk-dev-annotation-pin.png')});
-  await annotateOff(page);
-  // Reload (View > Reload) restores from the profile, then edit in the Feedback page.
-  await page.reload();await connected(page);
-  await page.evaluate(() => switchPage('feedback'));
-  await page.locator('#feedback-list').getByText('Fixture note: tighten the header spacing').waitFor();
-  await page.locator('[data-edit="0"]').click();
-  await page.locator('#annotation-note').fill('Fixture note: edited after reload');
-  await page.locator('#annotation-note-save').click();
-  await until(() => stored().notes.length === 1 && stored().notes[0].note === 'Fixture note: edited after reload', 'edit was not saved');
-  // A second note is deleted; its deletion persists.
-  await page.evaluate(() => switchPage('agents'));
-  await page.locator('#annotation-launcher').click();await page.locator('#mode-pin').click();
-  await page.locator('#new-terminal').click({force: true});
-  await page.locator('#annotation-note').fill('Fixture note: delete me');
-  await page.locator('#annotation-note-save').click();
-  await until(() => stored().notes.length === 2, 'second note was not saved');
-  await annotateOff(page);
-  const second = stored().notes.find(note => note.note === 'Fixture note: delete me').id;
-  await page.evaluate(() => switchPage('feedback'));
-  await page.locator('[data-edit="1"]').click();
-  await page.locator('#annotation-note-delete').click();
-  await until(() => stored().notes.length === 1 && stored().deleted?.includes(second), 'deletion was not saved');
-  // Send the remaining note to a fictional coding terminal.
-  await page.keyboard.press('Escape');await page.evaluate(() => switchPage('agents'));
-  const agent = await page.evaluate(cwd => terminalRequest('/api/terminals/launch', {cwd, argv: [cwd + '/bin/claude'], name: 'Fictional coding agent'}), base);
-  await page.evaluate(async id => {await refresh();selectPane(id);}, agent.id);
-  await page.locator('#annotation-launcher').click();await page.locator('#annotation-send').click();
-  await page.locator('#annotation-send-dialog').waitFor({state: 'visible'});
-  await page.locator('.annotation-agent input').first().check();
-  await page.locator('#annotation-send-notes input').first().check();
-  await page.screenshot({path: path.join(evidence, 'agent-desk-dev-annotation-send.png')});
-  await page.locator('#annotation-send-dialog [type=submit]').click();
-  const submissions = path.join(profile.data, 'feedback-submissions');
-  await until(() => fs.existsSync(submissions) && fs.readdirSync(submissions).some(name => fs.readFileSync(path.join(submissions, name), 'utf8').includes('edited after reload')), 'submission was not saved beside the profile');
-  // A browser desk on this checkout may write its own notes meanwhile; only the profile's notes must stay out.
-  assert.equal(fs.existsSync(checkout) && fs.readFileSync(checkout, 'utf8').includes('edited after reload'), false, 'checkout data is untouched');
-  await page.keyboard.press('Escape');
+  assert.equal(await page.evaluate(() => AGENT_DESK_CONFIG.annotations), false, 'the desktop backend does not offer the annotation tool');
+  await new Promise(resolve => setTimeout(resolve, 1000));
+  assert.equal(await page.locator('annotate-anything').count(), 0, 'no annotation tool in the desktop app');
   await stubDialogs(app, 1);await menu(app, 'Quit Agent Desk');
   assert.ok(await exited(app, 30000), 'Stop Work and Quit exits');
-  console.log('PASS: source Electron annotations save to', file, 'and survive reload, edit, delete and send.');
+  console.log('PASS: Agent Desk Dev runs its development tools without the browser-only annotation tool.');
 }
 
 async function restartAndPopout() {
@@ -206,7 +146,7 @@ async function failedStartupQuit() {
 
 (async () => {
   await failedStartupQuit();
-  await annotations();
+  await noAnnotationTool();
   await restartAndPopout();
 })().catch(error => {console.error(error);process.exitCode = 1;}).finally(async () => {
   for (const app of launched) try {await app.evaluate(({app}) => app.exit(0));} catch { /* already closed */ }

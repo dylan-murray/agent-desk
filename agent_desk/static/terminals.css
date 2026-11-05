@@ -316,8 +316,6 @@ body.pane-dragging-active .terminal-pane:not(.pane-dragging){transition:transfor
 .terminal-bar .pane-reload,.terminal-bar .pane-open{opacity:0;transition:opacity .15s}
 .terminal-pane:hover .pane-reload,.terminal-pane:hover .pane-open,.terminal-pane.focused .pane-reload,.terminal-pane.focused .pane-open,.pane-actions:focus-within .pane-reload,.pane-actions:focus-within .pane-open{opacity:1}
 @media(prefers-reduced-motion:reduce){.terminal-bar .pane-reload,.terminal-bar .pane-open{transition:none}}
-/* A frame swallows clicks, so a pin could not land on a web page while annotating. Pane drags use pointer capture and need nothing. */
-body.annotating .web-pane-frame{pointer-events:none}
 
 /* ---- Pane layouts and resizing ----
    The workspace is a 12-column grid; pane-layout.js sets --pane-row to a twelfth of the

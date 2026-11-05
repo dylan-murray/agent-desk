@@ -151,12 +151,13 @@ async function openPage(page,address,name){
 
   // Annotation pins land on a web page instead of disappearing into its frame.
   await openPage(page,openUrl);await page.frameLocator('.web-pane iframe:not([hidden])').last().locator('h1').waitFor();
-  await page.locator('#annotation-launcher').click();
+  await page.locator('annotate-anything .launcher').click();await page.locator('annotate-anything .toolbar [data-mode="pin"]').click();
   const target=await page.locator('.web-pane iframe:not([hidden])').last().boundingBox();
-  await page.mouse.click(target.x+target.width/2,target.y+target.height/2);
-  const pinned=await page.locator('#annotation-target').textContent();
-  check('a pin can be placed over a web page',()=>assert.match(pinned,/^Pin/));
-  await page.keyboard.press('Escape');await page.locator('#annotation-launcher').click();
+  // Near the top of the page: the tool's own bar sits over the bottom-right corner.
+  await page.mouse.click(target.x+target.width/2,target.y+40);
+  const pinned=await page.locator('annotate-anything .panel').waitFor({timeout:3000}).then(()=>page.locator('annotate-anything .panel').innerText(),()=>'');
+  check('a pin can be placed over a web page',()=>assert.match(pinned,/Pin/));
+  await page.keyboard.press('Escape');await page.locator('annotate-anything .launcher').click();
 
   // Narrow layouts keep the menu on screen.
   for(const width of [760,390]){

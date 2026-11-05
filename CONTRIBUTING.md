@@ -10,8 +10,11 @@ From the repository root:
 python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install -e .
+npm ci
 python -m agent_desk
 ```
+
+`npm ci` installs the browser checks' Playwright and [annotate-anything](https://github.com/dylan-murray/annotate-anything), the annotation tool the desk loads in development. The server serves it from `node_modules`; without it the desk runs as usual, just without the annotation launcher.
 
 There is no frontend build step. Edit assets in `agent_desk/static/` and refresh the browser. Restart the web server for backend Python changes. Managed local terminals now belong to a persistent supervisor and survive backend exits and crashes. If the supervisor itself ends, its next start restores those terminals and resumes agent conversations. The first upgrade from an older server still stops its old terminals: finish or save those before that one-time transition. Supervisor changes require draining its sessions first; see [restart behavior](docs/guide.md#backend-restarts-and-terminal-supervision).
 

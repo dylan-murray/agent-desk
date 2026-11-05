@@ -293,7 +293,7 @@ document.addEventListener('DOMContentLoaded',()=>{
   },{capture:true,passive:true});
   workspace.addEventListener('pointerdown',event=>{
     const handle=event.target.closest('.pane-resize');
-    if(!handle||paneResize||annotating||event.pointerType==='mouse'&&event.button!==0)return;
+    if(!handle||paneResize||event.pointerType==='mouse'&&event.button!==0)return;
     const id=handle.closest('.pane-edges')?.dataset.edgesFor;if(!openPaneIds.includes(id))return;
     selectedId=id;highlightPanes();
     event.preventDefault();event.stopPropagation();

@@ -87,7 +87,7 @@ async function monitorTerminals(){
     }));
     for(const id of attentionReaders.keys()){if(!agents.some(a=>a.id===id&&a.exit_code===null&&!dismissedTerminals.has(id)))disposeAttentionReader(id);}
     renderAttention(everyAgent());
-    if(!demo&&!annotating&&!window.annotationNoteOpen?.())render();
+    if(!demo)render();
   }finally{monitoringTerminals=false;}
 }
 setInterval(monitorTerminals,2000);
@@ -289,7 +289,7 @@ document.addEventListener('DOMContentLoaded',()=>{
   workspace.addEventListener('pointerdown',event=>{
     if(paneDrag||event.pointerType==='touch'||(event.pointerType==='mouse'&&event.button!==0))return;
     const bar=event.target.closest('.terminal-bar');
-    if(!bar||bar.dataset.paneDrag==='off'||event.target.closest('.pane-actions')||annotating)return;
+    if(!bar||bar.dataset.paneDrag==='off'||event.target.closest('.pane-actions'))return;
     const pane=bar.closest('.terminal-pane');
     if(!pane||!openPaneIds.includes(pane.dataset.paneId)||openPaneIds.length<2)return;
     // Not active yet and nothing is prevented here, so an ordinary click on the header
@@ -319,7 +319,7 @@ document.addEventListener('DOMContentLoaded',()=>{
   });
   document.addEventListener('pointerup',event=>{if(paneDrag&&event.pointerId===paneDrag.pointerId)endPaneDrag(true,event.clientX,event.clientY);});
   document.addEventListener('pointercancel',event=>{if(paneDrag&&event.pointerId===paneDrag.pointerId)endPaneDrag(false);});
-  document.addEventListener('keydown',event=>{if(event.key==='Escape'&&paneDrag?.active){event.preventDefault();endPaneDrag(false);}else if(event.key==='Escape'&&fullscreenPaneId&&!document.querySelector('dialog[open]')&&!annotating){event.preventDefault();toggleFullscreen(fullscreenPaneId);}},true);
+  document.addEventListener('keydown',event=>{if(event.key==='Escape'&&paneDrag?.active){event.preventDefault();endPaneDrag(false);}else if(event.key==='Escape'&&fullscreenPaneId&&!document.querySelector('dialog[open]')&&!window.annotationsOpen?.()){event.preventDefault();toggleFullscreen(fullscreenPaneId);}},true);
   // Arrow keys on the focused grip, with or without Alt: Option+arrow is not reachable
   // on every Mac keyboard layout, so the bare arrows are the documented path.
   workspace.addEventListener('keydown',event=>{
@@ -419,7 +419,7 @@ function createPane(agent){
   edges.innerHTML='<div class="pane-resize" data-edge="e" aria-hidden="true"></div><div class="pane-resize" data-edge="s" aria-hidden="true"></div><button class="pane-resize" data-edge="se" title="Drag to resize \u00b7 arrow keys resize by one cell" aria-label="Resize '+escapeHTML(agent.name)+' pane"></button>';
   const view={node,edges,demo,disposed:false,signature:null};
   const title=node.querySelector('.pane-title');
-  if(agent.terminal_id||agent.coordinator_workspace){title.tabIndex=0;title.setAttribute('role','button');title.title='Click to rename';title.onclick=()=>{if(!annotating&&performance.now()-paneDragEndedAt>250)editPaneName(view,agent.id);};title.onkeydown=event=>{if(event.target===title&&['Enter',' '].includes(event.key)){event.preventDefault();editPaneName(view,agent.id);}};}
+  if(agent.terminal_id||agent.coordinator_workspace){title.tabIndex=0;title.setAttribute('role','button');title.title='Click to rename';title.onclick=()=>{if(performance.now()-paneDragEndedAt>250)editPaneName(view,agent.id);};title.onkeydown=event=>{if(event.target===title&&['Enter',' '].includes(event.key)){event.preventDefault();editPaneName(view,agent.id);}};}
   node.querySelector('.pane-close').onclick=()=>closePane(agent.id);
   node.querySelector('.pane-expand').onclick=()=>toggleFullscreen(agent.id);
   node.querySelector('.pane-stop').onclick=()=>requestCloseTerminal(agent.id);
@@ -433,7 +433,7 @@ function createPane(agent){
   // The header's context menu is the sidebar's: move this session to another desk, or to a new one.
   const bar=node.querySelector('.terminal-bar');bar.title='Drag this header to move the pane · right-click to move it to another desk';
   bar.addEventListener('contextmenu',event=>{
-    if(demo||annotating||view.renaming||agent.harness_internal||event.target.closest('input'))return;
+    if(demo||view.renaming||agent.harness_internal||event.target.closest('input'))return;
     event.preventDefault();
     const at=event.clientX||event.clientY?[event.clientX,event.clientY]:(box=>[box.x+16,box.bottom])(bar.getBoundingClientRect());
     const latest=current().find(a=>a.id===agent.id)||agent;
