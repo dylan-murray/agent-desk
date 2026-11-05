@@ -105,7 +105,7 @@ const check = (name, fn) => {fn();results.push(name);console.log('  PASS  ' + na
     assert.deepEqual(listed.map(row => row.number), ['#7', '#29', '#28']);
     assert.match(listed[0].meta, /Open Passing Awaiting review this folder’s branch/);
     assert.match(listed[2].meta, /^fix\/retry-backoff Open Failing printed (just now|1m ago)/);
-    assert.deepEqual(listed.map(row => row.actions), [['open'], ['open', 'forget'], ['open', 'log', 'forget']]);
+    assert.deepEqual(listed.map(row => row.actions), [['open', 'forget'], ['open', 'forget'], ['open', 'log', 'forget']], 'the open branch pull request can be put away too');
     assert.deepEqual(listed.map(row => [row.href, row.arrows]), [[CORP_URL, 0], [link(29), 0], [link(28), 0]], 'the title is the link; there is no separate arrow');
   });
   const fits = await list.evaluate(node => {const box = node.getBoundingClientRect();return box.left >= 0 && box.right <= innerWidth;});
@@ -230,8 +230,18 @@ const check = (name, fn) => {fn();results.push(name);console.log('  PASS  ' + na
   check('× on a merged pull request hides it in this terminal, and it stays hidden', () => {assert.equal(hideLabel, 'Stop showing #42 here');assert.equal(stillHidden, 0);});
   answer('pr-example-repo.json', {number: 44, title: 'Fixture follow-up', url: 'https://github.com/example-org/example-repo/pull/44', statusCheckRollup: [run('unit tests', 'IN_PROGRESS')]});
   await until(async () => (await header()).text === '#44 Open Pending Awaiting review', 'A new pull request on the branch did not show');
-  const openHide = await chip.locator('.pane-pr-hide').isHidden();
-  check('a new pull request on the branch shows again, and an open one has no ×', () => assert.equal(openHide, true));
+  // A stale open pull request can be put away as well; its × waits for the pane to be hovered or focused, like Stop.
+  const openHide = chip.locator('.pane-pr-hide');
+  await page.mouse.move(2, 2);await page.evaluate(() => document.activeElement?.blur());
+  const shown = {focused: await openHide.isVisible(), label: await openHide.getAttribute('aria-label'),
+    resting: await pane.evaluate(node => {node.classList.remove('focused');const display = getComputedStyle(node.querySelector('.pane-pr-hide')).display;node.classList.add('focused');return display;})};
+  check('a new pull request on the branch shows again, with × on hover or focus only while it is open', () => assert.deepEqual(shown, {focused: true, label: 'Stop showing #44 here', resting: 'none'}));
+  for (const [width, height] of [[390, 844], [1440, 900]]) {await page.setViewportSize({width, height});await pane.evaluate(node => node.scrollIntoView({block: 'start'}));await pane.hover();await pause();await page.screenshot({path: evidence(`pr-chip-open-hide-${width}.png`)});}
+  await pane.hover();await openHide.click();
+  await until(async () => (await pane.locator('.pane-pr').count()) === 0, '× did not hide the open pull request');
+  await pause();await pause();
+  const openStaysHidden = await pane.locator('.pane-pr').count();
+  check('× on an open pull request hides it in this terminal, and it stays hidden', () => assert.equal(openStaysHidden, 0));
   answer('pr-example-repo.json', null, 4, 'To get started with GitHub CLI, please run:  gh auth login');
   await until(async () => (await pane.locator('.pane-pr').count()) === 0, 'A signed-out gh left the chip up');
   const headerState = await pane.locator('.pane-state').textContent();

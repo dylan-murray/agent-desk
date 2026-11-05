@@ -308,6 +308,27 @@ class PrintedLinkTests(GhFixture):
         self.poll()
         self.assertEqual(self.prs.status(self.repo, 'term-1')['number'], 44)
 
+    def test_an_open_branch_pull_request_can_be_forgotten_and_stops_reaching_the_inbox(self):
+        self.answer(pull_request([run('unit', 'IN_PROGRESS')]))
+        self.poll()
+        self.prs.forget('term-1', PR_URL, self.repo)
+        self.assertIsNone(self.prs.status(self.repo, 'term-1'))
+        self.answer(pull_request([run('unit', 'COMPLETED', 'FAILURE')]))
+        self.poll()
+        self.assertEqual(self.prs.snapshot()['events'], [], 'a forgotten pull request failing is not news')
+        self.assertEqual(PullRequests(self.folder / 'data' / 'pull-requests.json').status(self.repo, 'term-1'), None)
+
+    def test_a_terminal_that_still_shows_a_forgotten_pull_request_gets_its_inbox_item(self):
+        both = [{'id': 'term-1', 'exit_code': None, 'repo': self.repo}, {'id': 'term-2', 'exit_code': None, 'repo': self.repo}]
+        self.answer(pull_request([run('unit', 'IN_PROGRESS')]))
+        self.now += 60
+        self.prs.poll(both, self.now)
+        self.prs.forget('term-1', PR_URL, self.repo)
+        self.answer(pull_request([run('unit', 'COMPLETED', 'FAILURE')]))
+        self.now += 60
+        self.prs.poll(both, self.now)
+        self.assertEqual([(e['kind'], e['terminal']) for e in self.prs.snapshot()['events']], [('checks', 'term-2')])
+
     def test_a_printed_pull_request_reaches_the_inbox_for_the_terminal_that_printed_it(self):
         self.answer(pull_request())
         url = self.link(28, statusCheckRollup=[run('unit', 'IN_PROGRESS')])
