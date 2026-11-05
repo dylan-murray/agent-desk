@@ -57,7 +57,7 @@ body{background:var(--page);background-image:radial-gradient(1000px 520px at 12%
 .brand > .brand-lockup{display:block;width:158px;height:36px;max-width:100%;flex-shrink:0}
 
 /* Soft navigation accents share the blue/lavender brand palette. */
-.top-actions #open-sessions{--nav-accent:#f28b82}
+.top-actions #open-sessions{--nav-accent:#8fd0b4}
 #open-special-agents{--nav-accent:#b7a4e8}
 .top-actions #open-inbox{--nav-accent:#9ccaff}
 .top-actions #open-workflows{--nav-accent:#9fc3d9}
@@ -170,11 +170,6 @@ body{background:var(--page);background-image:radial-gradient(1000px 520px at 12%
 .top-actions .header-nav .button .btn-icon{color:currentColor;opacity:.8}
 .top-actions .header-nav .button.active .btn-icon{color:var(--nav-accent);opacity:1}
 .top-actions .header-nav .button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
-.top-actions .header-nav #open-sessions{color:var(--nav-accent)}
-.top-actions .header-nav #open-sessions.active{background:#f28b821a}
-.top-actions .header-nav #open-sessions:hover{background:#f28b8226;color:#ffb4ad}
-.top-actions .header-nav #open-sessions:active{background:#f28b8212}
-.top-actions .header-nav #open-sessions:focus-visible{outline-color:var(--nav-accent)}
 .top-actions .header-nav #review-count,.top-actions .header-nav #tool-count{height:15px;min-width:15px;font-size:9.5px}
 @media(max-width:1200px){.header-nav{flex-wrap:nowrap}.top-actions .header-nav .button{gap:0;padding:0 9px;font-size:0}.top-actions .header-nav .button .btn-icon{margin:0}.top-actions .header-nav #review-count,.top-actions .header-nav #tool-count{margin-left:4px}}
 @media(max-width:760px){.header-nav{padding:2px}.top-actions .header-nav .button{height:28px;padding:0 7px}.top-actions{flex-wrap:nowrap}}
@@ -202,13 +197,14 @@ body{background:var(--page);background-image:radial-gradient(1000px 520px at 12%
 #agent-map-toggle[aria-pressed=true]{background:#ffffff14;border-color:transparent;color:var(--ink-1)}
 #new-controller{background:#ffffff0a;border-color:transparent;color:var(--ink-2)}
 #new-controller:hover{background:#ffffff14;border-color:transparent;color:var(--ink-1)}
-/* New terminal: a faint red wash with the full gradient on the plus chip. */
-#new-terminal{gap:8px;padding:0 13px 0 5px;background:linear-gradient(135deg,#f28b821f,#e85d651f),#141519;border-color:#f28b824d;color:#ffb4ad;font-weight:500;
+/* New terminal: a faint wash of the logo's gradient on the toolbar's dark button, with the full
+   gradient kept to the plus chip so it echoes the logo tile. */
+#new-terminal{gap:8px;padding:0 13px 0 5px;background:linear-gradient(135deg,#9ccaff1f,#9b8be81f),#141519;border-color:#a9b4ef3d;color:#dfe5f5;font-weight:500;
   box-shadow:inset 0 1px 0 #ffffff0d;transition:background .18s,border-color .18s,color .18s}
-#new-terminal:hover{background:linear-gradient(135deg,#f28b822e,#e85d652e),#141519;border-color:#f28b8266;color:#ffd5d0}
-#new-terminal:active{background:linear-gradient(135deg,#f28b8217,#e85d6517),#121317}
-#new-terminal:focus-visible{outline:2px solid #f28b82;outline-offset:2px}
-#new-terminal .btn-icon{box-sizing:content-box;width:12px;height:12px;padding:3px;border-radius:6px;background:linear-gradient(135deg,#f28b82,#e85d65);color:#260e10;stroke-width:2.4;opacity:1;transition:transform .25s cubic-bezier(.3,.8,.3,1)}
+#new-terminal:hover{background:linear-gradient(135deg,#9ccaff2e,#9b8be82e),#141519;border-color:#a9b4ef66;color:#fff}
+#new-terminal:active{background:linear-gradient(135deg,#9ccaff17,#9b8be817),#121317}
+#new-terminal:focus-visible{outline:2px solid #9ccaff;outline-offset:2px}
+#new-terminal .btn-icon{box-sizing:content-box;width:12px;height:12px;padding:3px;border-radius:6px;background:linear-gradient(135deg,#9ccaff,#9b8be8);color:#0e1122;stroke-width:2.4;opacity:1;transition:transform .25s cubic-bezier(.3,.8,.3,1)}
 #new-terminal:hover .btn-icon{transform:rotate(90deg)}
 @media(prefers-reduced-motion:reduce){#new-terminal,#new-terminal .btn-icon{transition:none}#new-terminal:hover .btn-icon{transform:none}}
 #new-controller .btn-icon{opacity:.9}
