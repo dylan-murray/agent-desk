@@ -4,7 +4,6 @@ from agent_desk.local_transport import desk_url, workspace_key
 import argparse
 import atexit
 import json
-import math
 import os
 import re
 import secrets
@@ -28,7 +27,8 @@ from agent_desk.special_agents import SpecialAgents, launch_payload
 from agent_desk.tool_runtime import ToolRuntime
 from scripts.control_mailbox import Mailbox
 from agent_desk.coordinator_runtime import CoordinatorRuntime
-from agent_desk.feedback_delivery import submit_feedback, drain_feedback, feedback_status, cancel_feedback
+from agent_desk.annotations import AnnotationStore
+from agent_desk.feedback_delivery import submit_annotations, submit_feedback, drain_feedback, feedback_status, cancel_feedback
 from agent_desk.feedback_history import archive_feedback
 from agent_desk.remote_connections import (RemoteConnections, prerequisites as remote_prerequisites,
                                   saved_connections as remote_saved, save_connection as remote_save,
@@ -119,14 +119,13 @@ PEER = saved_desks.Peer.of(4310)
 LOCK = threading.Lock()
 STATES = {'working', 'needs_input', 'idle', 'completed', 'error', 'unknown'}
 FEEDBACK_FILE = DATA_DIR / 'feedback.json'
-FEEDBACK_LOCK = threading.Lock()
 DEVELOPMENT = True
 SKILL_UIS_FILE = DATA_DIR / 'skill-uis.json'
 PROTECTED_PANES = pane_guard.ProtectedPanes(DATA_DIR / 'protected-panes.json')
 # Requests that read from or act on one session, named by its id (submit-feedback: target_id).
 PANE_WRITES = ('/api/terminals/input', '/api/terminals/rename', '/api/terminals/stop',
                '/api/coordinators/message', '/api/coordinators/close', '/api/coordinators/pause',
-               '/api/coordinators/submit-feedback')
+               '/api/coordinators/submit-feedback', '/api/coordinators/submit-annotations')
 INBOX_CLEARED_FILE = DATA_DIR / 'inbox-cleared.json'
 INBOX_CLEARED_LOCK = threading.Lock()
 SKILL_UIS_LOCK = threading.Lock()
@@ -201,50 +200,9 @@ def register_skill_ui(payload, desk_port):
     return item
 
 
-def read_feedback():
-    if not FEEDBACK_FILE.exists():
-        return {'notes': [], 'deleted': []}
-    return json.loads(FEEDBACK_FILE.read_text())
-
-
-def save_feedback(payload):
-    notes, deleted = payload.get('notes', []), payload.get('deleted', [])
-    if not isinstance(notes, list) or not isinstance(deleted, list) or len(notes) + len(deleted) > 1000:
-        raise ValueError('Expected at most 1000 notes and deletion IDs')
-    def valid_id(value):
-        return isinstance(value, str) and re.fullmatch(r'[\w.-]{1,100}', value)
-    for note in notes:
-        if not isinstance(note, dict) or not valid_id(note.get('id')):
-            raise ValueError('Invalid note ID')
-        for field in ('note', 'createdAt', 'url', 'page', 'mode', 'selector', 'elementText'):
-            if not isinstance(note.get(field), str) or len(note[field]) > 10000:
-                raise ValueError('Invalid note field: ' + field)
-        kind = note.get('kind', 'element')
-        if not note['note'].strip() or kind not in ('element', 'pin', 'region'):
-            raise ValueError('Invalid note or annotation kind')
-        boxes = {'point': ('viewportX', 'viewportY', 'documentX', 'documentY'),
-                 'viewport': ('width', 'height', 'devicePixelRatio'),
-                 'bounds': ('x', 'y', 'width', 'height'), 'scroll': ('x', 'y')}
-        if kind == 'region':
-            boxes |= {'region': ('x', 'y', 'width', 'height'), 'regionBox': ('x', 'y', 'width', 'height')}
-        for field, keys in boxes.items():
-            values = note.get(field)
-            if not isinstance(values, dict) or any(type(values.get(k)) not in (int, float) or not math.isfinite(values[k]) for k in keys):
-                raise ValueError('Invalid coordinates: ' + field)
-    if any(not valid_id(value) for value in deleted):
-        raise ValueError('Invalid deletion ID')
-    with FEEDBACK_LOCK:
-        saved = read_feedback()
-        tombstones = set(saved['deleted']) | set(deleted)
-        merged = {n['id']: n for n in saved['notes']}
-        merged.update({n['id']: n for n in notes})
-        result = {'notes': [n for key, n in merged.items() if key not in tombstones], 'deleted': sorted(tombstones)}
-        archive_feedback(FEEDBACK_FILE,saved,result)
-        FEEDBACK_FILE.parent.mkdir(parents=True, exist_ok=True)
-        temp = FEEDBACK_FILE.with_suffix('.tmp')
-        temp.write_text(json.dumps(result, indent=2, allow_nan=False) + '\n')
-        os.replace(temp, FEEDBACK_FILE)
-        return result
+def annotations():
+    """The page's annotate-anything notes."""
+    return AnnotationStore(FEEDBACK_FILE, archive=archive_feedback)
 
 
 def process_directories(pids):
@@ -606,8 +564,7 @@ class Handler(SimpleHTTPRequestHandler):
             if not DEVELOPMENT:
                 return self.send_json({'error': 'Development tools are disabled'}, 404)
             try:
-                with FEEDBACK_LOCK:
-                    return self.send_json(read_feedback())
+                return self.send_json(annotations().read())
             except (OSError, ValueError):
                 return self.send_json({'error': 'Could not read workspace feedback'}, 500)
         if route == '/api/agents':
@@ -789,7 +746,7 @@ class Handler(SimpleHTTPRequestHandler):
                     return self.send_json({'error': 'Only the user, at the desk, can change which sessions are protected'}, 403)
                 # Checked before a remote request is forwarded: the bridge itself may do anything.
                 if self.path in PANE_WRITES:
-                    refused = self.pane_refusal(payload.get('target_id' if self.path.endswith('/submit-feedback') else 'id'))
+                    refused = self.pane_refusal(payload.get('target_id' if self.path.endswith(('/submit-feedback', '/submit-annotations')) else 'id'))
                     if refused:
                         return self.send_json({'error': refused}, 403)
                 node = REMOTES.identity(payload.get('id')) or payload.get('remote_node')
@@ -822,6 +779,7 @@ class Handler(SimpleHTTPRequestHandler):
                     if action=='feedback-status':return self.send_json(feedback_status(COORDINATORS,payload))
                     if action=='cancel-feedback':return self.send_json(cancel_feedback(COORDINATORS,payload))
                     if action=='submit-feedback':return self.send_json(submit_feedback(COORDINATORS,payload))
+                    if action=='submit-annotations':return self.send_json(submit_annotations(COORDINATORS,annotations(),payload))
                     if action=='create':
                         desk = DESKS.desk_for(payload.pop('desk', None))
                         return self.send_json(placed(COORDINATORS.create(payload), desk))
@@ -999,7 +957,7 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.send_json({'error': str(exc)}, 400)
             except OSError as exc:
                 return self.send_json({'error': str(exc)}, 500)
-        feedback_route = self.path == '/api/feedback'
+        feedback_route = self.path in ('/api/feedback', '/api/feedback/status')
         if feedback_route and not DEVELOPMENT:
             return self.send_json({'error': 'Development tools are disabled'}, 404)
         # A custom header requires a browser preflight for cross-origin writes.
@@ -1009,7 +967,7 @@ class Handler(SimpleHTTPRequestHandler):
         authorized = (self.headers.get('X-Agent-Desk') == 'feedback' and local_origin) if feedback_route else self.headers.get('Authorization') == 'Bearer ' + TOKEN
         if not self.allowed_host() or not authorized:
             return self.send_json({'error': 'A valid adapter token is required'}, 403)
-        if self.path not in ('/api/events', '/api/feedback', '/api/skill-uis'):
+        if self.path not in ('/api/events', '/api/feedback', '/api/feedback/status', '/api/skill-uis'):
             return self.send_json({'error': 'Not found'}, 404)
         try:
             size = int(self.headers.get('Content-Length', '0'))
@@ -1021,7 +979,13 @@ class Handler(SimpleHTTPRequestHandler):
                 raise ValueError('Expected an object')
             if self.path == '/api/skill-uis':
                 return self.send_json(register_skill_ui(payload, self.server.workspace_key))
-            return self.send_json(save_feedback(payload) if feedback_route else ingest(payload))
+            if self.path == '/api/feedback/status':
+                ids = payload.get('ids') if isinstance(payload.get('ids'), list) else [payload.get('id', payload.get('n'))]
+                changed = annotations().set_status(ids, payload.get('status'), payload.get('reply'))
+                return self.send_json({'notes': changed} if changed else {'error': 'No matching notes'}, 200 if changed else 404)
+            if feedback_route:
+                return self.send_json(annotations().sync(payload.get('notes', []), payload.get('deleted', [])))
+            return self.send_json(ingest(payload))
         except (ValueError, TypeError) as exc:
             return self.send_json({'error': str(exc)}, 400)
         except OSError:
@@ -1277,7 +1241,7 @@ def main():
                 import logging
                 logging.exception('Automation terminal cleanup will retry')
             try:
-                if not getattr(server, 'paused', False):drain_feedback(COORDINATORS)
+                if not getattr(server, 'paused', False):drain_feedback(COORDINATORS, delivered=lambda ids, ok: annotations().pick_up(ids) if ok else annotations().reopen_undelivered(ids))
             except Exception:
                 import logging
                 logging.exception('Queued feedback delivery will retry')

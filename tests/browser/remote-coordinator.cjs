@@ -31,7 +31,7 @@ const path=require('node:path'),os=require('node:os');
  assert.match(await form.locator('[data-coord-id="coord-provider-help"]').textContent(),/credentials configured on the remote machine/);
  await form.screenshot({path:path.join(os.tmpdir(),'agent-desk-remote-coordinator-form.png')});
  // Annotation launcher remains available inside the remote coordinator modal.
- await page.locator('#annotation-launcher').click();assert.equal(await page.locator('#annotation-toolbar').isVisible(),true);await page.keyboard.press('Escape');
+ await page.locator('annotate-anything .launcher').click();assert.equal(await page.locator('annotate-anything .toolbar').isVisible(),true);await page.keyboard.press('Escape');
  await page.setViewportSize({width:390,height:844});assert.ok((await form.boundingBox()).width<=390);await form.screenshot({path:path.join(os.tmpdir(),'agent-desk-remote-coordinator-mobile.png')});await page.setViewportSize({width:1440,height:1000});
  await form.locator('[type=submit]').click();await page.locator('#terminal .coord-embedded').waitFor();assert.match(await page.locator('[data-coord-id="coord-context"]').textContent(),/Remote · dev-server/);
  await page.locator('[data-coord-id="coord-model-edit"]').click();await form.waitFor();assert.equal(await form.locator('[data-coord-id="coord-environment"]').inputValue(),node.id);assert.ok(await form.locator('[data-coord-id="coord-environment"]').isDisabled());

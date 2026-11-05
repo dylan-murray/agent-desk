@@ -18,8 +18,8 @@ Open http://127.0.0.1:4310. Use `--port 4311` if needed.
 - Discover each process’s working directory using a batched `lsof` lookup (or `/proc` on Linux). Resolve the nearest `.git` directory or worktree marker to show the repo name, full working path, and PID. Inaccessible folders are explicitly labeled unavailable.
 - Receive authenticated events from any harness over a common API. Filter agents by status or search their names, tasks, projects, and harnesses. Select a session in the sidebar to see its task, questions, and recent events. Use the ＋ beside another session to add it to the workspace, up to 32 panes per desk by default. Cmd/Ctrl/Shift-click also adds a pane. Clicking an open session focuses it; clicking a different session replaces the focused pane.
 - Explore a separate, explicitly labeled demo workspace.
-- Drop numbered pins anywhere, including blank space, or select interface elements. Click a saved pin to edit its note. Use **Clear annotations** in Feedback or **Clear all** in the annotation toolbar to remove saved annotations after confirming the count. Deletions sync to disk and stay deleted when older tabs reconnect. Annotation mode stays active to add several pins in succession. Pins follow their containing element when scrolling or resizing and are shown only on their original page and demo/live workspace. Original capture coordinates remain unchanged. Notes include the page, demo/live mode, CSS selector, text, agent ID when available, element bounds, document and viewport click coordinates, normalized click coordinates, scroll offsets, viewport size, and device pixel ratio. Coordinates use CSS pixels.
-- Notes automatically sync to `data/feedback.json`, readable by your local development agent, with browser local storage as a backup. Existing browser notes migrate on reload at the original origin/port. Failed syncs retry every five seconds. Notes merge by ID, and persisted deletion IDs prevent old tabs from restoring deleted notes. The Feedback tab shows save status. Copy Markdown, export all notes as Markdown, or export individual notes as JSON when needed. Annotations remain local unless you explicitly submit them to an agent. Screenshots are not captured yet.
+- Annotate the desk itself with [annotate-anything](https://github.com/dylan-murray/annotate-anything): the pencil in the corner leaves a **Pin** on an exact spot, an **Element** note, or an **Area** you drag, including inside dialogs. Each note keeps its element, text and coordinates, and shows only on the page it was left on. The tool loads only in development; `--production` leaves it out.
+- Notes sync to `data/feedback.json`, with browser storage as a backup, merge by ID across tabs, and keep deletion records so an old tab never brings a deleted note back. **Send** picks a coordinator or coding agent on this desk, by the names Sessions uses, and the agent reports its progress and a reply back onto each note. Annotations stay local unless you send them. Screenshots are not captured.
 
 ## Who can reach a session
 
@@ -176,7 +176,7 @@ node --test tests/test_terminal_snapshots.cjs
 
 ## Feedback API
 
-`GET /api/feedback` reads the persisted `{notes, deleted}` document. `POST /api/feedback` merges the same shape and requires `X-Agent-Desk: feedback`. Browser requests must be same-origin. This endpoint cannot submit harness events. Writes are serialized and atomically replace the workspace file; invalid notes do not replace saved data.
+`GET /api/feedback` reads the `{notes, deleted}` document in annotate-anything's note format. `POST /api/feedback` merges the same shape and requires `X-Agent-Desk: feedback`; a note's status, reply and send times belong to the desk and its agents, so a browser sync never overwrites them. `POST /api/feedback/status` (same header) sets `{ids, status, reply}` for notes named by number or id. Browser requests must be same-origin. This endpoint cannot submit harness events. Writes take a file lock and atomically replace the workspace file; notes that are not valid are skipped.
 
 
 For a backend-only update, use the verified listener PID with `python -m scripts.restart_backend --pid PID --port 4310`. It checks the existing supervisor, records terminal identities, restarts only the HTTP process with `--attach-only`, and verifies the same terminal owner and PIDs. A missing live owner blocks replacement. The supervisor socket uses persistent state; reachable legacy sockets remain attachable. This does not repair sessions detached before these checks existed.
@@ -374,7 +374,7 @@ Findings are deduplicated by role and source event key. Reports are durable and 
 
 Saved automations support manual, scheduled, and event-triggered DAG tasks through Run & Schedule, with an in-app review inbox. Event sources are described below. External notifications are not implemented. Keep explicit channel/repository scope and an allowed-action policy. Worker fixes should use isolated checkouts and attach validation and review-tool links to their handoff. Role prompts request read-only watchers and review-only local fixes; these instructions do not replace the harness's permission enforcement.
 
-Annotation startup now fetches server deletion records before rendering or uploading browser-cached notes, preventing deleted pins from flashing back during reload. The browser keeps cached pins hidden if the workspace cannot be reached.
+Annotation startup fetches server deletion records before showing browser-cached notes, so deleted notes never flash back.
 
 The former Agent roles page is now **Automations**, with an explicit Manual trigger label. **Inbox** is a separate destination combining live session requests and saved automation findings/reports. It includes attention/review/history filters, search, source links, session navigation, and review/dismiss/reopen actions. Opening a live request does not approve or dismiss it. The broader workflow and remaining reliability work are described in [workspace direction](docs/workspace-direction.md).
 
@@ -517,11 +517,11 @@ The backend shares one request per profile across coordinator panes, caches read
 
 The authenticated `POST /api/coordinators/quota` route accepts a coordinator `id`; the backend chooses its saved profile.
 
-The bottom-left annotation button stays available in the workspace and in dialogs. Click it to drop pins or select elements, then click again (or press Escape) to finish. While annotating, clicks on application buttons create feedback instead of executing the action. The annotation editor's Escape closes only the editor; Escape from annotation mode leaves the underlying app dialog open. Pins follow the active dialog and retain their element selector and exact click coordinates.
+The annotate-anything pencil stays available in the workspace and in dialogs; drag it anywhere and double-click to put it back. While a mode is on, clicks on the app leave notes instead of pressing its buttons. Escape steps back one level at a time (the note, the list, the mode, then the bar) and leaves the app's dialog open. Notes left in a dialog show again when it reopens.
 
-Use **Send to agent** in the floating annotation tool to select notes and a recipient. The picker includes saved coordinators and live standalone coding terminals. Coordinators queue the request in their existing conversation; assigned workers receive follow-up work through their coordinator. Standalone terminals use the same empty-prompt guard as worker follow-ups, so busy prompts, drafts, and permission menus are not overwritten.
+**Send** in the annotation bar delivers every unsent note. Coordinators queue the request in their existing conversation; assigned workers get the work through their coordinator. Standalone terminals use the same empty-prompt guard as worker follow-ups, so busy prompts, drafts, and permission menus are not overwritten.
 
-Submissions save an immutable snapshot of the selected notes, including coordinates, selectors, and viewport details. Coordinators retrieve that snapshot through their context artifacts; terminal agents receive its local JSON path. Sent notes remain in Feedback and are unchecked by default the next time you send. Request IDs prevent duplicate delivery on retries; an ambiguous terminal write requires inspecting the session before submitting again. The authenticated `/api/coordinators/submit-feedback` endpoint requires a backend restart when upgrading an existing server.
+Submissions save an immutable snapshot of the sent notes, including coordinates, selectors, and viewport details. Coordinators retrieve that snapshot through their context artifacts; terminal agents receive its local JSON path. Only unsent notes go, so sending again never repeats one; **Reopen** on a finished note puts it back in the next Send. An ambiguous terminal write requires inspecting the session before submitting again. The authenticated `/api/coordinators/submit-annotations` endpoint requires a backend restart when upgrading an existing server.
 
 Worker review displays the full saved report with readable headings, lists, and code blocks. Opening a review automatically looks for the native conversation in captured callbacks, the worker registry, or a unique Claude/Codex user-history match for the exact task in that terminal's launch command. Ambiguous or missing matches leave the terminal open; the UI provides Retry rather than requiring an ID to be pasted. Account quota percentages are displayed inline in the coordinator footer, with reset/update times available on hover. The Agent map button beside the workspace launch buttons toggles between the map and terminal panes.
 
@@ -552,7 +552,14 @@ The router must return one of the offered model strings verbatim. Anything else,
 
 ### Annotation history and UI learning
 
-Saving a note closes its box; annotation mode stays on so you can add another. **Send to agent** opens a searchable list using the same names as Sessions, with open panes first. Refresh updates the list. Read-only sessions explain why delivery is unavailable, and worker entries identify their coordinator as the recipient. A successful send closes the dialog; failed sends retain the notes for retry.
+Saving a note closes its box and keeps the mode on, so you can add another. **Send** lists this desk's coordinators and coding agents by the names Sessions uses, open panes first; workers are reached through their coordinator. After the first pick, Send goes straight to that agent and the arrow beside it picks another. The agent gets each note by number with where it was left, the path of the full notes, and a command that reports back:
+
+```sh
+python3 scripts/annotation_status.py --file data/feedback.json 3 working
+python3 scripts/annotation_status.py --file data/feedback.json 3 resolved --reply "Dropped the heading to 26px."
+```
+
+The note shows sent, picked up, working, then done with the agent's reply. A busy agent gets the notes when its prompt is next free; until then they show as sent, and if that delivery fails they go back to unsent. Resolved means implemented, not accepted.
 
 Annotation saves now retain validated revisions in the local `feedback-history.sqlite3` beside `feedback.json`. Edits preserve the earlier wording and target metadata; clearing removes active pins and records tombstones without deleting the historical revisions. Repeated syncs are deduplicated, and cleared notes remain cleared. This archive is private, ignored local state, not an automatic screenshot capture or an acceptance record.
 
@@ -688,7 +695,7 @@ Choose **Coordinator environment** to run the coordinator and workers remotely. 
 
 ## Feedback delivery and existing agents
 
-**Send to agent** records queued, delivered, failed, cancelled and uncertain states separately. Reopen the Send dialog to inspect or cancel a waiting delivery. Queued feedback waits for an empty agent prompt. Codex's dim empty-composer hint is recognized; drafts, approvals and busy screens still block input. Existing screen observers retain their loaded detector until replaced; updating the web backend alone does not patch them.
+Delivery records queued, delivered, failed, cancelled and uncertain states separately, and the notes show it: sent while a busy agent's prompt is not free, picked up once it reaches the agent, and unsent again if that delivery fails. Queued feedback waits for an empty agent prompt. Codex's dim empty-composer hint is recognized; drafts, approvals and busy screens still block input. Existing screen observers retain their loaded detector until replaced; updating the web backend alone does not patch them.
 
 A coordinator's worker strip offers **Add existing agent…** for supported unassigned managed agents. Attachment preserves the conversation and sends no input. Automations, external terminals and agents already owned by another coordinator are excluded.
 

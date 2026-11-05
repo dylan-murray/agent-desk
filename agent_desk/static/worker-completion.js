@@ -115,7 +115,7 @@ function withWorkerCompletion(agent) {
     initialized = true;
     try { localStorage.setItem(seenKey, JSON.stringify([...seen].slice(-2000))); } catch {}
     if (fresh && !demo) completion();
-    if (previous !== JSON.stringify([...workerCompletions]) && !annotating) render();
+    if (previous !== JSON.stringify([...workerCompletions]) ) render();
   };
   updateButton();
 })();

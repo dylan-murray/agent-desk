@@ -19,7 +19,7 @@ In another terminal:
 AGENT_DESK_TEST_URL=http://127.0.0.1:4322 npm run test:browser
 ```
 
-These checks cover coordinator panes, team selection, modal annotations, and feedback reconciliation. The remaining `.cjs` files can be run individually with the same environment. Some integration checks create local fixture terminals and workflows; they require an isolated server with process-launch permission. No paid agent CLI is needed for fixtures.
+These checks cover coordinator panes, team selection, and annotating the desk with annotate-anything, from a note to an agent's reply. The remaining `.cjs` files can be run individually with the same environment. Some integration checks create local fixture terminals and workflows; they require an isolated server with process-launch permission. No paid agent CLI is needed for fixtures.
 
 Always set `AGENT_DESK_TEST_URL` to the isolated server. `npm run test:browser` refuses to start if it is missing, non-loopback, or points to the live port 4310. Set `CHROME_PATH` to use an existing Chrome executable instead of Playwright's bundled Chromium. Screenshots are written to your operating system's temporary directory or the evidence path selected by the check.
 

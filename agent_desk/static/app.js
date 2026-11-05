@@ -1,7 +1,7 @@
 const $ = (s) => document.querySelector(s);
 const escapeHTML = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const labels = {working:'Working',needs_input:'Needs you',idle:'Idle',completed:'Completed',ready_for_review:'Ready for review',error:'Error',unknown:'Unknown',output:'Output active',quiet:'Quiet'};
-let agents = [], agentsLoaded = false, demo = false, filter = 'all', annotating = false, pending = null, selectedId = null;
+let agents = [], agentsLoaded = false, demo = false, filter = 'all', pending = null, selectedId = null;
 const demoAgents = [
   ['frontend','Interface polish','claude','needs_input','Refine the agent dashboard and interaction states','agent-desk','Should the sidebar stay expanded on smaller screens?'],
   ['adapters','Harness adapters','codex','working','Normalize session events across agent harnesses','agent-desk'],
@@ -77,12 +77,11 @@ function render(){
   document.querySelectorAll('[data-close-coordinator]').forEach(b=>b.onclick=()=>window.closeCoordinator(b.dataset.closeCoordinator));
   document.querySelectorAll('[data-close-terminal]').forEach(b=>b.onclick=()=>requestCloseTerminal(b.dataset.closeTerminal));
   if(focusKey)document.querySelector(`[${focusKey}="${CSS.escape(focusValue)}"]`)?.focus({preventScroll:true});
-  requestAnimationFrame(() => { if (typeof renderPins === 'function') renderPins(); });
   if($('#empty-action'))$('#empty-action').onclick=()=>{if(all.length){filter='all';$('#search').value='';}else openTerminalLauncher();render();};
 }
 function openDetails(id){selectedId=id;renderDetails();$('#details').showModal();}
 function renderDetails(){const a=current().find(a=>a.id===selectedId);if(!a)return;$('#detail-content').innerHTML=`<div class="eyebrow">${escapeHTML(a.harness)} / ${escapeHTML(a.source)}</div><h2>${escapeHTML(a.name)}</h2><span class="status ${escapeHTML(a.status)}">${escapeHTML(labels[a.status])}</span><p>${escapeHTML(a.task)}</p><p class="muted">${escapeHTML(a.project)}${a.pid?' · PID '+escapeHTML(a.pid):''} · ${relative(a.updated)}</p>${a.question?'<div class="question"><strong>Waiting for your answer</strong><p>'+escapeHTML(a.question)+'</p><small>Reply in the original harness. Responses from this app are not connected yet.</small></div>':''}<h3>Activity</h3>${a.events.length?a.events.slice().reverse().map(e=>`<div class="event"><small>${new Date(e.time*1000).toLocaleTimeString()}</small>${escapeHTML(e.message)}</div>`).join(''):'<p class="muted">No adapter events yet. A detected process doesn’t reveal its task or whether it needs input.</p>'}`;}
-async function refresh(){try{const r=await fetch('/api/agents');if(!r.ok)throw Error();const data=await r.json();setDesks(data.desks);if(data.terminal_limit&&data.terminal_limit!==PANE_LIMIT){PANE_LIMIT=data.terminal_limit;document.dispatchEvent(new Event('terminal-limit-change'));}agents=stampReadouts(data.agents);agentsLoaded=true;$('#sync-status').textContent='● Connected';$('#sync-status').classList.remove('error-banner');$('#sync-status').classList.add('connected');if(!annotating&&!window.annotationNoteOpen?.())render();if($('#details').open)renderDetails();}catch{$('#sync-status').textContent='Connection lost · showing last update';$('#sync-status').classList.add('error-banner');$('#sync-status').classList.remove('connected');}}
+async function refresh(){try{const r=await fetch('/api/agents');if(!r.ok)throw Error();const data=await r.json();setDesks(data.desks);if(data.terminal_limit&&data.terminal_limit!==PANE_LIMIT){PANE_LIMIT=data.terminal_limit;document.dispatchEvent(new Event('terminal-limit-change'));}agents=stampReadouts(data.agents);agentsLoaded=true;$('#sync-status').textContent='● Connected';$('#sync-status').classList.remove('error-banner');$('#sync-status').classList.add('connected');render();if($('#details').open)renderDetails();}catch{$('#sync-status').textContent='Connection lost · showing last update';$('#sync-status').classList.add('error-banner');$('#sync-status').classList.remove('connected');}}
 // Header controls keep their order when switching pages. One declared header order, in
 // the same order as .top-actions in index.html, applied on every page switch. Sessions is a destination like the others and
 // is the active chip on the Agents page, so the cluster is one width everywhere without an
@@ -100,16 +99,13 @@ function placeHeaderThumb(){
 }
 function switchPage(page){
   if(page!=='coordinator'&&new URLSearchParams(location.search).get('view')==='coordinator')history.replaceState({},'',location.pathname);
-  if(page==='feedback'&&!window.AGENT_DESK_CONFIG.development)return;
-  document.body.classList.toggle('feedback-open',page==='feedback');
   document.body.classList.toggle('skills-open',page==='skills');
-  ['agents','feedback','skills','special-agents','inbox','workflows','settings'].forEach(name=>$('#'+name+'-page').classList.toggle('hidden',name!==page));
+  ['agents','skills','special-agents','inbox','workflows','settings'].forEach(name=>$('#'+name+'-page').classList.toggle('hidden',name!==page));
   if($('#dev-menu'))$('#dev-menu').open=false;
-  $('#breadcrumb').textContent=page==='coordinator'?'Coordinator':page==='workflows'?'Run & Schedule':page==='inbox'?'Inbox':page==='special-agents'?'Automations':page==='agents'?'Agents':page==='skills'?'Skills':page==='settings'?'Settings':'Feedback';
+  $('#breadcrumb').textContent=page==='coordinator'?'Coordinator':page==='workflows'?'Run & Schedule':page==='inbox'?'Inbox':page==='special-agents'?'Automations':page==='agents'?'Agents':page==='skills'?'Skills':'Settings';
   for(const [id,owner] of Object.entries(headerDestinations))$('#'+id).classList.toggle('active',page===owner);
   placeHeaderThumb();
-  if(page==='feedback')renderFeedback();
-  requestAnimationFrame(()=>{if(typeof renderPins==='function')renderPins();});
+  dispatchEvent(new Event('annotate-anything:route'));
 }
 
 document.querySelectorAll('.close-dialog').forEach(b=>b.onclick=()=>b.closest('dialog').close());

@@ -10,12 +10,17 @@ from urllib.request import Request, urlopen
 from agent_desk import server
 
 
-def sample_note(note_id='pin-1'):
-    return dict(id=note_id, kind='pin', note='Move this', createdAt='2026-09-04',
-                url='http://localhost', page='Agents', mode='demo', selector='body', elementText='',
-                point=dict(viewportX=40, viewportY=80, documentX=40, documentY=80),
-                viewport=dict(width=1000, height=800, devicePixelRatio=2),
-                bounds=dict(x=0, y=0, width=1000, height=800), scroll=dict(x=0, y=0))
+def annotation_time(seconds=0):
+    from datetime import datetime, timedelta, timezone
+    return (datetime.now(timezone.utc) + timedelta(seconds=seconds)).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
+
+
+def sample_note(note_id='pin-1', **changes):
+    return dict(id=note_id, n=0, kind='pin', route='/agents', comment='Move this', status='open',
+                createdAt='2026-09-04T10:00:00.000Z', updatedAt='2026-09-04T10:00:00.000Z',
+                selector='body', tag='body', targetText='', x=40, y=80,
+                bounds=dict(x=0, y=0, width=1000, height=800), scroll=dict(x=0, y=0),
+                viewport=dict(width=1000, height=800), inDialog=False, context={}) | changes
 
 
 class FeedbackTests(unittest.TestCase):
@@ -28,65 +33,105 @@ class FeedbackTests(unittest.TestCase):
         self.patch.stop()
         self.temp.cleanup()
 
-    def test_migration_is_idempotent_and_persists_coordinates(self):
+    def test_a_saved_note_keeps_where_it_points_and_gets_a_number(self):
         note = sample_note()
-        server.save_feedback({'notes': [note]})
-        server.save_feedback({'notes': [note]})
-        self.assertEqual(server.read_feedback()['notes'], [note])
+        server.annotations().sync([note], [])
+        server.annotations().sync([note], [])
+        self.assertEqual(server.annotations().read()['notes'], [note | {'n': 1}])
 
-    def test_box_annotations_save_with_their_area(self):
-        box = {**sample_note('box'), 'kind': 'region', 'region': dict(x=.1, y=.2, width=.5, height=.4),
-               'regionBox': dict(x=100, y=160, width=500, height=320)}
-        self.assertEqual(server.save_feedback({'notes': [box]})['notes'], [box])
-        for broken in ({k: v for k, v in box.items() if k != 'regionBox'}, {**box, 'region': dict(x=0, y=0, width=float('nan'), height=1)}):
-            with self.assertRaises(ValueError):
-                server.save_feedback({'notes': [broken]})
-        with self.assertRaises(ValueError):
-            server.save_feedback({'notes': [{**sample_note('odd'), 'kind': 'lasso'}]})
+    def test_an_area_keeps_its_box_and_a_note_that_is_not_one_is_dropped(self):
+        area = sample_note('area', kind='area', offset=dict(x=10, y=20, width=500, height=320))
+        saved = server.annotations().sync([area, sample_note('odd', kind='lasso'), sample_note('empty', comment='  '), {'id': '../x'}], [])
+        self.assertEqual([(n['id'], n.get('offset')) for n in saved['notes']], [('area', area['offset'])])
 
     def test_merge_preserves_other_tabs_and_deleted_notes_stay_deleted(self):
-        server.save_feedback({'notes': [sample_note('one')]})
-        saved = server.save_feedback({'notes': [sample_note('two')]})
-        self.assertEqual(len(saved['notes']), 2)
-        server.save_feedback({'deleted': ['one']})
-        saved = server.save_feedback({'notes': [sample_note('one')]})
+        server.annotations().sync([sample_note('one')], [])
+        saved = server.annotations().sync([sample_note('two')], [])
+        self.assertEqual([(n['id'], n['n']) for n in saved['notes']], [('one', 1), ('two', 2)])
+        server.annotations().sync([], ['one'])
+        saved = server.annotations().sync([sample_note('one')], [])
         self.assertEqual([n['id'] for n in saved['notes']], ['two'])
+
+    def test_two_tabs_that_pick_the_same_number_get_different_ones(self):
+        server.annotations().sync([sample_note('a', n=3)], [])
+        saved = server.annotations().sync([sample_note('b', n=3)], [])
+        self.assertEqual([n['n'] for n in saved['notes']], [3, 4])
+
+    def test_the_browser_cannot_overwrite_what_the_agent_reported(self):
+        server.annotations().sync([sample_note('fix')], [])
+        server.annotations().set_status(['1'], 'resolved', 'Moved it 12px left.')
+        edited = sample_note('fix', comment='Move this, and tint it', updatedAt=annotation_time(seconds=5))
+        saved = server.annotations().sync([edited | {'status': 'open', 'reply': ''}], [])['notes'][0]
+        self.assertEqual((saved['comment'], saved['status'], saved['reply']), ('Move this, and tint it', 'resolved', 'Moved it 12px left.'))
+        stale = sample_note('fix', comment='An older edit', updatedAt='2026-09-01T10:00:00.000Z')
+        self.assertEqual(server.annotations().sync([stale], [])['notes'][0]['comment'], 'Move this, and tint it')
+
+    def test_each_note_keeps_the_agent_it_went_to(self):
+        store = server.annotations()
+        store.sync([sample_note('a'), sample_note('b')], [])
+        store.mark_sent(['a'], agent='Docs review', picked_up=True)
+        store.mark_sent(['b'], agent='UI planning', picked_up=True)
+        later = sample_note('a', comment='Move this further', updatedAt=annotation_time(seconds=5))
+        saved = store.sync([later | {'agent': 'Someone else'}], [])
+        self.assertEqual({n['id']: n['agent'] for n in saved['notes']}, {'a': 'Docs review', 'b': 'UI planning'})
+        self.assertTrue(saved['picks'])
+
+    def test_a_new_note_always_starts_unsent(self):
+        saved = server.annotations().sync([sample_note('fresh', status='resolved', reply='Done', sentAt='2026-09-04T10:00:00.000Z')], [])
+        self.assertEqual({k: saved['notes'][0].get(k) for k in ('status', 'reply', 'sentAt')}, {'status': 'open', 'reply': None, 'sentAt': None})
 
     def test_history_preserves_edits_and_clears_without_restoring_pins(self):
         import sqlite3
-        old=sample_note('history');new={**old,'note':'New explanation','updatedAt':'2026-09-09T03:00:00Z'}
-        server.save_feedback({'notes':[old]})
-        server.save_feedback({'notes':[new]})
-        server.save_feedback({'notes':[new]})
-        server.save_feedback({'deleted':['history']})
-        server.save_feedback({'notes':[old]})
-        self.assertEqual(server.read_feedback()['notes'],[])
-        connection=sqlite3.connect(server.FEEDBACK_FILE.with_name('feedback-history.sqlite3'))
+        old = sample_note('history')
+        new = sample_note('history', comment='New explanation', updatedAt='2026-09-09T03:00:00.000Z')
+        server.annotations().sync([old], [])
+        server.annotations().sync([new], [])
+        server.annotations().sync([new], [])
+        server.annotations().sync([], ['history'])
+        server.annotations().sync([old], [])
+        self.assertEqual(server.annotations().read()['notes'], [])
+        connection = sqlite3.connect(server.FEEDBACK_FILE.with_name('feedback-history.sqlite3'))
         try:
-            rows=connection.execute('SELECT payload FROM revisions WHERE note_id=?',('history',)).fetchall()
-            self.assertEqual({json.loads(r[0])['note'] for r in rows},{old['note'],new['note']})
-            self.assertEqual(len(rows),2)
-            self.assertEqual(connection.execute('SELECT note_id FROM cleared').fetchall(),[('history',)])
-            self.assertTrue(all(json.loads(r[0])['point']==old['point'] for r in rows))
-        finally:connection.close()
+            rows = connection.execute('SELECT payload FROM revisions WHERE note_id=?', ('history',)).fetchall()
+            self.assertEqual({json.loads(r[0])['comment'] for r in rows}, {old['comment'], new['comment']})
+            self.assertEqual(connection.execute('SELECT note_id FROM cleared').fetchall(), [('history',)])
+            self.assertTrue(all(json.loads(r[0])['x'] == old['x'] for r in rows))
+        finally:
+            connection.close()
 
     def test_history_imports_existing_note_before_first_clear(self):
         import sqlite3
-        note=sample_note('pre-archive')
+        note = sample_note('pre-archive', n=1)
         server.FEEDBACK_FILE.parent.mkdir(parents=True)
-        server.FEEDBACK_FILE.write_text(json.dumps({'notes':[note],'deleted':[]}))
-        server.save_feedback({'deleted':[note['id']]})
-        connection=sqlite3.connect(server.FEEDBACK_FILE.with_name('feedback-history.sqlite3'))
-        try:self.assertEqual(json.loads(connection.execute('SELECT payload FROM revisions').fetchone()[0]),note)
-        finally:connection.close()
+        server.FEEDBACK_FILE.write_text(json.dumps({'notes': [note], 'deleted': []}))
+        server.annotations().sync([], [note['id']])
+        connection = sqlite3.connect(server.FEEDBACK_FILE.with_name('feedback-history.sqlite3'))
+        try:
+            self.assertEqual(json.loads(connection.execute('SELECT payload FROM revisions').fetchone()[0]), note)
+        finally:
+            connection.close()
 
-    def test_bad_coordinates_do_not_overwrite_saved_feedback(self):
-        server.save_feedback({'notes': [sample_note()]})
-        bad = sample_note('bad')
-        bad['point']['viewportX'] = float('nan')
+    def test_a_file_from_the_old_annotator_keeps_its_deletions(self):
+        server.FEEDBACK_FILE.parent.mkdir(parents=True)
+        old = {'id': 'legacy', 'kind': 'region', 'note': 'Old shape', 'selector': 'body'}
+        server.FEEDBACK_FILE.write_text(json.dumps({'notes': [old], 'deleted': ['gone-1', 'gone-2']}))
+        self.assertEqual(server.annotations().read(), {'notes': [], 'deleted': ['gone-1', 'gone-2'], 'watching': False, 'picks': True})
+        saved = server.annotations().sync([sample_note('gone-1'), sample_note('new')], [])
+        self.assertEqual(([n['id'] for n in saved['notes']], saved['deleted']), (['new'], ['gone-1', 'gone-2']))
+
+    def test_status_names_notes_by_number_or_id_and_open_clears_the_send(self):
+        store = server.annotations()
+        store.sync([sample_note('a'), sample_note('b')], [])
+        store.mark_sent(['a', 'b'], agent='Docs review', picked_up=True)
+        self.assertEqual([n['n'] for n in store.set_status(['#1', 'b'], 'working')], [1, 2])
+        reopened = store.set_status(['2'], 'open', 'Left it: the spacing already matches.')[0]
+        self.assertEqual((reopened['status'], 'sentAt' in reopened, 'pickedUpAt' in reopened, reopened['reply']), ('open', False, False, 'Left it: the spacing already matches.'))
+        self.assertEqual(store.read()['agent'], 'Docs review')
+        self.assertEqual(store.read()['notes'][0]['agent'], 'Docs review')
+        self.assertNotIn('agent', store.read()['notes'][1])
+        self.assertEqual(store.set_status(['9'], 'resolved'), [])
         with self.assertRaises(ValueError):
-            server.save_feedback({'notes': [bad]})
-        self.assertEqual(len(server.read_feedback()['notes']), 1)
+            store.set_status(['1'], 'accepted')
 
 
 class AgentTests(unittest.TestCase):
@@ -315,7 +360,7 @@ class HTTPTests(unittest.TestCase):
         with patch.object(server, 'DEVELOPMENT', False):
             with urlopen(self.base+'/config.js') as response:
                 self.assertIn(b'"development": false', response.read())
-            for req in (Request(self.base+'/api/feedback'), Request(self.base+'/api/feedback', data=b'{}')):
+            for req in (Request(self.base+'/api/feedback'), Request(self.base+'/api/feedback', data=b'{}'), Request(self.base+'/api/feedback/status', data=b'{}')):
                 with self.assertRaises(HTTPError) as caught:
                     urlopen(req)
                 self.assertEqual(caught.exception.code, 404)
@@ -328,11 +373,19 @@ class HTTPTests(unittest.TestCase):
             self.assertEqual(len(json.load(response)['notes']), 1)
         with urlopen(self.base+'/api/feedback') as response:
             self.assertEqual(json.load(response)['notes'][0]['kind'], 'pin')
-        for rejected in ({}, {**headers, 'Origin': 'https://evil.example'}):
-            with self.assertRaises(HTTPError) as caught:
-                urlopen(Request(self.base+'/api/feedback', data=body, headers=rejected))
-            self.assertEqual(caught.exception.code, 403)
-            caught.exception.close()
+        status = json.dumps({'ids': ['pin-1'], 'status': 'resolved'}).encode()
+        with urlopen(Request(self.base+'/api/feedback/status', data=status, headers=headers)) as response:
+            self.assertEqual(json.load(response)['notes'][0]['status'], 'resolved')
+        with self.assertRaises(HTTPError) as caught:
+            urlopen(Request(self.base+'/api/feedback/status', data=json.dumps({'ids': ['nope'], 'status': 'open'}).encode(), headers=headers))
+        self.assertEqual(caught.exception.code, 404)
+        caught.exception.close()
+        for path, data in (('/api/feedback', body), ('/api/feedback/status', status)):
+            for rejected in ({}, {**headers, 'Origin': 'https://evil.example'}):
+                with self.assertRaises(HTTPError) as caught:
+                    urlopen(Request(self.base+path, data=data, headers=rejected))
+                self.assertEqual(caught.exception.code, 403)
+                caught.exception.close()
 
     def test_skill_ui_registration_and_direct_endpoint(self):
         payload = {'id': 'readme-test', 'title': 'README', 'skill': 'readme-review', 'url': 'http://127.0.0.1:8766'}

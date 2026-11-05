@@ -74,7 +74,7 @@ function createWebPane(page){
   const title=node.querySelector('.pane-title'),address=node.querySelector('.pane-directory');
   for(const [target,label,edit] of [[title,'Click to rename',()=>editWebPane(view,page.id,'name')],[address,'Click to change the address',()=>editWebPane(view,page.id,'url')]]){
     target.tabIndex=0;target.setAttribute('role','button');target.title=label;
-    target.onclick=()=>{if(!annotating&&performance.now()-paneDragEndedAt>250)edit();};
+    target.onclick=()=>{if(performance.now()-paneDragEndedAt>250)edit();};
     target.onkeydown=event=>{if(event.target===target&&['Enter',' '].includes(event.key)){event.preventDefault();edit();}};
   }
   node.querySelector('.pane-reload').onclick=()=>loadWebPane(view,webPages.get(page.id));

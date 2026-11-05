@@ -137,5 +137,5 @@
   .desk-button .desk-mark{width:24px;height:24px;border-radius:7px;font-size:11px}
   .desk-label small{display:none}
   .desk-name{font-size:12px}
-  body.skills-open .desk-switcher,body.tools-open .desk-switcher,body.feedback-open .desk-switcher{display:none}
+  body.skills-open .desk-switcher,body.tools-open .desk-switcher{display:none}
 }

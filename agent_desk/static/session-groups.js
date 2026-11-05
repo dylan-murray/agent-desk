@@ -144,7 +144,6 @@ document.addEventListener('DOMContentLoaded',()=>{
   });
   // Shift+F10 and the context-menu key also land here, so the menu works from the keyboard.
   grid.addEventListener('contextmenu',event=>{
-    if(annotating)return;
     const toggle=event.target.closest('[data-group-toggle]'),row=event.target.closest('.session-row');
     const at=event.clientX||event.clientY?[event.clientX,event.clientY]:(box=>[box.x+16,box.bottom])((toggle||row).getBoundingClientRect());
     if(toggle){

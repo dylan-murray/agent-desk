@@ -43,7 +43,7 @@ const APP=process.env.AGENT_DESK_TEST_URL; if(!APP||new URL(APP).port==='4310')t
  await shot('skill-builder-desktop');
  await page.setViewportSize({width:390,height:844});await shot('skill-builder-narrow');
  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
- await page.locator('#annotation-launcher').click();await page.waitForFunction(()=>document.querySelector('#annotation-layer').parentElement.id==='skill-builder');await page.keyboard.press('Escape');
+ await page.locator('annotate-anything .launcher').click();await page.waitForFunction(()=>document.querySelector('annotate-anything').parentElement.id==='skill-builder');await page.keyboard.press('Escape');
  await page.locator('#skill-build-install').click();await page.locator('#skill-builder').waitFor({state:'hidden'});assert.equal(created,true);
  await page.setViewportSize({width:1920,height:958});await page.locator('#skills-back').click();await page.locator('#new-terminal').click();await page.locator('[data-new-pane="terminal"]').click();await page.locator('#open-ssh').click();
  await page.waitForFunction(()=>document.querySelector('#ssh-status').textContent.includes('SSH ready'));
@@ -56,7 +56,7 @@ const APP=process.env.AGENT_DESK_TEST_URL; if(!APP||new URL(APP).port==='4310')t
  await page.locator('#ssh-saved').selectOption('saved-fixture');assert.equal(await page.locator('#ssh-host').inputValue(),'dev-alias');
  await shot('ssh-desktop');await page.setViewportSize({width:390,height:844});await page.locator('#ssh-dialog').evaluate(d=>d.scrollTop=0);await shot('ssh-narrow');
  assert.ok(await page.locator('#ssh-dialog').evaluate(d=>d.getBoundingClientRect().right<=innerWidth));
- await page.locator('#annotation-launcher').click();await page.waitForFunction(()=>document.querySelector('#annotation-layer').parentElement.id==='ssh-dialog');await page.keyboard.press('Escape');
+ await page.locator('annotate-anything .launcher').click();await page.waitForFunction(()=>document.querySelector('annotate-anything').parentElement.id==='ssh-dialog');await page.keyboard.press('Escape');
  await page.locator('#ssh-close').click();await page.setViewportSize({width:1920,height:958});await page.locator('#new-terminal').click();await page.locator('[data-new-pane="terminal"]').click();
  await page.locator('#terminal-harness').selectOption('grok');await page.locator('#terminal-session-mode').selectOption('portable');
  await page.locator('#portable-source option[value=source-fixture]').waitFor({state:'attached'});await page.locator('#portable-source').selectOption('source-fixture');
@@ -64,9 +64,5 @@ const APP=process.env.AGENT_DESK_TEST_URL; if(!APP||new URL(APP).port==='4310')t
  await shot('portable-conversation');
  await page.locator('#launch-terminal-form button[type=submit]').click();await page.locator('#launch-terminal-dialog').waitFor({state:'hidden'});
  const launched=calls.find(([p])=>p==='/api/terminals/launch')[1];assert.equal(launched.argv[0],'grok');assert.match(launched.argv.at(-1),/Read \/private\/fixture.json/);
- await page.locator('#annotation-launcher').click();await page.locator('#annotation-send').click();await page.locator('.annotation-agent input').first().check();await page.locator('#annotation-send-form button[type=submit]').click();await page.locator('#annotation-send-dialog').waitFor({state:'hidden'});
- await page.locator('#annotation-launcher').click();await page.locator('#annotation-send').click();await page.getByText('Waiting for agent',{exact:false}).first().waitFor();
- assert.match(await page.locator('#annotation-send-notes').innerText(),/Waiting for agent/);assert.doesNotMatch(await page.locator('#annotation-send-notes').innerText(),/Delivered previously/);
- await shot('feedback-queued');await page.getByRole('button',{name:'Cancel delivery'}).click();await page.waitForFunction(()=>!document.querySelector('.annotation-delivery'));
- assert.deepEqual(errors,[]);console.log('PASS: skill builder preview/install, SSH templates and invalidation, desktop/narrow modal annotations, cross-harness launch, visible queue and cancellation (mocked APIs)');
+ assert.deepEqual(errors,[]);console.log('PASS: skill builder preview/install, SSH templates and invalidation, desktop/narrow modal annotations, cross-harness launch (mocked APIs)');
 }finally{await browser.close();}})().catch(e=>{console.error(e);process.exit(1);});

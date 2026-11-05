@@ -869,6 +869,77 @@ print('Worker reported',flush=True)
         self.assertEqual(json.loads(self.runtime.retrieve(self.c['id'],reference)['text']),notes)
         with self.assertRaises(ValueError):submit_feedback(self.runtime,payload|{'notes':[notes[0]|{'note':'Different'}]})
 
+    def page_notes(self):
+        from agent_desk.annotations import AnnotationStore
+        from agent_desk.feedback_history import archive_feedback
+        store=AnnotationStore(self.root/'data'/'feedback.json',archive=archive_feedback)
+        base=dict(kind='element',route='/inbox',createdAt='2026-11-05T10:00:00.000Z',updatedAt='2026-11-05T10:00:00.000Z',x=4,y=6,
+                  bounds=dict(x=0,y=0,width=200,height=40),scroll=dict(x=0,y=0),viewport=dict(width=1440,height=900),inDialog=False,context={})
+        store.sync([base|dict(id='note-a',n=1,comment='Make the filter chips quieter',selector='.inbox-filters',tag='div',targetText='Needs you'),
+                    base|dict(id='note-b',n=2,kind='pin',comment='This count is off by one',selector='#inbox-count',tag='b',targetText='3')],[])
+        return store
+
+    def test_page_notes_reach_a_terminal_numbered_with_how_to_report_back(self):
+        import subprocess
+        from agent_desk.feedback_delivery import submit_annotations
+        store=self.page_notes();session=self.terminals.launch({'parent_id':None})
+        page={'route':'/inbox','url':'http://127.0.0.1:4401/','title':'Agent Desk','viewport':{'width':1440,'height':900}}
+        payload={'request_id':'page-notes','target_id':session.id,'agent':'Docs review','note_ids':['note-a','note-b'],'page':page}
+        result=submit_annotations(self.runtime,store,payload)
+        self.assertEqual((result['sent'],result['agent'],result['delivery']),(2,'Docs review',{'to':'Docs review','ok':True}))
+        self.assertEqual(result['submission']['noteIds'],['note-a','note-b'])
+        prompt=session.followups[0]
+        self.assertIn('- #1 element on /inbox (.inbox-filters "Needs you"): Make the filter chips quieter',prompt)
+        self.assertIn('- #2 pin on /inbox (#inbox-count "3"): This count is off by one',prompt)
+        self.assertTrue(prompt.endswith('\nSubmission: page-notes'))
+        saved={n['id']:n for n in store.read()['notes']}
+        self.assertTrue(all(n['status']=='sent' and n['pickedUpAt']==n['sentAt'] for n in saved.values()))
+        self.assertEqual(submit_annotations(self.runtime,store,payload|{'request_id':'again'}),{'sent':0,'watching':False})
+        self.assertEqual(len(session.followups),1)
+        # Run the commands exactly as the agent was told to.
+        command=prompt.split('so it shows on the note, with `')[1].split('`')[0]
+        for command in (command+' 1 working',command+' 1 resolved --reply '+shlex.quote('Dropped the chips to 11px.')):
+            subprocess.run(command,shell=True,check=True,capture_output=True,cwd=self.root)
+        note=next(n for n in store.read()['notes'] if n['n']==1)
+        self.assertEqual((note['status'],note['reply']),('resolved','Dropped the chips to 11px.'))
+        self.assertIn('resolvedAt',note)
+
+    def test_page_notes_that_wait_for_a_busy_prompt_are_picked_up_when_delivered(self):
+        from agent_desk.feedback_delivery import submit_annotations, drain_feedback
+        from agent_desk.worker_screen import WorkerNotReady
+        store=self.page_notes();session=self.terminals.launch({'parent_id':None});original=session.send_task
+        session.send_task=lambda *args,**kwargs:(_ for _ in ()).throw(WorkerNotReady('busy prompt'))
+        result=submit_annotations(self.runtime,store,{'request_id':'busy-notes','target_id':session.id,'agent':'Docs review','note_ids':['note-a']})
+        self.assertEqual(result['delivery'],{'to':'Docs review','ok':True,'detail':'waiting for its prompt to be free'})
+        note=store.read()['notes'][0];self.assertEqual(note['status'],'sent');self.assertNotIn('pickedUpAt',note)
+        session.send_task=original
+        drain_feedback(self.runtime,delivered=lambda ids,ok:store.pick_up(ids) if ok else store.reopen_undelivered(ids))
+        self.assertIn('annotation_status.py',session.followups[0]);self.assertIn('#1 element on /inbox',session.followups[0])
+        self.assertIn('pickedUpAt',store.read()['notes'][0])
+
+    def test_page_notes_come_back_unsent_when_delivery_fails(self):
+        from agent_desk.feedback_delivery import submit_annotations, drain_feedback
+        from agent_desk.worker_screen import WorkerNotReady
+        store=self.page_notes();session=self.terminals.launch({'parent_id':None})
+        session.send_task=lambda *args,**kwargs:(_ for _ in ()).throw(ValueError('Agent exited'))
+        with self.assertRaisesRegex(ValueError,'Agent exited'):
+            submit_annotations(self.runtime,store,{'request_id':'lost','target_id':session.id,'note_ids':['note-a']})
+        self.assertEqual(store.read()['notes'][0]['status'],'open')
+        session.send_task=lambda *args,**kwargs:(_ for _ in ()).throw(WorkerNotReady('busy prompt'))
+        submit_annotations(self.runtime,store,{'request_id':'later','target_id':session.id,'note_ids':['note-b']})
+        session.send_task=lambda *args,**kwargs:(_ for _ in ()).throw(ValueError('Agent exited'))
+        drain_feedback(self.runtime,delivered=lambda ids,ok:store.pick_up(ids) if ok else store.reopen_undelivered(ids))
+        note=next(n for n in store.read()['notes'] if n['id']=='note-b')
+        self.assertEqual(note['status'],'open');self.assertNotIn('sentAt',note)
+
+    def test_page_notes_sent_to_a_coordinator_carry_the_report_commands(self):
+        from agent_desk.feedback_delivery import submit_annotations
+        store=self.page_notes()
+        submit_annotations(self.runtime,store,{'request_id':'to-coordinator','target_id':self.c['id'],'agent':'Coordinator','note_ids':['note-b']})
+        text=self.runtime.snapshot(self.c['id'])['messages'][0]['text']
+        self.assertIn('#2 pin on /inbox',text);self.assertIn('annotation_status.py',text);self.assertIn('Use recall to read',text)
+        self.assertIn('pickedUpAt',next(n for n in store.read()['notes'] if n['id']=='note-b'))
+
     def test_feedback_terminal_guard_and_ambiguous_delivery(self):
         from agent_desk.feedback_delivery import submit_feedback
         session=self.terminals.launch({'parent_id':None})
