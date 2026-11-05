@@ -18,7 +18,7 @@ import stat
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from agent_desk.desks import desk_name
+from agent_desk.desks import MOST_TERMINALS_PER_DESK, desk_name
 from agent_desk.paths import PROJECT_DIR
 
 LAYOUTS = ('grid', 'rows', 'columns', 'grid-3', 'main')
@@ -59,8 +59,8 @@ def layout(value):
     if not isinstance(value, dict) or value.get('layout') not in LAYOUTS:
         raise ValueError('Send the desk\'s pane layout')
     panes, pages = value.get('panes', []), value.get('pages', [])
-    if not isinstance(panes, list) or len(panes) > 16 or not isinstance(pages, list) or len(pages) > 16:
-        raise ValueError('A desk holds at most 16 panes')
+    if not isinstance(panes, list) or len(panes) > MOST_TERMINALS_PER_DESK or not isinstance(pages, list) or len(pages) > MOST_TERMINALS_PER_DESK:
+        raise ValueError(f'A desk holds at most {MOST_TERMINALS_PER_DESK} panes')
     clean = []
     for pane in panes:
         if not isinstance(pane, dict) or not isinstance(pane.get('id'), str) or not PANE_ID.match(pane['id']):
@@ -236,13 +236,13 @@ def imported(record, app, origin=None):
     terminals, seen = [], set()
     for item in record.get('terminals') if isinstance(record.get('terminals'), list) else []:
         terminal = imported_terminal(item)
-        if terminal and terminal['id'] not in seen and len(terminals) < 32:
+        if terminal and terminal['id'] not in seen and len(terminals) < MOST_TERMINALS_PER_DESK:
             seen.add(terminal['id'])
             terminals.append(terminal)
     try:
         kept = layout(record.get('layout'))
     except ValueError:
-        kept = dict(layout='grid', panes=[dict(id=t['id']) for t in terminals[:16]], pages=[])
+        kept = dict(layout='grid', panes=[dict(id=t['id']) for t in terminals], pages=[])
     pages = {page['id'] for page in kept['pages']}
     kept['panes'] = [pane for pane in kept['panes'] if pane['id'] in seen or pane['id'] in pages]
     kept['pages'] = [page for page in kept['pages'] if page['id'] in {pane['id'] for pane in kept['panes']}]

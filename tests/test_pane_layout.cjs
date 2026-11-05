@@ -39,8 +39,8 @@ test('a layout repeats below the first screen instead of capping the pane count'
   assert.deepEqual(tile('main',5),[box(0,0,8,12),box(8,0,4,4),box(8,4,4,4),box(8,8,4,4),box(0,12,12,6)]);
 });
 
-test('every layout tiles 1 to 16 panes without overlap, inside the grid, filling the first screen',()=>{
-  for(const {id,screen} of run('PANE_LAYOUTS'))for(let count=1;count<=16;count++){
+test('every layout tiles 1 to 32 panes without overlap, inside the grid, filling the first screen',()=>{
+  for(const {id,screen} of run('PANE_LAYOUTS'))for(let count=1;count<=run('PANE_LIMIT');count++){
     const rects=tile(id,count),label=`${id} × ${count}`;
     assert.equal(rects.length,count,label);
     for(const r of rects)assert.ok(run(`validPaneRect(${JSON.stringify(r)})`),`${label}: invalid ${JSON.stringify(r)}`);

@@ -66,7 +66,7 @@ class SavedDeskRecordTests(unittest.TestCase):
         self.assertEqual(saved_desks.layout(LAYOUT), LAYOUT)
         for bad in (None, dict(LAYOUT, layout='spiral'), dict(LAYOUT, panes=[dict(id='a b')]),
                     dict(LAYOUT, panes=[dict(id='a', rect=dict(x=8, y=0, w=6, h=1))]), dict(LAYOUT, pages=[dict(id='web-1', url='file:///etc/passwd')]),
-                    dict(LAYOUT, panes=[dict(id=f'p{i}') for i in range(17)])):
+                    dict(LAYOUT, panes=[dict(id=f'p{i}') for i in range(saved_desks.MOST_TERMINALS_PER_DESK + 1)])):
             with self.assertRaises(ValueError, msg=bad):
                 saved_desks.layout(bad)
 
