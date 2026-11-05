@@ -39,3 +39,22 @@
   window.addEventListener('storage', event => { if (event.key !== KEY) return; try { glow = { on: true, strength: 100, ...JSON.parse(event.newValue || '{}') }; glow.strength = clamp(glow.strength); } catch {} apply(); });
   apply();
 })();
+
+// Terminals per desk: the server keeps it and refuses launches past it, so it is shared by every
+// tab. A change made in another tab arrives with the next agents poll.
+(() => {
+  const slider = document.getElementById('settings-terminal-limit');
+  const value = document.getElementById('settings-terminal-limit-value');
+  let saving = false;
+  function apply() { if (saving) return; slider.value = PANE_LIMIT; value.textContent = PANE_LIMIT; }
+  slider.oninput = () => { value.textContent = slider.value; };
+  slider.onchange = async () => {
+    saving = true;
+    try { PANE_LIMIT = (await terminalRequest('/api/desks/limit', { limit: Number(slider.value) })).terminal_limit; render(); }
+    catch (e) { toast('Terminals per desk was not changed: ' + e.message); }
+    finally { saving = false; apply(); }
+  };
+  document.getElementById('open-settings').addEventListener('click', apply);
+  document.addEventListener('terminal-limit-change', apply);
+  apply();
+})();

@@ -10,11 +10,12 @@ import json
 import secrets
 import threading
 
+from agent_desk.desks import MOST_TERMINALS_PER_DESK
 from agent_desk.terminals import input_event, resize_event
 from agent_desk.websocket import Closed
 
 WAIT = 20
-MAX_SUBSCRIPTIONS = 64
+MAX_SUBSCRIPTIONS = 2 * MOST_TERMINALS_PER_DESK
 
 
 class TerminalStream:
