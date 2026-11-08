@@ -1,5 +1,6 @@
 """Restoring managed terminals after their supervisor ends: records, capture and relaunch."""
 import base64
+from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
@@ -14,11 +15,14 @@ import unittest
 from unittest.mock import patch
 from urllib.request import Request, urlopen
 
-from agent_desk.terminal_restore import RESTORE_GAP, SessionStore, claude_session, codex_session, plan, restore
+from agent_desk.terminal_restore import NAMES, RESTORE_GAP, SessionStore, claude_session, codex_session, cortex_sessions, grok_sessions, plan, restore
 from agent_desk.terminals import TerminalManager
 
 ROOT = Path(__file__).resolve().parents[1]
 CLAUDE_ID = '11111111-1111-4111-8111-111111111111'
+GROK_ID = '44444444-4444-7444-8444-444444444444'
+CORTEX_ID = '55555555-5555-4555-8555-555555555555'
+OPENCODE_ID = 'ses_0fixture0opencode0session'
 CODEX_ID = '22222222-2222-7222-8222-222222222222'
 SUBAGENT_ID = '33333333-3333-7333-8333-333333333333'
 
@@ -60,6 +64,44 @@ if len(args) != 2 or args[0] != '--model':
 os.execvp('claude', ['claude', '--model', args[1], *extra])
 '''
 
+# Grok and Cortex Code log each session with their process ID; OpenCode keeps its own log open and names the session in it.
+FAKE_GROK = '''import json, os, sys, time
+from datetime import datetime, timezone
+args = sys.argv[1:]
+sid = args[args.index('--resume') + 1] if '--resume' in args else os.environ['FAKE_SESSION']
+folder = os.path.join(os.environ['GROK_HOME'], 'logs')
+os.makedirs(folder, exist_ok=True)
+with open(os.path.join(folder, 'unified.jsonl'), 'a') as f:
+    f.write(json.dumps(dict(ts=datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'), src='shell', pid=os.getpid(), sid=sid,
+                            msg='session loaded' if '--resume' in args else 'session created')) + '\\n')
+print('ARGV ' + json.dumps(args), flush=True)
+sys.stdin.read()
+'''
+FAKE_CORTEX = '''import json, os, sys
+from datetime import datetime, timezone
+args = sys.argv[1:]
+sid = args[args.index('--resume') + 1] if '--resume' in args else os.environ['FAKE_SESSION']
+folder = os.path.join(os.environ['SNOWFLAKE_HOME'], 'cortex', 'logs')
+os.makedirs(folder, exist_ok=True)
+with open(os.path.join(folder, 'coco.log'), 'a') as f:
+    for session in (None, sid):
+        f.write(json.dumps(dict(ts=datetime.now(timezone.utc).isoformat(), level='INFO', session_id=session, pid=os.getpid(), msg='turn')) + '\\n')
+print('ARGV ' + json.dumps(args), flush=True)
+sys.stdin.read()
+'''
+FAKE_OPENCODE = '''import json, os, sys, time
+args = sys.argv[1:]
+sid = args[args.index('--session') + 1] if '--session' in args else os.environ['FAKE_SESSION']
+folder = os.path.join(os.environ['FAKE_OPENCODE_DATA'], 'opencode', 'log')
+os.makedirs(folder, exist_ok=True)
+log = open(os.path.join(folder, f'{time.time_ns()}.log'), 'a')
+log.write(f'INFO  2026-10-04T21:00:00 +0ms service=session id={sid} slug=fixture created\\n')
+log.write(f'INFO  2026-10-04T21:00:01 +5ms service=session.prompt sessionID={sid} step=0\\n')
+log.flush()
+print('ARGV ' + json.dumps(args), flush=True)
+sys.stdin.read()
+'''
+
 
 def wait(check, timeout=15):
     deadline = time.monotonic() + timeout
@@ -91,7 +133,8 @@ class RestoreTests(unittest.TestCase):
             path.chmod(0o755)
         self.env = patch.dict(os.environ, PATH=f'{self.bin}{os.pathsep}{os.environ["PATH"]}', SHELL='/bin/sh',
                               CLAUDE_CONFIG_DIR=str(self.root / 'claude-config'), FAKE_CODEX_HOME=str(self.root / 'codex-home'),
-                              FAKE_SUBAGENT=SUBAGENT_ID)
+                              FAKE_SUBAGENT=SUBAGENT_ID, GROK_HOME=str(self.root / 'grok-home'),
+                              SNOWFLAKE_HOME=str(self.root / 'snowflake'), FAKE_OPENCODE_DATA=str(self.root / 'opencode-data'))
         self.env.start()
         self.store = SessionStore(self.root / 'terminal-sessions-4399.json')
         self.managers = []
@@ -334,7 +377,7 @@ class RestoreTests(unittest.TestCase):
         payload, resumed, _ = plan(item)
         self.assertTrue(resumed)
         self.assertEqual(payload['argv'][4:], ['launch', 'claude', '--', '--resume', CLAUDE_ID])
-        for native, wrapped in (('--dangerously-skip-permissions', 'claude'), ('x; rm -rf ~', 'claude'), (CLAUDE_ID, 'grok'), (CLAUDE_ID, None)):
+        for native, wrapped in (('--dangerously-skip-permissions', 'claude'), ('x; rm -rf ~', 'claude'), (CLAUDE_ID, 'pi'), ('ses_short', 'opencode'), (CLAUDE_ID, None)):
             payload, resumed, detail = plan(dict(item, native_session=native, native_harness=wrapped))
             self.assertFalse(resumed)
             self.assertTrue(detail.startswith('started a shell instead of re-running'), detail)
@@ -357,13 +400,53 @@ class RestoreTests(unittest.TestCase):
             [result] = restore(self.manager(), self.store)
         self.assertEqual(result['detail'], 'Claude had exited, so this is a new shell in the same folder')
 
-    def test_opencode_and_pi_relaunch_as_new_sessions(self):
-        for cli, label in (('opencode', 'OpenCode'), ('pi', 'Pi')):
-            item = dict(id='terminal-0000000000000003', name=label, display_name=None, cwd=str(self.root),
-                        argv=[cli], launch_profile=None, parent_id=None, created=1, origin=0, native_session=None)
-            payload, resumed, detail = plan(item)
+    def test_pi_relaunches_as_a_new_session_and_others_without_a_conversation_start_new(self):
+        item = dict(id='terminal-0000000000000003', name='Pi', display_name=None, cwd=str(self.root),
+                    argv=['pi'], launch_profile=None, parent_id=None, created=1, origin=0, native_session=CLAUDE_ID)
+        payload, resumed, detail = plan(item)
+        self.assertEqual((payload['argv'], resumed), (['pi'], False))
+        self.assertEqual(detail, 'Pi conversations are not recorded, so this is a new session')
+        for cli, label in (('opencode', 'OpenCode'), ('grok', 'Grok'), ('cortex', 'Cortex Code')):
+            payload, resumed, detail = plan(dict(item, name=label, argv=[cli], native_session=None))
             self.assertEqual((payload['argv'], resumed), ([cli], False))
-            self.assertEqual(detail, label + ' conversations are not recorded, so this is a new session')
+            self.assertEqual(detail, f'no {label} conversation had started, so this is a new session')
+
+    def test_grok_opencode_and_cortex_resume_the_conversation_their_own_records_name(self):
+        for cli, source, identity, flag in (('grok', FAKE_GROK, GROK_ID, '--resume'), ('opencode', FAKE_OPENCODE, OPENCODE_ID, '--session'),
+                                            ('cortex', FAKE_CORTEX, CORTEX_ID, '--resume')):
+            with self.subTest(cli):
+                (self.bin / cli).write_text(f'#!{sys.executable}\n' + source)
+                (self.bin / cli).chmod(0o755)
+                manager = self.manager()
+                with patch.dict(os.environ, FAKE_SESSION=identity):
+                    agent = self.launch(manager, [cli, '--fixture'])
+                    wait(lambda: 'ARGV' in text(agent))
+                    self.assertEqual(wait(lambda: manager.capture_conversations(set())), {agent.id: identity})
+                manager.close()
+                replacement = self.manager()
+                [result] = [r for r in restore(replacement, self.store) if r['id'] == agent.id]
+                self.assertEqual(result['detail'], f'resumed {NAMES[cli]} conversation {identity}')
+                resumed = replacement.get(agent.id)
+                wait(lambda: 'ARGV' in text(resumed, RESTORE_GAP))
+                self.assertIn(json.dumps(['--fixture', flag, identity]), text(resumed, RESTORE_GAP))
+                self.assertEqual(replacement.capture_conversations(set()), {agent.id: identity})
+                replacement.close()
+                self.store.save([])
+
+    def test_logged_sessions_need_this_process_after_it_started(self):
+        log = self.root / 'unified.jsonl'
+        now = time.time()
+        def line(pid, sid, at, msg='session created'):
+            stamp = datetime.fromtimestamp(at, timezone.utc).isoformat().replace('+00:00', 'Z')
+            return json.dumps(dict(ts=stamp, pid=pid, sid=sid, msg=msg))
+        log.write_text('\n'.join([line(101, 'before-start', now - 3600), line(202, 'other-process', now), 'not json "pid": 101',
+                                   line(101, 'first', now), line(101, 'switched', now + 1, 'session loaded')]) + '\n')
+        self.assertEqual(grok_sessions({101: (1, now)}, [log]), {(1, 'switched')})
+        self.assertEqual(grok_sessions({303: (1, now)}, [log]), set())
+        coco = self.root / 'coco.log'
+        coco.write_text(json.dumps(dict(ts=datetime.fromtimestamp(now, timezone.utc).isoformat(), pid=101, session_id=None, msg='start')) + '\n'
+                        + json.dumps(dict(ts=datetime.fromtimestamp(now, timezone.utc).isoformat(), pid=101, session_id=CORTEX_ID, msg='turn')) + '\n')
+        self.assertEqual(cortex_sessions({101: (1, now)}, [coco]), {(1, CORTEX_ID)})
 
     def test_agent_without_a_conversation_starts_new_and_unrecorded_folder_falls_back(self):
         item = dict(id='terminal-0000000000000001', name='Codex', display_name=None, cwd=str(self.root),
