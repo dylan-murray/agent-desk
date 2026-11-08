@@ -152,15 +152,16 @@ When the supervisor ends with terminals still running (machine reboot, crash, or
 
 | Terminal | Restored as |
 | --- | --- |
-| Claude Code or Codex with a started conversation | The same CLI command, resuming that exact conversation (`claude --resume ID`, `codex resume ID`) |
-| Claude Code or Codex before its first message | The same command, as a new session |
+| Claude Code, Codex, Grok, OpenCode or Cortex Code with a started conversation | The same CLI command, resuming that exact conversation (`claude --resume ID`, `codex resume ID`, `grok --resume ID`, `opencode --session ID`, `cortex --resume ID`) |
+| One of those before its first message, or Pi | The same command, as a new session |
 | A standalone agent that had exited to its shell | A new shell in the same folder |
 | Plain shell (`zsh -l`, `bash`, …) | The same shell in the same folder |
+| A custom executable that started one of those agents with a conversation, such as `ollama launch claude` or a script ending in `claude "$@"` | The same command again, with the agent's resume arguments added where the command passes them on: after its `--`, after an added `--` for `ollama launch`, otherwise at the end |
 | Any other command (SSH, dev servers, scripts) | A login shell in the same folder; the command is **never re-run** |
 
 Each restored terminal starts with a dim line explaining what happened. Its output cursor continues past the previous process, so browser panes and CLI readers reset instead of mixing old and new screens. Only processes are new: scrollback from before the restart is not kept. If the original folder or executable is gone, the terminal opens a shell (in your home folder if needed) and says why. Explicitly stopped terminals and commands that exited are never restored.
 
-The supervisor reads each agent's conversation from the CLI's own records every five seconds: Claude Code's per-process `sessions/PID.json` file and the rollout file a Codex process holds open. Nothing is inferred from folders or timestamps. If two agents in one terminal are equally plausible, none is recorded. A conversation started in the last few seconds before a crash may not be captured yet. Agents launched by typing a command inside a shell pane restore as that shell. Grok and custom executables restore without a conversation.
+The supervisor reads each agent's conversation from the CLI's own records every five seconds: Claude Code's per-process `sessions/PID.json` file, the rollout file a Codex process holds open, the session Grok (`logs/unified.jsonl`) and Cortex Code (`cortex/logs/coco.log`) log with their process ID, and the session named in the log an OpenCode process holds open. Nothing is inferred from folders or timestamps, so Pi, which records none of these, starts a new session. If two agents in one terminal are equally plausible, none is recorded. A conversation started in the last few seconds before a crash may not be captured yet. Agents launched by typing a command inside a shell pane restore as that shell. A custom executable restores without a conversation unless one of those agents was seen running inside it with a conversation ID; only then is that command run again.
 
 Coordinator terminals and coordinator workers are not restored this way. The coordinator keeps their saved conversations and offers **Resume** explicitly. Restore records are in `terminal-sessions-PORT.json` in the data directory (mode `0600`). They contain each terminal's command, folder, name and conversation ID. An unreadable record is moved aside as `terminal-sessions-PORT.unreadable-TIME.json`, not deleted. Restore results are logged to `terminal-supervisor-PORT.log`.
 

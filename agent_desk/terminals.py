@@ -89,7 +89,7 @@ class TerminalSession:
         # When output last arrived, and when the current run of output began; a quiet gap ends a run.
         self.last_output = self.active_since = None
         self.redraw_until = 0
-        self.native_session = self.restored = None
+        self.native_session = self.native_harness = self.restored = None
         self.agent_exited = False
         self.on_exit = on_exit
         # Cursors are byte offsets since `origin`; a restored process starts past its predecessor.
@@ -365,18 +365,19 @@ class TerminalManager:
 
     def capture_conversations(self, config_dirs=None):
         """Record each agent terminal's current native conversation ID."""
-        from agent_desk.terminal_restore import observe
+        from agent_desk.terminal_restore import harness, observe
         with self.lock:
             sessions = list(self.sessions.values())
         changed = False
         observed = observe(sessions, config_dirs)
         for session in sessions:
-            native = observed.get(session.id)
-            if native and session.native_session != native:
-                session.native_session, changed = native, True
+            name, native = observed.get(session.id, (None, None))
+            wrapped = name if harness(session.argv, session.launch_profile) is None else None
+            if native and (session.native_session, session.native_harness) != (native, wrapped):
+                session.native_session, session.native_harness, changed = native, wrapped, True
         if changed:
             self.persist()
-        return observed
+        return {identity: native for identity, (_, native) in observed.items()}
 
     def watch_conversations(self, interval=5, stopped=None):
         stopped = stopped or threading.Event()

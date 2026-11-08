@@ -23,7 +23,6 @@ from agent_desk.paths import PROJECT_DIR
 
 LAYOUTS = ('grid', 'rows', 'columns', 'grid-3', 'main')
 PANE_ID = re.compile(r'^[A-Za-z0-9_.:-]{1,200}$')
-CONVERSATION = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
 PROFILE = re.compile(r'^[a-z][a-z0-9-]{0,59}$')
 PEER_LIMIT = 1 << 20
 # Where each app keeps its desks: the packaged desktop app's profile, and the browser desk run
@@ -226,7 +225,9 @@ def imported_terminal(item):
     profile = item.get('launch_profile')
     profile = profile if isinstance(profile, str) and PROFILE.match(profile) and item.get('agent_exited') is not True else None
     conversation = item.get('native_session')
-    conversation = conversation if profile and isinstance(conversation, str) and CONVERSATION.match(conversation) else None
+    from agent_desk.accounts import harness_of
+    from agent_desk.terminal_restore import valid_id
+    conversation = conversation if profile and valid_id(harness_of(profile), conversation) else None
     return dict(id=item['id'], name=name, cwd=cwd, profile=profile, conversation=conversation)
 
 

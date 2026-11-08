@@ -160,6 +160,14 @@ class ImportedRecordTests(unittest.TestCase):
                                                dict(id='terminal-b', name='Claude', cwd=good, profile=None, conversation=None)])
         self.assertEqual(record['layout'], dict(layout='grid', panes=[dict(id='terminal-a'), dict(id='terminal-b')], pages=[]), 'a bad layout is dropped, not trusted')
 
+    def test_a_conversation_comes_over_only_in_its_own_agents_format(self):
+        good = str(self.apps.project)
+        record = saved_desks.imported(dict(terminals=[
+            terminal('terminal-a', good, launch_profile='opencode', native_session='ses_0fixture0opencode0session', name='OpenCode'),
+            terminal('terminal-b', good, launch_profile='opencode', native_session=CODEX_ID, name='OpenCode'),
+            terminal('terminal-c', good, launch_profile='claude', native_session='ses_0fixture0opencode0session', name='Claude')]), 'desktop app')
+        self.assertEqual([t['conversation'] for t in record['terminals']], ['ses_0fixture0opencode0session', None, None])
+
     def test_a_desk_comes_over_with_as_many_terminals_as_a_desk_can_hold(self):
         most = saved_desks.MOST_TERMINALS_PER_DESK
         items = [terminal(f'terminal-{n}', str(self.apps.project)) for n in range(most + 1)]
@@ -251,7 +259,7 @@ class ImportRouteTests(unittest.TestCase):
             ('terminal-a', True, f'On reopen: resumes Claude conversation {CLAUDE_ID}'),
             ('terminal-b', True, f'On reopen: resumes Codex conversation {CODEX_ID}'),
             ('terminal-c', False, 'On reopen: starts a new shell in the same folder'),
-            ('terminal-d', False, 'On reopen: Grok conversations are not recorded, so this is a new session')])
+            ('terminal-d', False, 'On reopen: no Grok conversation had started, so this is a new session')])
         with patch.object(server, 'TERMINALS', Mock(launch=self.launch)):
             reopened = self.post('/api/desks/reopen', {'id': desk['id']})
         shell = os.environ.get('SHELL', '/bin/zsh')
