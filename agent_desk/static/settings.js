@@ -12,8 +12,29 @@
   document.getElementById('open-settings').onclick = () => { switchPage('settings'); render(); };
   toggle.onclick = () => window.deskAlerts.setEnabled(!window.deskAlerts.enabled());
   for (const choice of choices) choice.onchange = () => { if (choice.checked) window.deskAlerts.setEvents(choice.value); };
-  for (const button of document.querySelectorAll('.settings-preview')) button.onclick = () => window.deskAlerts.preview(button.dataset.preview);
+  for (const button of document.querySelectorAll('#settings-sound-events .settings-preview')) button.onclick = () => window.deskAlerts.preview(button.dataset.preview);
   document.addEventListener('desk-alerts-change', render);
+  render();
+})();
+
+// Desktop notifications keep their own switch and events in deskNotifications. Turning them on in a
+// browser asks for its permission, which only a click can do, so a blocked page says where to fix it.
+(() => {
+  const toggle = document.getElementById('settings-notify-enabled');
+  const detail = document.getElementById('settings-notify-detail'), usual = detail.textContent;
+  const choices = document.querySelectorAll('input[name="settings-notify-events"]');
+  function render() {
+    const notes = window.deskNotifications, on = notes.enabled(), permission = notes.permission();
+    toggle.setAttribute('aria-checked', String(on));toggle.disabled = permission === 'unsupported';
+    detail.textContent = permission === 'unsupported' ? "This browser can't show notifications for this page." : permission === 'denied' ? 'Blocked by the browser. Allow notifications for this page in its site settings, then switch this on.' : usual;
+    for (const choice of choices) choice.checked = choice.value === notes.events();
+    document.getElementById('settings-notify-events').classList.toggle('muted-choices', !on);
+  }
+  toggle.onclick = () => window.deskNotifications.setEnabled(!window.deskNotifications.enabled());
+  for (const choice of choices) choice.onchange = () => { if (choice.checked) window.deskNotifications.setEvents(choice.value); };
+  for (const button of document.querySelectorAll('#settings-notify-events .settings-preview')) button.onclick = () => window.deskNotifications.preview(button.dataset.preview);
+  document.getElementById('open-settings').addEventListener('click', render);
+  document.addEventListener('desk-notifications-change', render);
   render();
 })();
 

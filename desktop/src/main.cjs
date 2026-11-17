@@ -1,5 +1,5 @@
 'use strict';
-const {app, BrowserWindow, Menu, ipcMain, protocol, net, shell, dialog, session, screen, powerMonitor, clipboard, nativeImage} = require('electron');
+const {app, BrowserWindow, Menu, Notification, ipcMain, protocol, net, shell, dialog, session, screen, powerMonitor, clipboard, nativeImage} = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
@@ -104,6 +104,23 @@ async function boot() {
     requireFrame(event);
     if (event.sender !== mainWindow.webContents || typeof active !== 'boolean') return;
     paneFullscreen = active;updateWindowButtons();
+  });
+  // The page's web notifications stay denied with every other permission; the workspace asks the
+  // shell instead. A newer notice for the same session replaces the older one, and clicking it
+  // brings the window back and opens that session.
+  const notices = new Map();
+  ipcMain.on('desk:notify', (event, notice) => {
+    requireFrame(event);
+    const text = (value, limit) => typeof value === 'string' ? value.slice(0, limit) : '';
+    if (event.sender !== mainWindow.webContents || !Notification.isSupported() || !notice || !text(notice.title, 1) || !text(notice.tag, 1)) return;
+    const tag = text(notice.tag, 300), id = text(notice.id, 200);
+    notices.get(tag)?.close();
+    const shown = new Notification({title: text(notice.title, 200), body: text(notice.body, 500), silent: notice.silent === true});
+    notices.set(tag, shown);
+    const forget = () => {if (notices.get(tag) === shown) notices.delete(tag);};
+    shown.on('close', forget);
+    shown.on('click', () => {forget();show();if (id) mainWindow.webContents.send('desk:notification-click', id);});
+    shown.show();
   });
   const menu = Menu.buildFromTemplate([
     {label: 'Agent Desk', submenu: [{role: 'about'}, {label: 'Show Agent Desk', click: show}, {type: 'separator'},
