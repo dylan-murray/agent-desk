@@ -1,4 +1,6 @@
 #settings-page{padding:28px;overflow:auto;min-height:0}
+.settings-columns{display:grid;max-width:1464px;grid-template-columns:repeat(auto-fit,minmax(min(100%,440px),1fr));column-gap:24px;align-items:start}
+.settings-column{min-width:0}
 .settings-group{max-width:720px;margin-top:26px;border:1px solid #303035;border-radius:10px;background:#171719}
 .settings-group-head{padding:18px 20px 16px;border-bottom:1px solid #29292f}
 .settings-group-head h2{margin:0;font-size:16px;letter-spacing:-.2px}

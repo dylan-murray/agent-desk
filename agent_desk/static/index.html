@@ -52,6 +52,7 @@
 </section>
 <section id="settings-page" class="page hidden" aria-labelledby="settings-heading">
 <div class="special-heading"><div><span class="eyebrow">PREFERENCES</span><h1 id="settings-heading">Settings</h1><p>Choose how Agent Desk looks, gets your attention and how much a desk holds.</p></div></div>
+<div class="settings-columns"><div class="settings-column">
 <section class="settings-group" aria-labelledby="settings-sound-heading">
 <header class="settings-group-head"><h2 id="settings-sound-heading">Sound</h2><p>Plays in this browser tab while Agent Desk is open.</p></header>
 <div class="settings-row"><div class="settings-label"><strong id="settings-sound-label">Alert sounds</strong><span>The speaker button in the header switches this too.</span></div><button type="button" id="settings-sound-enabled" class="settings-switch" role="switch" aria-checked="false" aria-labelledby="settings-sound-label"><span class="menu-switch" aria-hidden="true"></span></button></div>
@@ -65,10 +66,12 @@
 <div class="settings-row"><div class="settings-label"><strong id="settings-glow-label">Glow</strong><span>Off keeps the agent colour on the pane border and the session row.</span></div><button type="button" id="settings-glow-enabled" class="settings-switch" role="switch" aria-checked="true" aria-labelledby="settings-glow-label"><span class="menu-switch" aria-hidden="true"></span></button></div>
 <div class="settings-row" id="settings-glow-strength-row"><div class="settings-label"><label for="settings-glow-strength"><strong>Brightness</strong></label></div><div class="settings-range"><input type="range" id="settings-glow-strength" min="25" max="200" step="5" value="100"><output id="settings-glow-value" for="settings-glow-strength">100%</output></div></div>
 </section>
+</div><div class="settings-column">
 <section class="settings-group" aria-labelledby="settings-desks-heading">
 <header class="settings-group-head"><h2 id="settings-desks-heading">Desks</h2><p>Shared by every tab on this Agent Desk.</p></header>
 <div class="settings-row"><div class="settings-label"><label for="settings-terminal-limit"><strong>Terminals per desk</strong></label><span>Lowering it stops nothing. A desk already past it just can't start more.</span></div><div class="settings-range"><input type="range" id="settings-terminal-limit" min="16" max="64" step="8" value="32"><output id="settings-terminal-limit-value" for="settings-terminal-limit">32</output></div></div>
 </section>
+</div></div>
 </section>
 <section id="workflows-page" class="page hidden" aria-label="Run and Schedule">
 <div class="special-heading"><div><span class="eyebrow">PROJECTS &amp; AGENTS</span><h1>Run &amp; Schedule</h1><p>Launch an app, run a task, or connect agents into a scheduled workflow.</p></div><div class="special-actions"><button id="new-run-config" class="button">＋ Launch configuration</button><button id="new-workflow" class="button primary">＋ Workflow</button></div></div>
