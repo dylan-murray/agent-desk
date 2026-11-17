@@ -114,10 +114,10 @@ function attentionSettled(agent){
   return activity?.connected===true&&activity.caughtUp===true;
 }
 function updateAttentionAlert(all){
-  let fresh=false;
+  const fresh=[];
   for(const agent of all){
     if(agent.status==='needs_input'){
-      if(attentionArmed.has(agent.id)&&!attentionSounded.has(agent.id))fresh=true;
+      if(attentionArmed.has(agent.id)&&!attentionSounded.has(agent.id))fresh.push(agent);
       attentionSounded.add(agent.id);
     }else if(attentionSettled(agent)){
       attentionArmed.add(agent.id);attentionSounded.delete(agent.id);
@@ -128,7 +128,9 @@ function updateAttentionAlert(all){
   for(const id of [...attentionSounded])if(!known.has(id))attentionSounded.delete(id);
   // Several sessions arriving in the same tick coalesce into one sound, and the guard
   // keeps two renders of the same tick (monitorTerminals then render) from doubling it.
-  if(!fresh||demo||Date.now()-lastAttentionSound<1500)return;
+  if(!fresh.length||demo)return;
+  window.deskNotifications?.needsYou(fresh);
+  if(Date.now()-lastAttentionSound<1500)return;
   lastAttentionSound=Date.now();
   window.deskAlerts?.attention();
 }
@@ -138,15 +140,15 @@ function updateAttentionAlert(all){
 // turn that ends on a question is left to the attention alert.
 const turnEndsSeen=new Map();
 function updateTurnEndAlert(all){
-  let fresh=false;
+  const fresh=[];
   for(const agent of all){
     const ended=agent.turn_ended??null;
-    if(turnEndsSeen.has(agent.id)&&ended&&ended!==turnEndsSeen.get(agent.id)&&agent.status!=='needs_input')fresh=true;
+    if(turnEndsSeen.has(agent.id)&&ended&&ended!==turnEndsSeen.get(agent.id)&&agent.status!=='needs_input')fresh.push(agent);
     turnEndsSeen.set(agent.id,ended);
   }
   const known=new Set(all.map(agent=>agent.id));
   for(const id of [...turnEndsSeen.keys()])if(!known.has(id))turnEndsSeen.delete(id);
-  if(fresh&&!demo)window.deskAlerts?.completion();
+  if(fresh.length&&!demo){window.deskAlerts?.completion();window.deskNotifications?.done(fresh);}
 }
 // A dismissed alert stays gone until that session asks something new.
 const attentionDismissed=new Map();

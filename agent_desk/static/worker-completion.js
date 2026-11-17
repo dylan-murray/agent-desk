@@ -105,16 +105,16 @@ function withWorkerCompletion(agent) {
           !work[0].result.startsWith('Automatic turn-end report (task success is not verified):')) workerCompletions.set(id, work[0]);
     }
     readSeen();
-    let fresh = false;
+    const fresh = [];
     for (const task of tasks) {
       if (task.result == null || task.outcome !== 'completed' || task.result.startsWith('Automatic turn-end report (task success is not verified):')) continue;
-      if (initialized && !seen.has(task.id)) fresh = true;
+      if (initialized && !seen.has(task.id)) fresh.push(task);
       seen.add(task.id);
     }
     // Baseline existing reports silently; refreshes and repeated polls don't replay them.
     initialized = true;
     try { localStorage.setItem(seenKey, JSON.stringify([...seen].slice(-2000))); } catch {}
-    if (fresh && !demo) completion();
+    if (fresh.length && !demo) { completion(); window.deskNotifications?.workerDone(fresh.filter(task => task.worker)); }
     if (previous !== JSON.stringify([...workerCompletions]) ) render();
   };
   updateButton();

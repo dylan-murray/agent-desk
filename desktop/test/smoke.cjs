@@ -36,6 +36,24 @@ let electron, manager, electronLog = '';
   await page.waitForSelector('.xterm');
   await page.evaluate(id => terminalRequest('/api/terminals/input', {id, data: btoa('echo desktop-stream-ok\n')}), terminal.id);
   await page.waitForFunction(id => {const b=paneViews.get(id)?.term?.buffer.active;if(!b)return false;for(let i=0;i<b.length;i++)if(b.getLine(i)?.translateToString(true).includes('desktop-stream-ok'))return true;return false;}, terminal.id, {timeout:10000});
+  // Notifications go through the shell, since the page's own permission stays denied: a newer one for the
+  // same session replaces the older, a malformed one is dropped, and a click opens the session it names.
+  await electron.evaluate(({Notification})=>{global.fixtureNotices=[];Notification.prototype.show=function(){global.fixtureNotices.push(this);};Notification.prototype.close=function(){this.closedByShell=true;};});
+  assert.equal(await page.evaluate(()=>Notification.permission),'denied');
+  await page.evaluate(id=>{for(const title of ['Desktop fixture is done','Desktop fixture needs you'])agentDeskDesktop.notify({tag:'agent-desk-fixture-'+id,id,title,body:'Fixture body',silent:true});agentDeskDesktop.notify({tag:'no-title',id});},terminal.id);
+  await page.waitForTimeout(300);
+  const notices=await electron.evaluate(()=>global.fixtureNotices.map(n=>({title:n.title,body:n.body,silent:n.silent,closed:!!n.closedByShell})));
+  assert.deepEqual(notices,[{title:'Desktop fixture is done',body:'Fixture body',silent:true,closed:true},{title:'Desktop fixture needs you',body:'Fixture body',silent:true,closed:false}]);
+  await page.evaluate(()=>{selectedId=null;switchPage('settings');});
+  await electron.evaluate(()=>global.fixtureNotices.at(-1).emit('click'));
+  await page.waitForFunction(id=>selectedId===id&&!document.getElementById('agents-page').classList.contains('hidden'),terminal.id);
+  await page.evaluate(()=>switchPage('settings'));
+  await page.locator('#settings-notify-enabled').click();
+  assert.equal(await page.evaluate(()=>deskNotifications.enabled()),true,'The desktop app needs no browser permission prompt');
+  await page.evaluate(()=>deskNotifications.preview('done'));await page.waitForTimeout(300);
+  assert.equal(await electron.evaluate(()=>global.fixtureNotices.at(-1).title),'Fixture session is done');
+  await page.evaluate(()=>{deskNotifications.setEnabled(false);switchPage('agents');});
+  console.log('Desktop notifications shown natively and open their session');
   await page.evaluate(id=>{const link=document.createElement('a');link.id='report-fixture';link.href='/inbox-document.html?kind=session&item='+encodeURIComponent(id);link.target='_blank';link.rel='noopener noreferrer';link.textContent='Open report';link.style.cssText='position:fixed;top:10px;left:200px;z-index:100000';document.body.append(link);},terminal.id);
   const [report]=await Promise.all([electron.waitForEvent('window'),page.locator('#report-fixture').click()]);
   await report.locator('#document h1').waitFor();

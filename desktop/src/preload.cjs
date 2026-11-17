@@ -26,6 +26,8 @@ contextBridge.exposeInMainWorld('agentDeskDesktop', {
     catch (error) {throw Error(error.message.replace(/^Error invoking remote method 'desk:save-image': (?:Error: )?/, ''));}
   },
   openTool: url => ipcRenderer.invoke('desk:open-tool', url),
+  notify: notice => ipcRenderer.send('desk:notify', notice),
+  onNotificationClick: callback => {const listener = (_event, id) => callback(id);ipcRenderer.on('desk:notification-click', listener);return () => ipcRenderer.removeListener('desk:notification-click', listener);},
   subscribe: callback => {const listener = (_event, state) => callback(state);ipcRenderer.on('desk:state', listener);return () => ipcRenderer.removeListener('desk:state', listener);},
   recover: action => ipcRenderer.invoke('desk:recover', action),
   stream: callback => {
