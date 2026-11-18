@@ -28,10 +28,10 @@ def resolve(cwd, relative):
     if not isinstance(relative, str) or not relative.strip() or '\x00' in relative:
         raise ValueError('Name a file')
     root = _root(cwd)
-    target = (root / relative).resolve()
-    if target != root and root not in target.parents:
+    target = os.path.realpath(os.path.join(root, relative))
+    if target != str(root) and not target.startswith(os.path.join(root, '')):
         raise PermissionError('Only files inside the pane\'s folder can be opened here')
-    return root, target
+    return root, Path(target)
 
 
 def listing(cwd):

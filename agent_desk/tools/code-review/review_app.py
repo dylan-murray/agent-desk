@@ -1848,8 +1848,8 @@ class Handler(BaseHTTPRequestHandler):
             page = PAGE.replace("__TITLE__", html.escape(f"Review · {self.repo.name}")).replace("__USER__", json.dumps(self.user))
             self._send(200, page.encode(), "text/html; charset=utf-8")
         elif path.startswith("/vendor/"):
-            asset = VENDOR / Path(path).name
-            if asset.exists():
+            asset = {item.name: item for item in VENDOR.iterdir() if item.is_file()}.get(Path(path).name)
+            if asset:
                 ctype = "text/css" if asset.suffix == ".css" else "application/javascript"
                 self._send(200, asset.read_bytes(), ctype)
             else:
