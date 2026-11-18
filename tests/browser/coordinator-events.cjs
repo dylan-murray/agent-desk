@@ -4,7 +4,7 @@ const {chromium}=require('playwright');const assert=require('node:assert/strict'
  const tasks=[{id:'task-event',controller:'controller',worker:'worker',task:'Verify event dispatch',result:'Tests passed without terminal input.',outcome:'completed',acknowledged:0,delivery:'sent',connection:'channel-connected',updated:100}];
  await page.route('**/api/**',route=>{const path=new URL(route.request().url()).pathname;
   if(route.request().method()==='POST'){
-   const body=route.request().postDataJSON();if(path!=='/api/feedback')writes.push({path,body});
+   const body=route.request().postDataJSON();if(!['/api/feedback','/api/editor/pending','/api/model-router/settings'].includes(path))writes.push({path,body});
    if(path==='/api/coordinator-events/retry'){tasks[0].delivery='queued';return route.fulfill({json:{queued:true}});}
    if(path==='/api/coordinator-events/ack'){tasks[0].acknowledged=1;return route.fulfill({json:tasks[0]});}
    if(path==='/api/terminals/launch')return route.fulfill({status:400,json:{error:'Fixture: launch captured'}});

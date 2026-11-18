@@ -1,7 +1,13 @@
+import json
 import tempfile
+import threading
 import unittest
+from unittest.mock import patch
+from urllib.error import HTTPError
+from urllib.request import Request, urlopen
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
+from agent_desk import server
 from agent_desk.special_agents import SpecialAgents, launch_payload
 
 
@@ -79,6 +85,23 @@ class SpecialAgentTests(unittest.TestCase):
         self.assertIn('not a scheduled background service', payload['argv'][-1])
         self.assertIn('fenced html-diagram block', payload['argv'][-1])
         self.assertNotIn('$(touch', payload['argv'][2])
+
+    def test_a_reply_to_a_report_becomes_the_users_instruction_for_the_next_pass(self):
+        first = self.store.start_run(self.role['id'])
+        report = self.store.report(dict(run_id=first['id'], state='review', detail='# Triage digest\n\n## Open questions\n- Should #ops count as in scope?'))
+        found, follow_up = self.store.follow_up(dict(id=report['id'], reply='  Yes, include #ops from now on.  '))
+        self.assertEqual((found['id'], follow_up['reply'], follow_up['title']), (report['id'], 'Yes, include #ops from now on.', 'Slack triage · review'))
+        run = self.store.start_run(self.role['id'], None, follow_up)
+        prompt = launch_payload(self.role, run, 'http://127.0.0.1:4310', Path('/tmp'))['argv'][-1]
+        self.assertIn('follows up on your own earlier report, "Slack triage · review"', prompt)
+        self.assertIn("The user's reply:\nYes, include #ops from now on.", prompt)
+        self.assertIn('Your earlier report:\n# Triage digest', prompt)
+        self.assertIn('shown for context only', prompt)
+        # The reply is part of the run's frozen context, so a relaunch of this run says the same thing.
+        self.assertEqual(self.store.run_context(run['id'])['follow_up']['reply'], 'Yes, include #ops from now on.')
+        for bad in (dict(id=report['id'], reply='   '), dict(id=report['id'], reply='x' * 4001), dict(id='missing', reply='Hi')):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                self.store.follow_up(bad)
 
     def test_delete_keeps_reports_and_refuses_while_a_run_is_active(self):
         finding = self.store.publish(dict(role_id=self.role['id'], event_key='thread:1', title='Action', detail='Evidence'))
@@ -236,3 +259,35 @@ class SpecialAgentTests(unittest.TestCase):
         next_argv=launch_payload(changed,next_run,'http://127.0.0.1:4310',Path('/tmp'))['argv']
         self.assertNotEqual(argv[argv.index('--session-id')+1],next_argv[next_argv.index('--session-id')+1])
         self.assertNotEqual(saved['output_dir'],next_run['context']['output_dir'])
+
+
+class FollowUpRouteTests(unittest.TestCase):
+    """A reply to a report is the user's instruction for the next pass, so only the page may send one."""
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.store = SpecialAgents(Path(self.temp.name) / 'roles.sqlite3')
+        self.http = server.ThreadingHTTPServer(('127.0.0.1', 0), server.Handler)
+        threading.Thread(target=self.http.serve_forever, daemon=True).start()
+        self.patch = patch.object(server, 'SPECIAL_AGENTS', self.store)
+        self.patch.start()
+
+    def tearDown(self):
+        self.patch.stop()
+        self.http.shutdown()
+        self.http.server_close()
+        self.temp.cleanup()
+
+    def post(self, token, payload):
+        request = Request(f'http://127.0.0.1:{self.http.server_port}/api/special-agents/follow-up', data=json.dumps(payload).encode(),
+                          headers={'Content-Type': 'application/json', 'X-Agent-Desk-Terminal': token})
+        try:
+            with urlopen(request, timeout=5) as response:
+                return response.status, json.load(response)
+        except HTTPError as error:
+            return error.code, json.load(error)
+
+    def test_an_agent_cannot_reply_for_the_user(self):
+        self.assertEqual(self.post(server.HELPER_TOKEN, dict(id='report', reply='Ship it')), (403, {'error': 'Only the page can reply to a report'}))
+        code, body = self.post(server.TERMINAL_TOKEN, dict(id='missing', reply='Ship it'))
+        self.assertEqual((code, body['error']), (400, 'This report is no longer in the Inbox'))
+

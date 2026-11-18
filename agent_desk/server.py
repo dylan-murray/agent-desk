@@ -1085,15 +1085,23 @@ class Handler(SimpleHTTPRequestHandler):
                     return self.send_json(SPECIAL_AGENTS.report(payload))
                 if self.path == '/api/special-agents/context':
                     return self.send_json(SPECIAL_AGENTS.run_context(payload.get('run_id')))
-                if self.path == '/api/special-agents/launch':
-                    role = SPECIAL_AGENTS.role(SPECIAL_AGENTS.text(payload, 'id', 100))
+                if self.path in ('/api/special-agents/launch', '/api/special-agents/follow-up'):
+                    follow_up = None
+                    if self.path == '/api/special-agents/follow-up':
+                        # A reply is the user's instruction for the next pass, so only the page sends one.
+                        if not self.at_the_desk():
+                            return self.send_json({'error': 'Only the page can reply to a report'}, 403)
+                        report, follow_up = SPECIAL_AGENTS.follow_up(payload)
+                        role = SPECIAL_AGENTS.role(report['role_id'])
+                    else:
+                        role = SPECIAL_AGENTS.role(SPECIAL_AGENTS.text(payload, 'id', 100))
                     desk = DESKS.desk_for(payload.get('desk'))
                     SPECIAL_AGENTS.close_completed(TERMINALS)
                     live = {t['id'] for t in TERMINALS.list() if t['exit_code'] is None}
                     SPECIAL_AGENTS.reconcile(live)
                     if any(r['role_id'] == role['id'] and r['terminal_id'] in live for r in SPECIAL_AGENTS.snapshot()['runs']):
                         raise ValueError('This role still has a running terminal. Open or stop it before another pass.')
-                    run = SPECIAL_AGENTS.start_run(role['id'],payload.get('event_context'))
+                    run = SPECIAL_AGENTS.start_run(role['id'],payload.get('event_context'),follow_up)
                     try:
                         session = TERMINALS.launch(launch_payload(role, run, self.server.desk_url, ROOT, payload.get('event_context')), desk=desk).info()
                     except Exception as exc:

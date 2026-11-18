@@ -170,7 +170,7 @@ const check = (name, fn) => {fn();results.push(name);console.log('  PASS  ' + na
   const row = page.locator('.inbox-row', {hasText: 'Checks failing · #42 Add fixture retry'});
   await row.waitFor();
   const failing = {count: await row.count(), category: await row.locator('.inbox-category').innerText()};
-  check('the failure is one Needs you item in the Inbox', () => assert.deepEqual(failing, {count: 1, category: 'Needs you'}));
+  check('the failure is one Inbox report that says what failed', () => assert.deepEqual(failing, {count: 1, category: 'Checks failing'}));
   await row.click();
   const detail = page.locator('#inbox-detail');
   const body = await detail.innerText(), github = await detail.locator('a', {hasText: 'Open on GitHub'}).getAttribute('href');
