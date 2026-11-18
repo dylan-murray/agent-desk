@@ -114,6 +114,29 @@ def summary(data):
             'checks': checks, 'failed': failed[:10], 'total': total, 'logs': any(JOB_URL.match(c['url']) for c in failed)}
 
 
+THREADS = ('query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number)'
+           '{reviewThreads(first:100){nodes{isResolved}}}}}')
+PR_PARTS = re.compile(r'^https://([^/]+)/([^/]+)/([^/]+)/pull/(\d+)')
+
+
+def unresolved(gh, url, cwd):
+    """Review comment threads on an open pull request that nobody has resolved, or None when GitHub can't say.
+    gh pr view has no review threads, so this is one GraphQL query."""
+    parts = PR_PARTS.match(url or '')
+    if not parts:
+        return None
+    host, owner, name, number = parts.groups()
+    result = run([gh, 'api', 'graphql', '--hostname', host, '-f', f'query={THREADS}', '-f', f'owner={owner}', '-f', f'name={name}',
+                  '-F', f'number={number}'], cwd, 25)
+    if result.returncode != 0:
+        return None
+    try:
+        nodes = json.loads(result.stdout)['data']['repository']['pullRequest']['reviewThreads']['nodes']
+    except (ValueError, KeyError, TypeError):
+        return None
+    return sum(1 for node in nodes if isinstance(node, dict) and not node.get('isResolved'))
+
+
 def reviews_of(data):
     return {str(r.get('id')): ((r.get('author') or {}).get('login') or 'Someone', str(r.get('state') or '').upper())
             for r in data.get('latestReviews') or [] if r.get('id') and str(r.get('state') or '').upper() in VERBS}
@@ -325,6 +348,8 @@ class PullRequests:
                         self.folders[repo] = dict(previous, failures=failures, next=now + self.interval)
                     return
         pr, reviews = (summary(data), reviews_of(data)) if data else (None, {})
+        if pr and pr['state'] in ('open', 'draft'):
+            pr['comments'] = unresolved(gh, pr['url'], repo)
         with self.lock:
             self.folders[repo] = {'branch': branch, 'pr': pr, 'reviews': reviews, 'failures': failures, 'next': now + delay}
             # The first look at a pull request is its baseline: only changes seen while watching reach the Inbox,
@@ -344,6 +369,8 @@ class PullRequests:
             return
         data = json.loads(result.stdout)
         pr, reviews = summary(data), reviews_of(data)
+        if pr['state'] in ('open', 'draft'):
+            pr['comments'] = unresolved(gh, url, cwd if cwd and os.path.isdir(cwd) else None)
         closed = None if pr['state'] in ('open', 'draft') else (previous or {}).get('closed') or now
         with self.lock:
             self.links[url] = {'pr': pr, 'reviews': reviews, 'failures': 0, 'closed': closed, 'next': now + self.interval}

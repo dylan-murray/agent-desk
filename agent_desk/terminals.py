@@ -19,14 +19,24 @@ from agent_desk import readouts
 PANE_BIN = Path(__file__).with_name('bin')
 
 
-PANE_VARIABLES = ('AGENT_DESK_TERMINAL_ID', 'AGENT_DESK_PANE_TOKEN', 'AGENT_DESK_PANE_PID', 'AGENT_DESK_URL', 'AGENT_DESK_READOUTS_DIR')
+PANE_VARIABLES = ('AGENT_DESK_TERMINAL_ID', 'AGENT_DESK_PANE_TOKEN', 'AGENT_DESK_PANE_PID', 'AGENT_DESK_URL', 'AGENT_DESK_READOUTS_DIR',
+                  'AGENT_DESK_FALLBACK_EDITOR')
+PANE_EDITOR = PANE_BIN / 'agent-desk-edit'
+
+
+def fallback_editor(parent):
+    if parent.get('VISUAL', '').endswith('agent-desk-edit') or parent.get('EDITOR', '').endswith('agent-desk-edit'):
+        return parent.get('AGENT_DESK_FALLBACK_EDITOR', '')
+    return parent.get('VISUAL') or parent.get('EDITOR') or ''
 
 
 def pane_environment(parent, terminal_id, token, desk, readouts_dir=None):
-    """Let any process in a pane set that pane's readouts, and only that pane's."""
+    """Let any process in a pane set that pane's readouts, and only that pane's, and open its
+    editor in the page."""
     env = {k: v for k, v in parent.items() if k not in PANE_VARIABLES}
     env.update(AGENT_DESK_TERMINAL_ID=terminal_id, AGENT_DESK_PANE_TOKEN=token,
-               PATH=os.pathsep.join(filter(None, (str(PANE_BIN), parent.get('PATH')))))
+               PATH=os.pathsep.join(filter(None, (str(PANE_BIN), parent.get('PATH')))),
+               VISUAL=str(PANE_EDITOR), EDITOR=str(PANE_EDITOR), AGENT_DESK_FALLBACK_EDITOR=fallback_editor(parent))
     if desk:
         env['AGENT_DESK_URL'] = desk
     if readouts_dir:
@@ -181,9 +191,13 @@ class TerminalSession:
                     event_delivery_error='Claude channels are blocked by organization policy. Worker replies remain in Inbox.' if self.channel_blocked else None,
                     coordinator_events=bool(self.coordinator), readouts=self.readouts_info(), restored=self.restored)
 
-    def set_readouts(self, token, payload, published=None):
+    def verify_pane_token(self, token):
         if not isinstance(token, str) or not secrets.compare_digest(token, self.pane_token):
             raise PermissionError('Invalid pane token')
+        return True
+
+    def set_readouts(self, token, payload, published=None):
+        self.verify_pane_token(token)
         published = time.time() if published is None else published
         with self.lock:
             # A dropped file is read on the next poll; never let it replace a newer HTTP publish.

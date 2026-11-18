@@ -97,6 +97,26 @@ class PullRequestPollTests(GhFixture):
                          {'number': 42, 'state': 'draft', 'review': 'approved', 'checks': 'passing', 'total': 1, 'branch': 'feature/fixture'})
         self.assertEqual(self.calls()[0][1:4], ['pr', 'view', '--json'])
 
+    def test_an_open_pull_request_counts_its_unresolved_review_comments(self):
+        threads = [{'isResolved': False}, {'isResolved': True}, {'isResolved': False}]
+        self.answer({'data': {'repository': {'pullRequest': {'reviewThreads': {'nodes': threads}}}}}, name='graphql.json')
+        self.answer(pull_request())
+        self.poll()
+        self.assertEqual(self.prs.status(self.repo)['comments'], 2)
+        query = next(call for call in self.calls() if call[1:3] == ['api', 'graphql'])
+        self.assertIn('--hostname', query)
+        self.assertEqual(query[query.index('--hostname') + 1], 'github.com')
+        self.assertIn('number=42', query)
+        # When GitHub can't say, the chip shows no count rather than a wrong one.
+        self.answer(code=1, stderr='HTTP 502', name='graphql.json')
+        self.poll()
+        self.assertIsNone(self.prs.status(self.repo)['comments'])
+        # A merged pull request has nothing left to resolve, so it isn't asked.
+        before = len(self.calls())
+        self.answer(pull_request(state='MERGED'))
+        self.poll()
+        self.assertNotIn(['api', 'graphql'], [call[1:3] for call in self.calls()[before:]])
+
     def test_no_pull_request_signed_out_or_missing_gh_shows_nothing(self):
         self.answer(code=1, stderr='no pull requests found for branch "feature/fixture"')
         self.poll()
@@ -142,9 +162,10 @@ class PullRequestPollTests(GhFixture):
         self.answer(pull_request())
         self.poll()
         self.poll(advance=30)
-        self.assertEqual(len(self.calls()), 1)
+        views = lambda: len([call for call in self.calls() if call[1:3] == ['pr', 'view']])
+        self.assertEqual(views(), 1)
         self.poll(advance=31)
-        self.assertEqual(len(self.calls()), 2)
+        self.assertEqual(views(), 2)
 
     def test_checks_turning_failed_and_new_reviews_reach_the_inbox_once(self):
         self.answer(pull_request([run('lint', 'COMPLETED', 'SUCCESS'), run('unit', 'IN_PROGRESS')]))

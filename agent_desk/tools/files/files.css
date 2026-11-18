@@ -1,0 +1,39 @@
+body{overflow:auto}
+svg{flex-shrink:0;fill:none;stroke:currentColor;stroke-width:1.3;stroke-linecap:round;stroke-linejoin:round}
+/* The filter stays on top while the tree scrolls; Changed lives in it because it narrows the same list. */
+.filter{position:sticky;top:0;z-index:1;display:flex;align-items:center;gap:7px;height:30px;margin:0;padding:0 6px 0 10px;border-bottom:1px solid #ffffff0b;background:#0f0f11;color:var(--ink-muted)}
+.filter>svg{width:13px;height:13px}
+.filter input{flex:1;min-width:0;height:100%;border:0;outline:0;background:none;color:var(--ink-1);font:12px inherit}
+.filter input::placeholder{color:var(--ink-muted)}
+.filter input::-webkit-search-cancel-button{filter:invert(.6)}
+#changed{height:20px;padding:0 8px;border:1px solid var(--border-strong);border-radius:6px;background:none;color:var(--ink-2);font-size:11px}
+#changed:hover{border-color:#ffffff38;color:var(--ink-1)}
+#changed[aria-pressed=true]{background:#ffffff12;border-color:#ffffff38;color:var(--ink-1)}
+#collapse{display:grid;place-items:center;width:22px;height:22px;border:0;border-radius:5px;background:none;color:var(--ink-muted)}
+#collapse:hover{background:#ffffff0d;color:var(--ink-1)}#collapse svg{width:13px;height:13px}
+#tree{padding:4px 0 12px}
+.row{position:relative;display:flex;align-items:center;gap:6px;width:100%;height:22px;padding:0 10px 0 calc(8px + var(--depth,0)*14px);border:0;background:none;color:var(--ink-2);text-align:left;cursor:pointer;white-space:nowrap;font-size:12.5px}
+/* One faint guide per level, under each parent folder's chevron. */
+.row::before{content:"";position:absolute;top:0;bottom:0;left:13px;width:calc(var(--depth,0)*14px);background:repeating-linear-gradient(90deg,#ffffff10 0 1px,transparent 1px 14px);pointer-events:none}
+.row:hover{background:#ffffff07;color:var(--ink-1)}
+.row[aria-current=true]{background:#ffffff10;color:var(--ink-1)}
+.row:focus-visible{outline:1px solid var(--accent);outline-offset:-1px}
+.row svg{width:14px;height:14px}
+.row .chev{width:11px;height:11px;color:var(--ink-muted);transition:transform .12s}
+.row[aria-expanded=true] .chev{transform:rotate(90deg)}
+.row .gap{flex-shrink:0;width:11px}
+.row .name{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.row .end{margin-left:auto;display:flex;align-items:center;gap:8px;flex-shrink:0;padding-left:10px}
+.row .mark{width:9px;font:600 10px var(--mono);text-align:right}
+.row .count{font:10.5px var(--mono);color:var(--amber)}
+/* File icons take a quiet tint by type, so a long list is easier to scan. */
+.ft{color:#7d7b74}.folder .ft{color:#8fa3bf}
+.ft.py{color:#6ea8d8}.ft.js,.ft.ts{color:#d8c46e}.ft.md{color:#a5a5b8}.ft.json,.ft.toml,.ft.yml{color:#c9a46a}.ft.css,.ft.html{color:#c98ab8}.ft.sh{color:#7fc6a8}.ft.go,.ft.rs{color:#d89a6e}
+.lines{font:10.5px var(--mono);color:var(--ink-muted)}.lines i{font-style:normal;color:var(--add)}.lines b{font-weight:400;color:var(--del)}
+/* Like GitHub: up to five blocks, filled in proportion to the lines changed. */
+.bars{display:inline-flex;gap:1px}.bars i{width:4px;height:8px;border-radius:1px;background:#ffffff1c}.bars i.a{background:var(--add)}.bars i.d{background:var(--del)}
+:root{--add:#5fb98e;--mod:#d9a34c;--del:#e07a7a}
+.modified,.renamed{--change:var(--mod)}.added,.untracked{--change:var(--add)}.deleted,.conflict{--change:var(--del)}
+.row.changed .name,.row .mark{color:var(--change)}
+.deleted .name{text-decoration:line-through;opacity:.7}.row.deleted{cursor:default}
+#note{margin:28px 16px;color:var(--ink-muted);text-align:center}

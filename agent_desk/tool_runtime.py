@@ -15,6 +15,8 @@ import time
 import uuid
 
 ROOT=Path(__file__).resolve().parents[1]
+# Tools that ship with the desk come first, so a stale copy in a skills folder never replaces them.
+BUNDLED=Path(__file__).resolve().parent/'tools'
 # Annotation skills recognised by name, without a manifest. Any other skill registers with agent-desk-ui.json.
 BUILTINS={
  'code-review':('Code review','Annotate changes in a Git working tree.','review_app.py','directory'),
@@ -28,7 +30,7 @@ class ToolRuntime:
     def __init__(self,state=None,roots=None):
         self.state=Path(state or DATA_DIR/'tool-runtime');self.state.mkdir(parents=True,exist_ok=True)
         self.processes={}
-        self.roots=roots or ([Path(p).expanduser().resolve() for p in os.environ['AGENT_DESK_TOOL_ROOTS'].split(os.pathsep) if p] if os.environ.get('AGENT_DESK_TOOL_ROOTS') else [Path.home()/'.claude'/'skills',Path.home()/'.agents'/'skills'])
+        self.roots=roots or ([Path(p).expanduser().resolve() for p in os.environ['AGENT_DESK_TOOL_ROOTS'].split(os.pathsep) if p] if os.environ.get('AGENT_DESK_TOOL_ROOTS') else [BUNDLED,Path.home()/'.claude'/'skills',Path.home()/'.agents'/'skills'])
 
     def catalog(self):
         found={}

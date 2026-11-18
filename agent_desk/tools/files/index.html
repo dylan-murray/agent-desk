@@ -1,0 +1,6 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Files</title>
+<link rel="stylesheet" href="../sdk/plugin.css"><link rel="stylesheet" href="files.css"></head>
+<body><div class="filter"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.2"/><path d="m10.2 10.2 3.3 3.3"/></svg><input id="filter" type="search" placeholder="Filter files" aria-label="Filter files" autocomplete="off" spellcheck="false"><button type="button" id="changed" aria-pressed="false" title="Show only files that changed since the last commit">Changed</button><button type="button" id="collapse" title="Collapse every folder" aria-label="Collapse every folder"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m5 6.5 3-3 3 3M5 9.5l3 3 3-3"/></svg></button></div>
+<div id="tree" role="tree" aria-label="Files in this pane's folder"></div><p id="note" hidden></p>
+<script src="../sdk/agent-desk.js"></script><script src="files.js"></script></body></html>

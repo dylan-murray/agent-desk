@@ -63,7 +63,7 @@ const webIcons={
 function createWebPane(page){
   const view=createPane({id:page.id,name:webPageTitle(page)}),node=view.node;
   node.classList.add('web-pane');
-  node.querySelectorAll('.pane-usage,.pane-state,.pane-stop,.pane-protect,.pane-connection,.pane-readouts').forEach(item=>item.remove());
+  node.querySelectorAll('.pane-usage,.pane-state,.pane-stop,.pane-protect,.pane-edit,.pane-connection,.pane-readouts').forEach(item=>item.remove());
   node.querySelector('.pane-expand').insertAdjacentHTML('beforebegin',`<button class="pane-reload pane-icon" title="Reload page" aria-label="Reload page">${webIcons.reload}</button><a class="pane-open pane-icon" target="_blank" rel="noopener noreferrer" title="Open in a new tab" aria-label="Open in a new tab">${webIcons.open}</a>`);
   // A web page's address stays at the top, where it is edited; terminals carry their folder in the status line.
   const status=node.querySelector('.pane-directory');status.classList.remove('pane-status');node.querySelector('.terminal-bar').after(status);

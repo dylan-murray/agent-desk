@@ -178,6 +178,8 @@ class Handler(socketserver.StreamRequestHandler):
                     manager.persist()
                 elif operation == 'readouts':
                     result = session.set_readouts(request.get('pane_token'), request.get('payload'))
+                elif operation == 'verify_pane':
+                    result = session.verify_pane_token(request.get('pane_token'))
                 elif operation == 'parent':
                     parent = request.get('parent')
                     with manager.lock:
@@ -332,6 +334,9 @@ class RemoteSession:
     def set_readouts(self, token, payload):
         # 'token' is the supervisor's own authentication field, so the pane's travels as pane_token.
         return self.client.call('readouts', id=self.id, pane_token=token, payload=payload)
+
+    def verify_pane_token(self, token):
+        return self.client.call('verify_pane', id=self.id, pane_token=token)
 
     def send(self, event):
         return self.client.call('send', id=self.id, event=event)
