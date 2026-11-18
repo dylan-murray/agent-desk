@@ -1,0 +1,6 @@
+{
+  "name": "Code review",
+  "description": "Annotate changes in a Git working tree.",
+  "icon": "review",
+  "server": {"run": "review_app.py", "target": "directory", "transports": ["unix-http-v1"]}
+}

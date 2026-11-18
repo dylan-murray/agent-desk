@@ -19,7 +19,7 @@ class RuntimeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp);skill=root/'skills'/'dashboard';skill.mkdir(parents=True)
             (skill/'server.py').write_text(SCRIPT.replace("p.add_argument('target');",''))
-            (skill/'agent-desk-ui.json').write_text(json.dumps({'runtime':'python-http','entrypoint':'server.py','title':'Dashboard','target':'none'}))
+            (skill/'plugin.json').write_text(json.dumps({'name':'Dashboard','server':{'run':'server.py','target':'none'}}))
             runtime=ToolRuntime(root/'state',[root/'skills'])
             self.assertEqual([(t['id'],t['target'],t['args']) for t in runtime.catalog()],[('dashboard','none',['--port','{port}','--no-browser'])])
             item=runtime.launch('dashboard',None)

@@ -208,8 +208,12 @@ const check = (name, fn) => {fn();results.push(name);console.log('  PASS  ' + na
   check('Mark reviewed is saved on the server', () => assert.deepEqual(saved.events.map(e => [e.kind, e.state]), [['checks', 'review'], ['review', 'done']]));
 
   await page.evaluate(id => selectPane(id), ids.pr);
+  // Unresolved review comments on GitHub show as a count on the chip.
+  fs.writeFileSync(path.join(fake, 'graphql.json'), JSON.stringify({code: 0, stdout: {data: {repository: {pullRequest: {reviewThreads: {nodes: [{isResolved: false}, {isResolved: true}, {isResolved: false}]}}}}}}));
   answer('pr-example-repo.json', {statusCheckRollup: [run('unit tests', 'COMPLETED', 'FAILURE')], reviewDecision: 'CHANGES_REQUESTED'});
-  await until(async () => (await header()).text === '#42 Open Failing Changes requested', 'Changes requested was not shown');
+  await until(async () => (await header()).text === '#42 Open Failing Changes requested 2', 'Changes requested and 2 unresolved comments were not shown');
+  check('unresolved review comments show as a count on the chip', async () => {});
+  assert.match(await chip.locator('.pane-pr-link').getAttribute('title'), /2 unresolved review comments/);
   for (const [width, height] of [[1440, 900], [390, 844]]) {
     await page.setViewportSize({width, height});await pause();
     seen = await header();
@@ -228,6 +232,7 @@ const check = (name, fn) => {fn();results.push(name);console.log('  PASS  ' + na
   await pause();await pause();
   const stillHidden = await pane.locator('.pane-pr').count();
   check('× on a merged pull request hides it in this terminal, and it stays hidden', () => {assert.equal(hideLabel, 'Stop showing #42 here');assert.equal(stillHidden, 0);});
+  fs.unlinkSync(path.join(fake, 'graphql.json'));
   answer('pr-example-repo.json', {number: 44, title: 'Fixture follow-up', url: 'https://github.com/example-org/example-repo/pull/44', statusCheckRollup: [run('unit tests', 'IN_PROGRESS')]});
   await until(async () => (await header()).text === '#44 Open Pending Awaiting review', 'A new pull request on the branch did not show');
   // A stale open pull request can be put away as well; its × waits for the pane to be hovered or focused, like Stop.

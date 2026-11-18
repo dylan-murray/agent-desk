@@ -1,5 +1,6 @@
 """Shared skill UI lifecycle for the API and command-line launcher."""
 from agent_desk.paths import DATA_DIR
+from agent_desk.plugins import BUNDLED, discover
 from agent_desk.local_transport import runtime_directory, write_private_json
 from agent_desk.managed_processes import OwnedProcesses
 from contextlib import contextmanager
@@ -15,48 +16,23 @@ import time
 import uuid
 
 ROOT=Path(__file__).resolve().parents[1]
-# Annotation skills recognised by name, without a manifest. Any other skill registers with agent-desk-ui.json.
-BUILTINS={
- 'code-review':('Code review','Annotate changes in a Git working tree.','review_app.py','directory'),
- 'readme-review':('Markdown review','Annotate a README or markdown document.','readme_annotate.py','file'),
- 'document-builder':('Document review','Review and annotate a draft document.','notion_draft.py','file'),
- 'diagram-doc-creator':('Diagram feedback','Review a diagram and mark precise changes.','diagram_doc.py','file'),
- 'architecture-review':('Architecture review','Revise a system architecture on a canvas.','architecture_review.py','file'),
- 'pull-request-description-review':('PR description review','Annotate a pull request description draft.','review_draft.py','file')}
 
 class ToolRuntime:
     def __init__(self,state=None,roots=None):
         self.state=Path(state or DATA_DIR/'tool-runtime');self.state.mkdir(parents=True,exist_ok=True)
         self.processes={}
-        self.roots=roots or ([Path(p).expanduser().resolve() for p in os.environ['AGENT_DESK_TOOL_ROOTS'].split(os.pathsep) if p] if os.environ.get('AGENT_DESK_TOOL_ROOTS') else [Path.home()/'.claude'/'skills',Path.home()/'.agents'/'skills'])
+        self.roots=roots or ([Path(p).expanduser().resolve() for p in os.environ['AGENT_DESK_TOOL_ROOTS'].split(os.pathsep) if p] if os.environ.get('AGENT_DESK_TOOL_ROOTS') else [BUNDLED,Path.home()/'.agent-desk'/'plugins',Path.home()/'.claude'/'skills',Path.home()/'.agents'/'skills'])
 
     def catalog(self):
-        found={}
-        for root in self.roots:
-            if not root.is_dir():continue
-            for folder in sorted(root.iterdir()):
-                if folder.name in found or not folder.is_dir():continue
-                manifest=folder/'agent-desk-ui.json'
-                try:
-                    if manifest.is_file():
-                        item=json.loads(manifest.read_text())
-                        if item.get('runtime')!='python-http':continue
-                        script=(folder/item['entrypoint']).resolve()
-                        if not script.is_relative_to(folder.resolve()):continue
-                        title=item.get('title',folder.name);description=item.get('description','');kind=item.get('target','file')
-                        # A tool may open on a file, a folder, or nothing at all; the agent that builds it decides.
-                        transports=item.get('transports', [])
-                        if os.environ.get('AGENT_DESK_WORKSPACE_ID') and 'unix-http-v1' not in transports:continue
-                        arguments=item.get('args',(['{target}'] if kind!='none' else [])+['--port','{port}','--no-browser'])
-                    elif folder.name in BUILTINS:
-                        title,description,entry,kind=BUILTINS[folder.name];script=folder/entry
-                        arguments=['{target}','--port','{port}','--no-browser']
-                    else:continue
-                    if not script.is_file() or kind not in ('file','directory','none') or not isinstance(arguments,list) or not all(isinstance(a,str) for a in arguments):continue
-                    if not isinstance(title,str) or not isinstance(description,str):continue
-                    found[folder.name]=dict(id=folder.name,title=title,description=description,target=kind,script=str(script),args=arguments)
-                except (OSError,ValueError,KeyError,TypeError):continue
-        return list(found.values())
+        """Plugins with a server, in the shape launch() and the coordinators' tool lists use."""
+        found=[]
+        for plugin in discover(self.roots).values():
+            spec=plugin.get('server')
+            if not spec:continue
+            # The desktop app hands a tool a Unix socket, so only servers that say they take one open there.
+            if os.environ.get('AGENT_DESK_WORKSPACE_ID') and 'unix-http-v1' not in spec['transports']:continue
+            found.append(dict(id=plugin['id'],title=plugin['title'],description=plugin['description'],target=spec['target'],script=spec['script'],args=spec['args']))
+        return found
 
     @contextmanager
     def locked(self):

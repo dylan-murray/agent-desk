@@ -8,7 +8,8 @@ const prIcons={
   failing:'<svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4.5 4.5 7 7M11.5 4.5l-7 7"/></svg>',
   pending:'<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5"/><path d="M8 5.5V8l1.6 1.2"/></svg>',
   log:'<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4.5 5.5 7.5l-3 3M7.5 11.5h6"/></svg>',
-  close:'<svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8"/></svg>'
+  close:'<svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8"/></svg>',
+  comment:'<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3h10c.6 0 1 .4 1 1v6c0 .6-.4 1-1 1H7.5L4.5 13.5V11H3c-.6 0-1-.4-1-1V4c0-.6.4-1 1-1Z"/></svg>'
 };
 const prStates={open:'Open',draft:'Draft',merged:'Merged',closed:'Closed'};
 const prChecks={passing:'Passing',failing:'Failing',pending:'Pending'};
@@ -32,14 +33,15 @@ function renderPanePullRequest(view,agent){
   }
   const others=pr.others||[],{live,checks,review}=prParts(pr),number=escapeHTML(String(pr.number)),alerts=others.filter(prNeedsYou).length;
   if(prList?.id===agent.id)renderPullRequestList(pr,view);
-  const signature=JSON.stringify([pr.number,pr.url,pr.state,checks,review,pr.title,pr.failed.map(c=>c.name),pr.logs,!!view.term,others.length,alerts]);
+  const comments=live&&pr.comments>0?pr.comments:0;
+  const signature=JSON.stringify([pr.number,pr.url,pr.state,checks,review,pr.title,pr.failed.map(c=>c.name),pr.logs,!!view.term,others.length,alerts,comments]);
   if(group.dataset.signature===signature)return;group.dataset.signature=signature;
   group.dataset.state=pr.state;group.dataset.checks=checks||'';
   const link=group.querySelector('.pane-pr-link');link.href=pr.url;
-  link.innerHTML=`<span class="pane-pr-icon">${pr.state==='merged'?prIcons.merged:prIcons.pr}</span><b>#${number}</b><span class="pane-pr-word">${prStates[pr.state]}</span>${checks?`<span class="pane-pr-checks">${prIcons[checks]}<span class="pane-pr-word">${prChecks[checks]}</span></span>`:''}${review?`<span class="pane-pr-review pane-pr-word" data-review="${review}">${prReviews[review]}</span>`:''}`;
+  link.innerHTML=`<span class="pane-pr-icon">${pr.state==='merged'?prIcons.merged:prIcons.pr}</span><b>#${number}</b><span class="pane-pr-word">${prStates[pr.state]}</span>${checks?`<span class="pane-pr-checks">${prIcons[checks]}<span class="pane-pr-word">${prChecks[checks]}</span></span>`:''}${review?`<span class="pane-pr-review pane-pr-word" data-review="${review}">${prReviews[review]}</span>`:''}${comments?`<span class="pane-pr-comments">${prIcons.comment}${comments}</span>`:''}`;
   const failed=checks==='failing'?pr.failed.map(c=>c.name).join(', '):'';
-  link.title=[`#${pr.number} ${pr.title}`,prStates[pr.state]+(pr.branch?' on '+pr.branch:''),checks&&'Checks '+prChecks[checks].toLowerCase()+(failed?': '+failed:''),live&&prReviews[pr.review],'Click to open the pull request'].filter(Boolean).join('\n');
-  link.setAttribute('aria-label',`Pull request #${pr.number}, ${prStates[pr.state]}`+(checks?`, checks ${prChecks[checks].toLowerCase()}`:'')+(review?`, ${prReviews[review].toLowerCase()}`:'')+'. Opens the pull request');
+  link.title=[`#${pr.number} ${pr.title}`,prStates[pr.state]+(pr.branch?' on '+pr.branch:''),checks&&'Checks '+prChecks[checks].toLowerCase()+(failed?': '+failed:''),live&&prReviews[pr.review],comments&&`${comments} unresolved review comment${comments===1?'':'s'} · Review in the side panel shows them`,'Click to open the pull request'].filter(Boolean).join('\n');
+  link.setAttribute('aria-label',`Pull request #${pr.number}, ${prStates[pr.state]}`+(checks?`, checks ${prChecks[checks].toLowerCase()}`:'')+(review?`, ${prReviews[review].toLowerCase()}`:'')+(comments?`, ${comments} unresolved comment${comments===1?'':'s'}`:'')+'. Opens the pull request');
   // Sending the log is opt in: it is pasted into the agent's prompt and waits for Enter.
   const send=group.querySelector('.pane-pr-log');send.hidden=!(checks==='failing'&&pr.logs&&view.term);
   send.title='Paste the failed check’s log into this agent’s prompt';send.setAttribute('aria-label',send.title);

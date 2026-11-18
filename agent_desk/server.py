@@ -3,18 +3,20 @@ from agent_desk.paths import DATA_DIR, PROJECT_DIR, STATIC_DIR
 from agent_desk.local_transport import desk_url, workspace_key
 import argparse
 import atexit
+import hashlib
 import json
 import os
 import re
 import secrets
 import subprocess
 import socketserver
+import sys
 import threading
 import time
 import http.server
 from http.server import SimpleHTTPRequestHandler
 from pathlib import Path
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, unquote
 from agent_desk.terminals import TerminalManager, input_event, resize_event
 from agent_desk.terminal_stream import TerminalStream
 from agent_desk import websocket
@@ -25,6 +27,7 @@ from agent_desk import desk_tokens, pane_guard, skill_harnesses, tool_registrati
 from agent_desk.conversation_bridge import ConversationBridge
 from agent_desk.special_agents import SpecialAgents, launch_payload
 from agent_desk.tool_runtime import ToolRuntime
+from agent_desk.plugins import BUNDLED, Plugins
 from scripts.control_mailbox import Mailbox
 from agent_desk.coordinator_runtime import CoordinatorRuntime
 from agent_desk.annotations import AnnotationStore
@@ -37,6 +40,8 @@ from agent_desk.remote_environments import RemoteEnvironments
 from agent_desk.launch_profiles import remote_native
 from agent_desk import accounts, model_router
 from agent_desk.desks import Desks
+from agent_desk.pane_editor import PaneEdits
+from agent_desk import pane_files
 from agent_desk.pull_requests import PullRequests
 from agent_desk import saved_desks
 
@@ -62,6 +67,11 @@ atexit.register(REMOTES.close)
 CONNECTIONS = RemoteConnections()
 CONVERSATIONS = ConversationBridge(DATA_DIR)
 TOOL_RUNTIME = ToolRuntime()
+PLUGINS = Plugins(TOOL_RUNTIME.roots, BUNDLED, DATA_DIR / 'plugins.json')
+PLUGIN_SDK = STATIC_DIR / 'plugin-sdk'
+# Plugin pages are served under a path only the desk page learns. Their own requests carry no origin or
+# referrer a server could check, so the path itself is what keeps other sites from loading them.
+PLUGIN_KEY = secrets.token_urlsafe(18)
 
 ROOT = Path(__file__).resolve().parents[1]
 SPECIAL_AGENTS = SpecialAgents(DATA_DIR / 'special-agents.sqlite3')
@@ -111,6 +121,7 @@ atexit.register(COORDINATORS.close)
 atexit.register(TERMINALS.close)
 SESSIONS = {}
 DESKS = Desks(DATA_DIR / 'desks.json')
+PANE_EDITS = PaneEdits()
 PULL_REQUESTS = PullRequests(DATA_DIR / 'pull-requests.json')
 # The terminal supervisor's restart records for this port, which saving a desk reads.
 SESSION_RECORDS = DATA_DIR / 'terminal-sessions-4310.json'
@@ -239,6 +250,22 @@ def process_directories(pids):
     return directories
 
 
+def review_agents():
+    """The coding agents a pane's review can ask for a second opinion: one per account Agent Desk has, run on that
+    account's login. Only the variable that points the CLI at its config folder is passed, never any other setting."""
+    found = []
+    for row in accounts.accounts():
+        variable = accounts.HARNESSES[row['harness']][0]
+        if row['harness'] in ('codex', 'claude', 'grok', 'opencode', 'pi'):
+            found.append(dict(id=row['id'], label=row['label'], harness=row['harness'],
+                              env={variable: str(accounts.config_folder(row['id']))} if row['config_dir'] and variable else {}))
+    # Grok, OpenCode and Pi have one login by default, which accounts() lists only when more are added.
+    for harness in ('grok', 'opencode', 'pi'):
+        if not any(row['id'] == harness for row in found):
+            found.append(dict(id=harness, label=accounts.SINGLE[harness], harness=harness, env={}))
+    return found
+
+
 def folder_context(cwd):
     if not cwd:
         return dict(cwd=None, repo=None, project='Folder unavailable')
@@ -337,6 +364,9 @@ class Handler(SimpleHTTPRequestHandler):
         # Panes and lists poll API reads several times a second; log what changes state or fails.
         if self.command == 'GET' and self.path.startswith('/api/') and isinstance(code, int) and code < 400:
             return
+        # Plugin pages are served under the desk's secret plugin path, which stays out of the log.
+        if self.path.startswith('/plugins/'):
+            return
         super().log_request(code, size)
 
     def request_origin(self):
@@ -370,12 +400,35 @@ class Handler(SimpleHTTPRequestHandler):
             "frame-ancestors 'self'",
         ))
 
+    def plugin_policy(self, name):
+        """A plugin page runs sandboxed in an opaque origin: scripts only from its own folder and the plugin
+        library, no network at all, nothing it can frame or submit to. It reaches the desk only by messages."""
+        origin = self.request_origin()
+        own = f'{origin}/plugins/{PLUGIN_KEY}/{name}/ {origin}/plugins/{PLUGIN_KEY}/sdk/'
+        return '; '.join((
+            'sandbox allow-scripts',
+            "default-src 'none'",
+            f'script-src {own}',
+            f"style-src {own} 'unsafe-inline'",
+            f'img-src {own} data:',
+            f'font-src {own}',
+            "connect-src 'none'",
+            "frame-src 'none'",
+            "worker-src 'none'",
+            "object-src 'none'",
+            "form-action 'none'",
+            "base-uri 'none'",
+            f'frame-ancestors {origin}',
+        ))
+
     def end_headers(self):
         # No other page may frame the desk (clickjacking into terminals) or load its
         # responses as scripts, images or styles (config.js would otherwise leak).
-        self.send_header('Content-Security-Policy', self.content_security_policy())
+        policy, self.plugin_csp = getattr(self, 'plugin_csp', None), None
+        self.send_header('Content-Security-Policy', policy or self.content_security_policy())
         self.send_header('X-Frame-Options', 'SAMEORIGIN')
-        self.send_header('Cross-Origin-Resource-Policy', 'same-origin')
+        # A plugin page's own scripts come from an opaque origin, which counts as another origin.
+        self.send_header('Cross-Origin-Resource-Policy', 'cross-origin' if policy else 'same-origin')
         self.send_header('X-Content-Type-Options', 'nosniff')
         super().end_headers()
 
@@ -401,6 +454,10 @@ class Handler(SimpleHTTPRequestHandler):
             return False
         navigation = (self.command == 'GET' and self.headers.get('Sec-Fetch-Mode') == 'navigate'
                       and self.headers.get('Sec-Fetch-Dest') == 'document')
+        # A sandboxed plugin page has an opaque origin, so its own scripts and styles arrive as cross-site.
+        # They are let through on the secret plugin path, which no other site knows.
+        if self.command == 'GET' and urlparse(self.path).path.startswith(f'/plugins/{PLUGIN_KEY}/'):
+            return False
         return not navigation or urlparse(self.path).path.startswith('/api/')
 
     def do_HEAD(self):
@@ -548,6 +605,11 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.send_json({'error': 'Skill UI not registered'}, 404)
             self.path = '/index.html'
             return super().do_GET()
+        if route == '/api/plugins':
+            return self.send_json({'plugins': [dict(plugin, entry=f"/plugins/{PLUGIN_KEY}/{plugin['id']}/{plugin['entrypoint']}") if 'entrypoint' in plugin else plugin
+                                               for plugin in PLUGINS.public()]})
+        if route.startswith('/plugins/'):
+            return self.plugin_asset(route)
         if route == '/annotate-anything.js':
             try:
                 body = ANNOTATOR_SCRIPT.read_bytes() if annotations_available() else None
@@ -672,6 +734,108 @@ class Handler(SimpleHTTPRequestHandler):
         except OSError as exc:
             return self.send_json({'error': 'Terminal supervisor unavailable: ' + str(exc)}, 503)
 
+    def pane_editor(self):
+        origin = self.headers.get('Origin')
+        if not self.allowed_host() or origin not in (None, self.request_origin()):
+            return self.send_json({'error': 'Invalid host or origin'}, 403)
+        try:
+            size = int(self.headers.get('Content-Length', '0'))
+            if not 0 < size <= 400000:
+                raise ValueError('Request must contain 1–400000 bytes')
+            payload = json.loads(self.rfile.read(size))
+            if not isinstance(payload, dict):
+                raise ValueError('Expected an object')
+            terminal = payload.get('id')
+            try:
+                session = TERMINALS.get(terminal)
+            except ValueError:
+                return self.send_json({'error': 'Terminal not found; it may have been closed'}, 404)
+            authorization = self.headers.get('Authorization', '')
+            try:
+                session.verify_pane_token(authorization.removeprefix('Bearer ') if authorization.startswith('Bearer ') else None)
+            except ValueError as exc:
+                return self.send_json({'error': 'Restart Agent Desk\'s terminal supervisor to edit in the page (' + str(exc) + ')'}, 501)
+            action = self.path.rsplit('/', 1)[-1]
+            if action == 'open':
+                return self.send_json(PANE_EDITS.open(terminal, payload.get('name'), payload.get('text')))
+            if action == 'wait':
+                return self.send_json(PANE_EDITS.wait(terminal, payload.get('edit'), 25))
+            if action == 'abandon':
+                return self.send_json(PANE_EDITS.abandon(terminal, payload.get('edit')))
+            return self.send_json({'error': 'Not found'}, 404)
+        except PermissionError as exc:
+            return self.send_json({'error': str(exc)}, 403)
+        except LookupError as exc:
+            return self.send_json({'error': str(exc)}, 409)
+        except (ValueError, TypeError) as exc:
+            return self.send_json({'error': str(exc)}, 400)
+        except OSError as exc:
+            return self.send_json({'error': 'Terminal supervisor unavailable: ' + str(exc)}, 503)
+
+    def plugin_asset(self, route):
+        key, _, rest = route.removeprefix('/plugins/').partition('/')
+        name, _, relative = rest.partition('/')
+        found = None
+        if not secrets.compare_digest(key.encode(), PLUGIN_KEY.encode()):
+            pass
+        elif name == 'sdk':
+            kind = {'.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8'}.get(Path(relative).suffix)
+            target = PLUGIN_SDK / Path(relative).name
+            found = (target, kind) if kind and Path(relative).name == relative and target.is_file() else None
+        else:
+            found = PLUGINS.asset(name, unquote(relative))
+        if not found:
+            return self.send_json({'error': 'Not found'}, 404)
+        body = found[0].read_bytes()
+        self.send_response(200)
+        self.send_header('Content-Type', found[1])
+        self.send_header('Content-Length', str(len(body)))
+        self.send_header('Cache-Control', 'no-cache')
+        self.plugin_csp = self.plugin_policy(name)
+        self.end_headers()
+        self.wfile.write(body)
+
+    def pane_files(self, payload):
+        try:
+            cwd = TERMINALS.get(payload.get('id')).cwd
+        except ValueError:
+            return self.send_json({'error': 'Files open here only for terminals running on this machine'}, 404)
+        action = self.path.rsplit('/', 1)[-1]
+        try:
+            if action == 'list':
+                return self.send_json(pane_files.listing(cwd))
+            if action == 'read':
+                return self.send_json(pane_files.read(cwd, payload.get('path')))
+            if action == 'write':
+                return self.send_json(pane_files.write(cwd, payload.get('path'), payload.get('text'), payload.get('version')))
+            if action == 'changes':
+                return self.send_json(pane_files.changes(cwd))
+        except PermissionError as exc:
+            return self.send_json({'error': str(exc)}, 403)
+        except (FileNotFoundError, FileExistsError) as exc:
+            return self.send_json({'error': str(exc)}, 409)
+        except OSError as exc:
+            return self.send_json({'error': exc.strerror or str(exc)}, 409)
+        return self.send_json({'error': 'Not found'}, 404)
+
+    def pane_review(self, payload):
+        identity, name = payload.get('id'), payload.get('name')
+        try:
+            cwd = TERMINALS.get(identity).cwd
+        except ValueError:
+            return self.send_json({'error': 'Review opens here only for terminals running on this machine'}, 404)
+        if not isinstance(name, str) or not 1 <= len(name.strip()) <= 120:
+            raise ValueError('Name the session the review reports to')
+        extra = ['--agent-name', name.strip(), '--session-id', identity, '--follow-pr', '--reviewers', json.dumps(review_agents())]
+        # The desktop app's tools have no loopback route back to the desk yet, so their notes wait to be copied.
+        if self.server.desktop:
+            extra += ['--feedback-adapter', 'manual']
+        else:
+            extra += ['--feedback-adapter', 'command', '--feedback-command', json.dumps([sys.executable, str(PROJECT_DIR / 'scripts' / 'review_bridge.py'), self.server.desk_url])]
+        item = TOOL_RUNTIME.launch('code-review', cwd, 'pane-review-' + hashlib.sha256(identity.encode()).hexdigest()[:24], extra=extra)
+        item = register_skill_ui({k: v for k, v in item.items() if k in ('id', 'title', 'skill', 'url', 'context')} | {'agent_id': identity}, self.server.workspace_key)
+        return self.send_json(dict(item, **TOOL_RUNTIME.status(item['id'])))
+
     def human_event_action(self):
         # Browser-mediated activation is separate from agent-friendly save APIs.
         # Like the rest of this local app, this is not a boundary against a hostile local process.
@@ -716,8 +880,10 @@ class Handler(SimpleHTTPRequestHandler):
             if self.foreign_browser_request():
                 return self.send_json({'error': 'Cross-site requests are not allowed'}, 403)
             return self.event_webhook()
+        # A pane's own processes (its $EDITOR, its readouts) hold only that pane's token, which these routes check.
+        pane_route = self.path == '/api/readouts' or self.path.startswith('/api/pane-editor/')
         if self.server.desktop:
-            if not self.terminal_authorized():
+            if not (pane_route or self.terminal_authorized()):
                 return self.send_json({'error': 'Desktop authorization required'}, 403)
             if self.path.startswith('/api/desktop/'):
                 from agent_desk.desktop_backend import lifecycle_request
@@ -729,12 +895,14 @@ class Handler(SimpleHTTPRequestHandler):
             return self.send_json({'error': 'Cross-site requests are not allowed'}, 403)
         if self.path == '/api/readouts':
             return self.set_readouts()
-        if self.path.startswith('/api/event-bus/') or self.path.startswith('/api/remote/') or self.path.startswith('/api/accounts/') or self.path.startswith('/api/conversations/') or self.path.startswith('/api/terminals/') or self.path == '/api/projects/create' or self.path.startswith('/api/inbox/') or self.path.startswith('/api/pull-requests/') or self.path.startswith('/api/tools/') or self.path.startswith('/api/special-agents/') or self.path.startswith('/api/skills/') or self.path.startswith('/api/workflows/') or self.path.startswith('/api/coordinator-events/') or self.path.startswith('/api/coordinators/') or self.path.startswith('/api/model-router/') or self.path.startswith('/api/desks/'):
+        if self.path.startswith('/api/pane-editor/'):
+            return self.pane_editor()
+        if self.path.startswith('/api/event-bus/') or self.path.startswith('/api/remote/') or self.path.startswith('/api/accounts/') or self.path.startswith('/api/conversations/') or self.path.startswith('/api/terminals/') or self.path == '/api/projects/create' or self.path.startswith('/api/inbox/') or self.path.startswith('/api/pull-requests/') or self.path.startswith('/api/tools/') or self.path.startswith('/api/special-agents/') or self.path.startswith('/api/skills/') or self.path.startswith('/api/workflows/') or self.path.startswith('/api/coordinator-events/') or self.path.startswith('/api/coordinators/') or self.path.startswith('/api/model-router/') or self.path.startswith('/api/desks/') or self.path.startswith('/api/editor/') or self.path.startswith('/api/files/') or self.path.startswith('/api/plugins/'):
             if not self.terminal_authorized():
                 return self.send_json({'error': 'Terminal authentication required'}, 403)
             try:
                 size = int(self.headers.get('Content-Length', '0'))
-                if not 0 < size <= 100000:
+                if not 0 < size <= (3000000 if self.path in ('/api/editor/finish', '/api/files/write') else 100000):
                     raise ValueError('Invalid request size')
                 payload = json.loads(self.rfile.read(size))
                 if not isinstance(payload, dict):
@@ -846,6 +1014,28 @@ class Handler(SimpleHTTPRequestHandler):
                     return self.send_json({'error': 'Only the user, at the desk, can change how many terminals a desk holds'}, 403)
                 if self.path.startswith('/api/desks/'):
                     return self.send_json(desk_action(self.path.rsplit('/', 1)[-1], payload, self.pane_refusal))
+                if self.path.startswith('/api/plugins/'):
+                    if not self.at_the_desk():
+                        return self.send_json({'error': 'Only you, at the desk, can approve a plugin'}, 403)
+                    if self.path == '/api/plugins/approve':
+                        return self.send_json(PLUGINS.approve(payload.get('id'), payload.get('digest')))
+                    if self.path == '/api/plugins/revoke':
+                        PLUGINS.revoke(payload.get('id'))
+                        return self.send_json({'ok': True})
+                    return self.send_json({'error': 'Not found'}, 404)
+                if self.path.startswith('/api/files/'):
+                    if not self.at_the_desk():
+                        return self.send_json({'error': 'Only the page can open files in a pane\'s editor'}, 403)
+                    return self.pane_files(payload)
+                if self.path == '/api/editor/pending':
+                    return self.send_json(PANE_EDITS.pending(payload.get('since'), 25))
+                if self.path == '/api/editor/finish':
+                    if not self.at_the_desk():
+                        return self.send_json({'error': 'Only the page can finish an edit'}, 403)
+                    try:
+                        return self.send_json(PANE_EDITS.finish(payload.get('edit'), payload.get('text')))
+                    except LookupError as exc:
+                        return self.send_json({'error': str(exc)}, 409)
                 if self.path.startswith('/api/coordinator-events/'):
                     desk = self.server.desk_url
                     if self.path.endswith('/retry'):
@@ -905,6 +1095,10 @@ class Handler(SimpleHTTPRequestHandler):
                     session = session | {'desk': desk}
                     SPECIAL_AGENTS.update_run(run['id'], 'running', terminal_id=session['id'])
                     return self.send_json(dict(session=session, run_id=run['id']))
+                if self.path == '/api/tools/pane-review':
+                    if not self.at_the_desk():
+                        return self.send_json({'error': 'Only the page can open a pane\'s review'}, 403)
+                    return self.pane_review(payload)
                 if self.path == '/api/tools/launch':
                     item = TOOL_RUNTIME.launch(payload.get('skill'), payload.get('target'), payload.get('id'), payload.get('title'))
                     # Launching from Skills names the agent session the tool is opened beside.

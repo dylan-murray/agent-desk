@@ -74,6 +74,74 @@ Generated PNGs live in `<desktop profile>/data/pasted-images/screenshot-<UUID>.p
 
 Paths are inserted through xterm's bracketed-paste support, without submitting the prompt. Agent Desk adds no image labels or styling; Claude and Codex retain their native prompts and decide whether paths become image chips or colored attachments. File input is local only. Known remote panes reject it, and transfers into manually started SSH sessions are unsupported. Browser text paste is unchanged; there are no browser uploads or remote file transfers.
 
+### Editor and review
+
+Each local terminal pane has a side panel beside its terminal. A rail down its left edge switches between **Files**, **Editor** and **Review**, each plugin you added, and any tool the pane's agent opens; each item has an icon and a short name, the one shown is marked in the agent's colour, and a dot means it has something new (Files: changes). The title bar names what is shown. Up and down arrows move along the rail. Open the panel with the side panel button in the pane header; **⌘E** (Ctrl+Shift+E on Linux) opens it on Editor and then moves focus between the terminal and the editor. Drag the divider to resize it, use the side button to dock it below instead, or use the expand button to let it fill the pane and hide the terminal until you collapse it. At phone width it stacks under the terminal. Switching tabs keeps each one loaded, and the dock comes back on the same tab after a reload.
+
+**Review** opens code review on the changes in the pane's folder: the working tree against `HEAD`, with comments on lines and ranges and exact suggestions, in the desk's own look.
+
+- **The top row** shows the branch, what it is compared with and the lines added and removed, then the pull request (below), or **Approve & open PR** when there is none yet.
+- **Changes** lists every changed file as a row with its lines added and removed and a status letter. Click a row to open its diff right there; click again to close it. The open row stays on top while you read it. Alt-click opens or closes every file, as does the button beside **Unified / Split**. Files with open notes start open. **Viewed** closes a file and dims it, and it comes back unviewed if the file changes again.
+- **Notes** lists every note with its replies and proof, filtered by **Open**, **Addressed** or **GitHub**; **Copy**, **Clear done** and **Clear all** sit above them. Clicking a note opens its file in Changes. When the panel is wide, the notes also sit beside the diff.
+- **The bar at the bottom** says how many notes are open and holds **Second opinion** and **Send to <agent>**, named for the coding agent the pane runs (or the session, when the desk can't tell).
+
+**Send to <agent>** sends the comments to that pane's agent: the desk types a prompt that points at the saved snapshot of your notes into the agent's prompt, or queues it while the agent is busy, the same way annotations are delivered. Delivery needs a Claude Code or Codex prompt in the pane; a plain shell refuses it and the review says why it wasn't delivered. Code review ships with Agent Desk (`agent_desk/tools/code-review`, from Ground Control), so an older copy in a skills folder is never used instead. Its notes stay in `~/.cache/review-app` (`REVIEW_APP_HOME`) and its submissions in `~/.cache/ground-control/feedback` (`GROUND_CONTROL_DATA_DIR`). In the macOS desktop app, Review saves the notes for you to copy back instead of sending them.
+
+- **Pull requests:** once the pane's branch has an open pull request on GitHub, Review covers the whole branch from where it left its base (working tree included), links the pull request in the top row, and brings in its review comments, review summaries and conversation as notes, each on its line where the line is still in the diff. It checks again every two minutes on its own, and **Check now** checks right away; nothing is imported twice. The top row says how many GitHub comments there are and, in amber, how many are new since you last looked; clicking **N new** opens Notes filtered to GitHub. This uses your `gh` sign-in. Replies and resolutions stay in the review; nothing is posted back to GitHub.
+- **Proof before addressed:** the prompt tells the agent how to answer each note: a reply saying what it changed, then marking the note addressed with `--proof`, the check it ran and what it showed, plus `--proof-file` for a screenshot. Marking a note addressed without proof is refused. The proof shows under the note as **Checked by …**, so you see how the fix was checked, not just that it was claimed. Your own **done** needs no proof.
+- **Second opinion:** the button in the bar at the bottom asks another coding agent to review the same changes, read-only; its comments land in the review as notes under its name. The menu lists every coding agent Agent Desk has, one per account (Claude · Work and Claude · Personal are separate choices), with whether each is installed, reviewing, or how many notes it left; **Ask all** asks every one that is free. Each reviewer runs on its account's login: the desk passes only the folder that account keeps its login in. A code review a coordinator opened keeps its own **Second opinion…** in the panel's title bar, which starts reviewers that report back to the coordinator.
+
+The editor:
+
+- **Opening files:** **⌘P** searches the files in the folder the pane was started in (tracked and untracked files in a Git repository, otherwise the folder without `node_modules`, virtualenvs and hidden folders). Files outside that folder, binary files, non-UTF-8 files and files over 2 MB are not opened.
+- **Untitled text:** the **+** button starts an untitled tab for pasting and editing text that doesn't belong to a file yet. It is kept in the browser across reloads. **⌘S** on it asks for a path inside the pane's folder and creates the file; an existing file is never replaced this way.
+- **Editing:** line numbers, syntax highlighting chosen from the file name, find and replace (⌘F, ⌘⌥F), and Sublime Text keyboard shortcuts such as ⌘D and ⇧⌘L. A dot on a tab marks unsaved changes; **⌘S** saves.
+- **Changes made on disk:** while a file is shown, the editor checks it every few seconds. If the agent in the pane changes a file you haven't edited, the editor reloads it. If you have unsaved changes, nothing is replaced: choose **Use the file's version** or **Keep mine**. A save is likewise refused if the file changed since you opened it.
+- **Files a pane opens:** in every terminal Agent Desk starts, `$VISUAL` and `$EDITOR` are `agent-desk-edit`. Claude Code's and Codex's **ctrl+g**, `git commit` and anything else that opens an editor from the terminal open the file as a tab in that pane's editor. **Save & return** (⌘S) hands it back; **Cancel** leaves it as it was; ctrl+c in the pane stops waiting and keeps what you typed as an untitled tab. When the editor is run without a terminal (an agent's own command), when no Agent Desk page is open, or for a file over 90 KB, the editor you had before Agent Desk runs instead. A `core.editor` or `GIT_EDITOR` you set still takes precedence for git.
+
+Only the desk page can read and save files, or open a pane's review, this way; agents and local helpers cannot use these routes. It works the same in the macOS desktop app. Remote panes and coordinator panes have not been checked yet. A terminal started before this version keeps its previous `$EDITOR` until it is restarted.
+
+**Files** shows the pane's folder as a tree, the same files ⌘P searches, with file icons tinted by type. Files changed since the last commit are marked **M** (changed), **A** (added), **U** (new, not in Git yet), **R** (renamed) or **D** (deleted, shown struck through), with the lines added and removed and a five-block bar like GitHub's; a closed folder shows how many changed files it holds. The title bar names the folder and how many files changed. Folders with changes open the first time you look. Type in **Filter files** to narrow the tree to matching paths (Escape clears it), and press **Changed** beside it to show only changed files; the collapse button closes every folder. Click a file to open it in the Editor; Files highlights whichever file the Editor shows. The list refreshes every few seconds.
+
+### Plugins
+
+Files and Code review are plugins, and you can add your own. A plugin is a folder with a `plugin.json`, in `~/.agent-desk/plugins`, `~/.claude/skills` or `~/.agents/skills` (plugins that ship with Agent Desk live in `agent_desk/plugins`). It has a page, a server, or both:
+
+- **A page** is an `index.html` beside `plugin.json`. It opens as a tab in every terminal pane's side panel, as described below.
+- **A server** is a Python program the desk starts on a file, a folder or nothing, and shows as a tool window. See [Annotation tool workspaces](#annotation-tool-workspaces).
+
+```json
+{
+  "name": "Files",
+  "description": "Browse the pane's folder and open files in the editor.",
+  "icon": "folder",
+  "order": 10,
+  "permissions": ["files.read", "editor.open"],
+  "buttons": [{"id": "refresh", "label": "Refresh", "title": "Read the folder again"}]
+}
+```
+
+The folder name is the plugin's ID (lowercase letters, digits and dashes). `name` is its tab and window title. `plugin.json` is checked strictly: unknown fields or permissions, permissions or buttons without a page, more than three buttons or odd button text and the plugin does not load. Lower `order` comes first; Editor sits at 20 and Review at 40, so Files (10) leads and a plugin with the default order (50) comes after Review. `icon` picks the rail icon by name, one of `puzzle` (the default), `folder`, `code`, `review`, `chart`, `list`, `bug`, `book`, `terminal`, `globe`, `check` or `search`; a plugin never supplies its own markup for the desk.
+
+**What a plugin can do.** Its page runs in a sandbox with no origin of its own and no network: it cannot read the desk, its tokens, cookies, storage or other panes, fetch anything, submit forms or open windows, and it can only load its own files and the plugin library. Everything else goes through the library, for the pane it is shown in only:
+
+| Call | Needs | Answers |
+| --- | --- | --- |
+| `pane.info` | nothing | the session's title, folder name and project |
+| `files.list` | `files.read` | the files in the pane's folder |
+| `files.changes` | `files.read` | each changed file, how it changed, and the lines added and removed |
+| `files.read` | `files.read` | a text file's contents (paths are kept inside the folder) |
+| `editor.open` | `editor.open` | opens a file in the pane's Editor |
+| `editor.current` | `editor.open` | the file the Editor shows; the `editor` event says when it changes |
+| `buttons.set` | nothing | presses, releases or disables one of its own buttons |
+| `tab.set` | nothing | its own tab's `subtitle` (up to 60 characters) and `note` (up to 24) in the title bar, and `badge`, the dot on its rail item; plain text only |
+
+A plugin's page loads `../sdk/agent-desk.js` (and optionally `../sdk/plugin.css` for the desk's colors and type), then calls `AgentDesk.call('files.list')` and listens with `AgentDesk.on('button', ({id, pressed}) => …)`. Calls it has no permission for, and calls that don't exist, are refused. A plugin can't write files or type into the terminal yet.
+
+**Buttons.** The desk draws a plugin's buttons in the panel's title bar while its tab is shown, from the manifest's text only; clicking one sends the plugin a `button` event, with `pressed` for a toggle.
+
+**Trust.** Plugins that ship with Agent Desk run as they are. Any other plugin stays off until you approve its exact manifest, and turns off again if its manifest changes, for example to ask for another permission. There is no approval screen yet: `GET /api/plugins` lists every plugin with its status, permissions and `digest`, and the page approves one with `POST /api/plugins/approve` (`{"id", "digest"}`) or switches it off with `/api/plugins/revoke`. Approvals are kept in `plugins.json` in the data folder. Plugin files are served under a path that changes each time the desk starts and is given only to the desk page.
+
 ### Pane layouts and resizing
 
 The layout button at the left of the workspace toolbar shows five layouts as small drawings: **2 × 2** (the default), **Rows**, **Columns**, **3 × 2** and **Main + side**. A layout is a pattern, not a pane count. Panes fill it in order, and it repeats as more open: with **Rows**, a third pane goes below the first two. Until a screen is full, panes stretch to fill it. Beyond one screen, extra rows keep the layout's row height and the workspace scrolls. When panes are out of sight below, a **panes below** button appears; it scrolls the next one to the top. Opening a pane that would land off screen scrolls it into view. The layout choice is saved in this browser, for each desk.
@@ -88,7 +156,7 @@ Click the pane title to rename it and the address line under it to load a differ
 
 ### Pull requests and checks
 
-A terminal whose folder is a Git repository on GitHub or a GitHub Enterprise server shows its branch's pull request as a chip in the pane header: the number, **Open**, **Draft**, **Merged** or **Closed**, its checks (**Passing**, **Failing** or **Pending**) and **Awaiting review**, **Approved** or **Changes requested**. Click the chip to open the pull request. Hover it for the title, the branch and the names of any failed checks. At phone width the chip keeps the number and the checks icon.
+A terminal whose folder is a Git repository on GitHub or a GitHub Enterprise server shows its branch's pull request as a chip in the pane header: the number, **Open**, **Draft**, **Merged** or **Closed**, its checks (**Passing**, **Failing** or **Pending**) and **Awaiting review**, **Approved** or **Changes requested**, and, in amber, how many review comments on it nobody has resolved yet (one extra GitHub query per open pull request). Click the chip to open the pull request. Hover it for the title, the branch and the names of any failed checks. At phone width the chip keeps the number and the checks icon.
 
 Agent Desk asks the GitHub CLI with `gh pr view` in that folder, once per repository every 90 seconds, and only for running terminals (`AGENT_DESK_PR_POLL_SECONDS` changes the interval). Two things check sooner, so a merge or review shows within a few seconds: coming back to the desk window re-checks the open panes' pull requests (at most every 15 seconds), and a terminal printing what `gh pr merge` prints once a merge is done re-checks that terminal's. `gh` decides which hosts are GitHub: github.com, and any Enterprise server you have signed into with `gh auth login --hostname <host>`. A remote `gh` doesn't recognise, such as GitLab, is asked about again only every 30 minutes, and a remote that is a local folder is never asked about. Nothing is shown, and no error appears in the header, when `gh` is not installed or not signed in, the remote is not on GitHub, the branch is detached, or the branch has no pull request. A failed call keeps the last answer for two more polls before the chip goes away.
 
@@ -186,7 +254,7 @@ For a backend-only update, use the verified listener PID with `python -m scripts
 
 ### Embedded skill UIs
 
-The **Tools** view hosts live skill interfaces at shareable local routes such as `/apps/code-review-…`. The skill launches its server and supplies the target file or repository; Agent Desk displays that UI and its context. These annotation skills are recognised by name once installed: `code-review`, `readme-review`, `document-builder`, `diagram-doc-creator`, `architecture-review` and `pull-request-description-review`. Any other skill becomes a tool by adding an `agent-desk-ui.json` manifest beside its `SKILL.md`. Launch one with:
+The **Tools** view hosts live skill interfaces at shareable local routes such as `/apps/code-review-…`. The skill launches its server and supplies the target file or repository; Agent Desk displays that UI and its context. Code review ships with Agent Desk; these other annotation skills are recognised by name once installed: `readme-review`, `document-builder`, `diagram-doc-creator`, `architecture-review` and `pull-request-description-review`. Any other skill becomes a tool by adding a `plugin.json` with a `server` beside its `SKILL.md`. Launch one with:
 
 ```sh
 python3 scripts/skill_ui.py --skill readme-review --target README.md
@@ -344,22 +412,19 @@ Terminal checkpoints also preserve saved cursor positions, scrolling margins, an
 
 **Tools** is a launcher and workspace library. Open tools have separate persistent iframe tabs: switching tabs or visiting the library does not reload the tool or discard its unsaved form state. Closing a tab stops the tool it belongs to, so nothing keeps serving after you close it; **Reopen** in the library relaunches a stopped tool with the same target and ID, on a new port and with a fresh page. The old top-bar dropdown is removed. Managed tools can be stopped and relaunched; removing a stopped/external registration does not delete the tool's annotation files. Externally registered processes are never stopped by Agent Desk.
 
-The catalog includes the annotation skills recognised by name and every skill with an `agent-desk-ui.json` manifest. Skills can continue using `scripts/skill_ui.py --skill NAME --target PATH --desk http://127.0.0.1:4310`. It uses the same lifecycle manager as the UI. By default the same skill/target reuses one running workspace; provide distinct `--id` values for intentionally separate instances. Each tool retains its own feedback workflow; the launcher does not assume that different tools share an annotation format or automatically relay their feedback.
+The catalog includes every plugin with a server, the annotation skills recognised by name, and skills that still declare their server in the older `agent-desk-ui.json` (`"runtime": "python-http"`), which keeps working. Skills can continue using `scripts/skill_ui.py --skill NAME --target PATH --desk http://127.0.0.1:4310`. It uses the same lifecycle manager as the UI. By default the same skill/target reuses one running workspace; provide distinct `--id` values for intentionally separate instances. Each tool retains its own feedback workflow; the launcher does not assume that different tools share an annotation format or automatically relay their feedback.
 
-For an additional Python annotation skill, add `agent-desk-ui.json` alongside its `SKILL.md`:
+For an additional Python annotation skill, add `plugin.json` alongside its `SKILL.md`:
 
 ```json
 {
-  "runtime": "python-http",
-  "title": "Prototype annotations",
+  "name": "Prototype annotations",
   "description": "Pin feedback on a local prototype.",
-  "entrypoint": "annotate.py",
-  "target": "file",
-  "args": ["{target}", "--port", "{port}", "--no-browser"]
+  "server": {"run": "annotate.py", "target": "file", "args": ["{target}", "--port", "{port}", "--no-browser"]}
 }
 ```
 
-The entrypoint must remain inside the skill directory. `target` is `file` or `directory`. The server must use Python's `socketserver.TCPServer`/`http.server` family, bind to `127.0.0.1` with the provided port, and remain in the foreground. The runtime reserves the socket and passes its open file descriptor to the Python wrapper; it never releases a candidate port and hopes the child acquires it. Concurrent launches cannot claim the same reserved port. A requested occupied port fails without contacting or registering the unrelated service. Startup is acknowledged by the exact child instance after it starts listening. New runtimes can be added later; other servers can register an existing local URL with `--url` today.
+`run` must be a Python file inside the plugin folder. `target` is `file`, `directory` or `none`, and `args` defaults to the line shown, without `{target}` when the target is `none`. The desktop app opens only servers whose `transports` include `"unix-http-v1"`. The server must use Python's `socketserver.TCPServer`/`http.server` family, bind to `127.0.0.1` with the provided port, and remain in the foreground. The runtime reserves the socket and passes its open file descriptor to the Python wrapper; it never releases a candidate port and hopes the child acquires it. Concurrent launches cannot claim the same reserved port. A requested occupied port fails without contacting or registering the unrelated service. Startup is acknowledged by the exact child instance after it starts listening. New runtimes can be added later; other servers can register an existing local URL with `--url` today.
 
 Write the skill's instructions to launch through this helper and return its `/apps/ID` endpoint. Store annotations beside the target or in a persistent workspace directory, and give the calling agent a concrete command to read or await submitted feedback. Tool process records and logs live in `data/tool-runtime`; process identity is checked before stopping a managed server. The app can recognize these processes after an Agent Desk server restart.
 

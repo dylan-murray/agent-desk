@@ -61,7 +61,7 @@ const A=(id,name,o={})=>({id,name,terminal_id:id,parent_id:null,harness:'codex',
   check('the header drops Rename and only says something when the state is worth reading',()=>{
    for(const pane of header){
     assert.equal(pane.rename,0,'a Rename button is still in the header');
-    assert.deepEqual(pane.icons,['Protect this session','Full screen','Close pane']);
+    assert.deepEqual(pane.icons,['Protect this session','Side panel','Full screen','Close pane']);
     assert.equal(pane.stop,'Stop','Stop is a labelled button, not a bare square');
     assert.equal(pane.titleRole,'button','the title is no longer the rename control');
    }

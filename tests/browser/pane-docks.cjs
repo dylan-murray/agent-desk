@@ -29,7 +29,7 @@ const T=(id,title,o={})=>({id,title,skill:'diagram-doc-creator',url:'http://127.
   const state=()=>page.evaluate(()=>{const n=document.querySelector('[data-pane-id="pane-a"]'),main=n.querySelector('.pane-main'),dock=n.querySelector('.pane-dock');
    return {chip:n.querySelector('.pane-tool-toggle')?.textContent,pressed:n.querySelector('.pane-tool-toggle')?.getAttribute('aria-pressed'),
     shown:!!dock&&!dock.hidden,bottom:main.classList.contains('dock-bottom'),size:main.style.getPropertyValue('--dock-size'),
-    frame:dock?.querySelector('iframe').getAttribute('src'),valuenow:n.querySelector('.pane-divider')?.getAttribute('aria-valuenow'),
+    frame:dock?.querySelector('iframe:not([hidden])')?.getAttribute('src'),valuenow:n.querySelector('.pane-divider')?.getAttribute('aria-valuenow'),
     otherChip:!!document.querySelector('[data-pane-id="pane-b"] .pane-tool-toggle')};});
 
   const first=await state();
@@ -78,10 +78,10 @@ const T=(id,title,o={})=>({id,title,skill:'diagram-doc-creator',url:'http://127.
   check('a tool that appears while its agent\'s pane is open docks there, without leaving the desk',()=>assert.equal(page2,'Agents'));
 
   uis=[...uis,T('tool-a2','Query workspace',{agent_id:'pane-a'})];
-  await page.waitForFunction(()=>document.querySelector('[data-pane-id="pane-a"] .pane-dock-pick:not([hidden])'),null,{timeout:10000});
-  await page.locator('[data-pane-id="pane-a"] .pane-dock-pick').selectOption('tool-a');
+  await page.waitForFunction(()=>document.querySelector('[data-pane-id="pane-a"] .pane-dock-tab[data-entry="tool-a2"]'),null,{timeout:10000});
+  await page.locator('[data-pane-id="pane-a"] .pane-dock-tab[data-entry="tool-a"]').click();
   const two=await state();
-  check('an agent with two tools picks between them in the dock',()=>{assert.match(two.chip,/\+1$/);assert.equal(two.frame,'http://127.0.0.1:49401/tool-a');});
+  check('an agent with two tools switches between them with the dock\'s tabs',()=>{assert.match(two.chip,/\+1$/);assert.equal(two.frame,'http://127.0.0.1:49401/tool-a');});
 
   // A link to a tool (coordinator output, a report, /apps/<id>) goes to the owner's pane, opening it if closed.
   uis=[...uis,T('tool-c','Closed agent tool',{agent_id:'pane-c'})];
@@ -89,7 +89,7 @@ const T=(id,title,o={})=>({id,title,skill:'diagram-doc-creator',url:'http://127.
   await page.evaluate(()=>switchPage('skills'));
   await page.evaluate(()=>openDeskTool('/apps/tool-c'));
   await page.waitForSelector('[data-pane-id="pane-c"] .pane-dock:not([hidden])');
-  const fromLink=await page.evaluate(()=>({page:document.querySelector('#breadcrumb').textContent,frame:document.querySelector('[data-pane-id="pane-c"] .pane-dock-frame').getAttribute('src')}));
+  const fromLink=await page.evaluate(()=>({page:document.querySelector('#breadcrumb').textContent,frame:document.querySelector('[data-pane-id="pane-c"] .pane-dock-frame:not([hidden])').getAttribute('src')}));
   check('a link to a tool docks it in its agent\'s pane, opening that pane',()=>{assert.equal(fromLink.page,'Agents');assert.equal(fromLink.frame,'http://127.0.0.1:49401/tool-c');});
 
   // With no agent on the desk to hold it, a tool opens as a web pane; one an agent opens joins the desk quietly.
@@ -117,15 +117,15 @@ const T=(id,title,o={})=>({id,title,skill:'diagram-doc-creator',url:'http://127.
   const exitLabel=await page.locator('[data-pane-id="pane-c"] .pane-tool-exit').getAttribute('aria-label');
   await page.locator('[data-pane-id="pane-c"] .pane-tool-exit').click();
   await page.waitForFunction(()=>!document.querySelector('[data-pane-id="pane-c"] .pane-tool-toggle'));
-  await page.locator('[data-pane-id="pane-a"] .pane-dock-pick').selectOption('tool-a2');
+  await page.locator('[data-pane-id="pane-a"] .pane-dock-tab[data-entry="tool-a2"]').click();
   const looseLabel=await page.locator('[data-pane-id="pane-a"] .pane-tool-exit').getAttribute('aria-label');
   await page.locator('[data-pane-id="pane-a"] .pane-tool-exit').click();
   await page.waitForFunction(()=>!/\+1/.test(document.querySelector('[data-pane-id="pane-a"] .pane-tool-toggle')?.textContent||''));
-  const afterExit=await state(),paneC=await page.evaluate(()=>({chip:!!document.querySelector('[data-pane-id="pane-c"] .pane-tool-toggle'),frame:document.querySelector('[data-pane-id="pane-c"] .pane-dock-frame')?.getAttribute('src')}));
+  const afterExit=await state(),paneC=await page.evaluate(()=>({chip:!!document.querySelector('[data-pane-id="pane-c"] .pane-tool-toggle'),frame:document.querySelector('[data-pane-id="pane-c"] .pane-dock-frame')?.getAttribute('src')??null}));
   check('exit stops a tool the desk launched and removes one started elsewhere',()=>{
    assert.equal(exitLabel,'Stop Closed agent tool');assert.equal(looseLabel,'Close Query workspace');
    assert.deepEqual(calls,[['/api/tools/stop','tool-c'],['/api/tools/forget','tool-a2']]);
-   assert.equal(paneC.chip,false);assert.equal(paneC.frame,'about:blank','a stopped tool is unloaded, not just hidden');
+   assert.equal(paneC.chip,false);assert.equal(paneC.frame,null,'a stopped tool is unloaded, not just hidden');
    assert.equal(afterExit.chip,'Sample-data reconciliation','the agent\'s other tool stays');assert.equal(afterExit.frame,'http://127.0.0.1:49401/tool-a');
   });
 
@@ -137,6 +137,6 @@ const T=(id,title,o={})=>({id,title,skill:'diagram-doc-creator',url:'http://127.
 
   check('no page errors',()=>assert.deepEqual(errors,[]));
   if(failures.length)throw Error(failures.length+' checks failed: '+failures.join(', '));
-  console.log('PASS: tools dock inside their agent\'s pane: header chip, side and bottom split, keyboard resize, kept state, reload, auto-dock, picker, tool links, web-pane fallback, stopped tools, exit, phone');
+  console.log('PASS: tools dock inside their agent\'s pane: header chip, side and bottom split, keyboard resize, kept state, reload, auto-dock, tabs, tool links, web-pane fallback, stopped tools, exit, phone');
  }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exit(1);});

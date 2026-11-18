@@ -9,7 +9,7 @@ const {chromium}=require('playwright');const withAccounts=require('./accounts-fi
  await page.route('**/api/**',r=>{const path=new URL(r.request().url()).pathname;
   if(path==='/api/coordinators/reviewers')return r.fulfill({json:{profiles:[{id:'claude',label:'Claude'},{id:'grok',label:'Grok'}]}});
   if(path==='/api/coordinators/second-opinion'){const p=r.request().postDataJSON();assert.deepEqual(p.profiles,['claude','grok']);assert.equal(p.tool_id,'one');assert.equal(p.id,'coordinator');mutations.push(path);return r.fulfill({json:{workers:['worker-1','worker-2']}});}
-  if(r.request().method()==='POST'&&path!=='/api/feedback')mutations.push(path);
+  if(r.request().method()==='POST'&&!['/api/feedback','/api/editor/pending'].includes(path))mutations.push(path);
   const data={'/api/agents':{agents},'/api/feedback':{notes:[],deleted:[]},'/api/terminal-auth':{token:'fixture',cwd:'/tmp'},'/api/skill-uis':{uis},'/api/special-agents':{roles:[],runs:[],inbox:[]},'/api/workflows':{configs:[],workflows:[],flows:[],executions:[]}};
   return r.fulfill({json:data[path]||{}});});
  await page.addInitScript(()=>sessionStorage.setItem('agent-desk-panes-live',JSON.stringify(['coordinator','worker'])));

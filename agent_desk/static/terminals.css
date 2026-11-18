@@ -437,16 +437,41 @@ body.pane-dragging-active .pane-edges{visibility:hidden}
   .nav-group.drop-before::before{left:-4px;right:auto}.nav-group.drop-after::before{right:-4px;left:auto}
 }
 .pane-main{display:flex;flex:1;min-height:0;min-width:0}.pane-main>.pane-body{min-width:0}.pane-main.dock-bottom{flex-direction:column}
-.pane-main.docked>.pane-dock{display:flex;flex-direction:column;flex:0 0 var(--dock-size,50%);min-width:0;min-height:0;background:#0f0f11}
+.pane-main.docked>.pane-dock{display:flex;flex-direction:row;flex:0 0 var(--dock-size,50%);min-width:0;min-height:0;background:#0f0f11}
 .pane-dock[hidden],.pane-divider[hidden]{display:none!important}
 .pane-divider{position:relative;z-index:1;flex:0 0 7px;margin:0 -3px;cursor:col-resize;touch-action:none}.pane-divider::before{content:"";position:absolute;inset:0 3px;background:#ffffff12;transition:background .12s}
 .dock-bottom>.pane-divider{margin:-3px 0;cursor:row-resize}.dock-bottom>.pane-divider::before{inset:3px 0}
 .pane-divider:hover::before,.pane-divider:focus-visible::before,.dock-resizing>.pane-divider::before{background:color-mix(in srgb,var(--agent-color) 75%,transparent)}.pane-divider:focus-visible{outline:none}
 .dock-resizing{cursor:col-resize}.dock-resizing.dock-bottom{cursor:row-resize}.dock-resizing iframe{pointer-events:none}
 .pane-dock-bar{display:flex;align-items:center;gap:8px;height:32px;padding:0 6px 0 10px;border-bottom:1px solid #ffffff0b;flex-shrink:0;font-size:11px;color:var(--ink-2)}
-.pane-dock-icon svg,.pane-tool-toggle svg{display:block;width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
-.pane-dock-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink-1)}
-.pane-dock-pick{flex:1;min-width:0;padding:2px 0;border:0;background:none;color:var(--ink-1);font-size:11px}.pane-dock-pick[hidden],.pane-dock-name[hidden]{display:none}
+.pane-tool-toggle svg{display:block;width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+/* The dock's tabs are a rail down its left edge: an icon and a short word each, the one shown marked in the agent's
+   colour, and a dot when a plugin has something to say. Plugins add an item each, so it never runs out of room. */
+.pane-dock-main{display:flex;flex-direction:column;flex:1;min-width:0;min-height:0}
+.pane-dock-tabs{display:flex;flex-direction:column;align-items:center;gap:4px;width:62px;flex-shrink:0;padding:8px 0;overflow-y:auto;scrollbar-width:none;border-right:1px solid #ffffff0b}.pane-dock-tabs::-webkit-scrollbar{display:none}
+.pane-dock-tab{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;flex-shrink:0;width:52px;height:44px;padding:0 3px;border:0;border-radius:8px;background:none;color:#7d7b74;font-size:9.5px;letter-spacing:.2px;transition:color .15s,background .15s}
+.pane-dock-tab span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pane-dock-tab svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round}
+.pane-dock-tab:hover{color:var(--ink-1)}.pane-dock-tab:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.pane-dock-tab[aria-selected="true"]{background:#ffffff0f;color:var(--ink-1)}
+.pane-dock-tab[aria-selected="true"]::before{content:"";position:absolute;left:-5px;top:10px;bottom:10px;width:2px;border-radius:2px;background:var(--agent-color)}
+.pane-dock-badge{position:absolute;top:6px;right:11px;width:6px;height:6px;border-radius:50%;background:var(--amber)}.pane-dock-badge[hidden]{display:none}
+.pane-dock-title{display:flex;align-items:baseline;gap:7px;min-width:0;margin-right:auto;overflow:hidden;color:var(--ink-muted);font-size:10px;letter-spacing:1.2px;text-transform:uppercase;white-space:nowrap}
+.pane-dock-title b{color:var(--ink-2);font-weight:600}.pane-dock-subtitle{overflow:hidden;text-overflow:ellipsis}.pane-dock-subtitle:not(:empty)::before{content:"·";margin-right:7px}
+.pane-dock-flag{font:10.5px "SFMono-Regular",Menlo,monospace;letter-spacing:0;text-transform:none;color:var(--amber)}
+.pane-dock-editor{display:flex;flex:1;min-height:0}.pane-dock-editor[hidden],.pane-dock-frame[hidden],.pane-dock-library[hidden]{display:none}
+.pane-dock-note{display:flex;flex:1;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:24px;color:var(--ink-2);font-size:12px;text-align:center}.pane-dock-note[hidden]{display:none}.pane-dock-note p{margin:0;max-width:360px}
+.pane-dock-review{flex-shrink:0;white-space:nowrap}
+.pane-edit .panel-fill{fill:currentColor;stroke:none;opacity:0}.pane-edit[aria-pressed=true] .panel-fill{opacity:.4}
+.pane-edit .side-bottom,.pane-edit[data-side=bottom] .side-right{display:none}.pane-edit[data-side=bottom] .side-bottom{display:inline}
+.pane-dock-actions{display:flex;align-items:center;gap:2px;flex-shrink:0;white-space:nowrap}.pane-dock-actions[hidden]{display:none}
+/* A plugin's buttons look like buttons, hollow like the coordinator footer's; a toggle that is on fills in. */
+.pane-dock-actions .text-button{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 9px;border:1px solid var(--border-strong);border-radius:6px;color:var(--ink-2)}
+.pane-dock-actions .text-button:hover{border-color:#ffffff38;color:var(--ink-1)}.pane-dock-actions .text-button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.pane-dock-actions .text-button[aria-pressed]::before{content:"";width:6px;height:6px;border:1px solid currentColor;border-radius:50%;opacity:.7}
+.pane-dock-actions [aria-pressed="true"]{background:#ffffff12;border-color:#ffffff38;color:var(--ink-1)}.pane-dock-actions [aria-pressed="true"]::before{background:var(--accent);border-color:var(--accent);opacity:1}
+.pane-dock-expand[aria-pressed="true"]{color:color-mix(in srgb,var(--agent-color) 55%,#fff)}
+.pane-main.dock-expanded>:not(.pane-dock){display:none!important}.pane-main.dock-expanded>.pane-dock{flex:1 1 auto}
 .pane-dock-frame{flex:1;min-height:0;width:100%;border:0;background:#0c0c0d}
 .pane-tool{display:inline-flex;align-items:stretch;height:22px;max-width:220px;border:1px solid #ffffff14;border-radius:5px;overflow:hidden}
 .pane-tool:has(.pane-tool-toggle[aria-pressed="true"]){border-color:color-mix(in srgb,var(--agent-color) 45%,transparent);background:color-mix(in srgb,var(--agent-color) 12%,transparent)}
@@ -460,13 +485,13 @@ body.pane-dragging-active .pane-edges{visibility:hidden}
 .pane-tool-toggle:focus-visible{outline:1px solid currentColor;outline-offset:-2px}
 @media(max-width:1050px){.pane-tool{max-width:140px}}
 @media(prefers-reduced-motion:reduce){.pane-divider::before{transition:none}}
-@media(max-width:760px){.pane-tool-toggle{padding:0 6px}.pane-tool-toggle span{display:none}.pane-dock-side{display:none}}
+@media(max-width:760px){.pane-tool-toggle{padding:0 6px}.pane-tool-toggle span{display:none}.pane-dock-side,.pane-dock-review{display:none}}
 .pane-pr{max-width:300px}.pane-pr-link{display:inline-flex;align-items:center;gap:6px;min-width:0;padding:0 7px 0 8px;overflow:hidden;white-space:nowrap;color:var(--ink-2);font-size:10px;line-height:1;text-decoration:none}.pane-pr-link:hover{background:#ffffff0a;color:var(--ink-1)}.pane-pr-link:focus-visible,.pane-pr-log:focus-visible{outline:1px solid currentColor;outline-offset:-2px}
 .pane-pr svg{display:block;width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.pane-pr-link b{font-weight:600;color:var(--ink-1);font-variant-numeric:tabular-nums}
 .pane-pr-icon,.pane-pr-checks{display:inline-flex;align-items:center;gap:4px;flex-shrink:0}.pane-pr-checks svg{width:11px;height:11px}
 .pane-pr[data-state=open] .pane-pr-icon{color:var(--good)}.pane-pr[data-state=draft] .pane-pr-icon{color:var(--ink-muted)}.pane-pr[data-state=merged] .pane-pr-icon{color:var(--lavender)}.pane-pr[data-state=closed] .pane-pr-icon{color:var(--danger)}
 .pane-pr[data-checks=passing] .pane-pr-checks{color:var(--good)}.pane-pr[data-checks=pending] .pane-pr-checks{color:var(--amber)}.pane-pr[data-checks=failing] .pane-pr-checks{color:var(--danger)}
-.pane-pr[data-checks=failing]{border-color:#e6676740}.pane-pr-review[data-review=approved]{color:var(--good)}.pane-pr-review[data-review=review_required]{color:var(--ink-muted)}.pane-pr-review[data-review=changes_requested]{color:var(--amber)}
+.pane-pr[data-checks=failing]{border-color:#e6676740}.pane-pr-comments{display:inline-flex;align-items:center;gap:3px;flex-shrink:0;color:var(--amber);font-variant-numeric:tabular-nums}.pane-pr-comments svg{width:11px;height:11px}.pane-pr-review[data-review=approved]{color:var(--good)}.pane-pr-review[data-review=review_required]{color:var(--ink-muted)}.pane-pr-review[data-review=changes_requested]{color:var(--amber)}
 .pane-pr-log{display:grid;place-items:center;width:22px;padding:0;border:0;border-left:1px solid #ffffff12;background:none;color:var(--ink-2)}.pane-pr-log[hidden]{display:none}.pane-pr-log svg{width:11px;height:11px;stroke-linejoin:round}.pane-pr-log:hover{background:#ffffff0a;color:var(--ink-1)}.pane-pr-log:disabled{opacity:.5}
 .pane-pr-more{display:inline-flex;align-items:center;gap:4px;padding:0 7px;border:0;border-left:1px solid #ffffff12;background:none;color:var(--ink-2);font-size:10px;font-variant-numeric:tabular-nums}.pane-pr-more[hidden]{display:none}
 .pane-pr-more:hover,.pane-pr-more[aria-expanded=true]{background:#ffffff0d;color:var(--ink-1)}.pane-pr-more:focus-visible{outline:1px solid currentColor;outline-offset:-2px}

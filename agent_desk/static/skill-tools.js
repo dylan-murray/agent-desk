@@ -71,7 +71,7 @@ function toolBuildPrompt(name,purpose,root){
     `Create it in ${root}/${name}/ with:`,
     `- SKILL.md: frontmatter with name and description, then when to use the tool and how notes from its UI get back to the agent.`,
     `- A stdlib-only Python HTTP server that serves the UI. Agent Desk runs it as \`<script> {target} --port {port} --no-browser\`, leaving out {target} when the target is "none". Serve on the port it is given.`,
-    `- agent-desk-ui.json: {"runtime":"python-http","entrypoint":"<script>.py","title":"…","description":"…","target":"file|directory|none"}.`,
+    `- plugin.json: {"name":"…","description":"…","server":{"run":"<script>.py","target":"file|directory|none"}}.`,
     example?`Follow the conventions of an existing tool, such as the ${example.name} skill at ${example.path.replace(/\/SKILL\.md$/,'')}, including how its notes reach the agent.`:'',
     `Before you finish, run the server the way Agent Desk will and check the UI loads. Once it works, it appears on the Agent Desk Skills page with a Launch button.`].filter(Boolean).join('\n\n');
 }
