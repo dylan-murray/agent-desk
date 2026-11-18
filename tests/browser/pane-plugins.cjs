@@ -14,8 +14,8 @@ const python = process.env.AGENT_DESK_TEST_PYTHON || 'python3';
 // A plugin from outside the desk: it asks for no permissions and probes what its page can reach.
 const extra = path.join(state, 'plugins'), probe = path.join(extra, 'probe');
 fs.mkdirSync(probe, {recursive: true});
-const manifest = {runtime: 'static', title: 'Probe', entrypoint: 'index.html', dock: {tab: 'Probe', order: 90}, permissions: [], buttons: [{id: 'ping', label: 'Ping'}]};
-fs.writeFileSync(path.join(probe, 'agent-desk-ui.json'), JSON.stringify(manifest));
+const manifest = {name: 'Probe', order: 90, permissions: [], buttons: [{id: 'ping', label: 'Ping'}]};
+fs.writeFileSync(path.join(probe, 'plugin.json'), JSON.stringify(manifest));
 fs.writeFileSync(path.join(probe, 'index.html'), '<!doctype html><body><script src="../sdk/agent-desk.js"></script><script src="probe.js"></script></body>');
 fs.writeFileSync(path.join(probe, 'probe.js'), `const out={},show=()=>{document.body.dataset.result=JSON.stringify(out);};
 (async()=>{
@@ -31,7 +31,7 @@ fs.writeFileSync(path.join(probe, 'probe.js'), `const out={},show=()=>{document.
 })();
 AgentDesk.on('button',({id})=>{out.button=id;show();});`);
 const fixtureEnv = {...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('AGENT_DESK_'))), AGENT_DESK_DATA_DIR: state,
-  AGENT_DESK_TOOL_ROOTS: [path.join(root, 'agent_desk', 'tools'), extra].join(path.delimiter)};
+  AGENT_DESK_TOOL_ROOTS: [path.join(root, 'agent_desk', 'plugins'), extra].join(path.delimiter)};
 let server, browser, port, log;
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function until(check, message, tries = 200) {for (let i = 0; i < tries; i++) {if (await check()) return;await pause(100);}throw Error(message);}
@@ -141,7 +141,7 @@ const note = message => {if (process.env.VERBOSE) console.log('  ok ' + message)
   await until(async () => JSON.parse(await probeFrame.locator('body').getAttribute('data-result')).button === 'ping', 'the plugin did not hear its button');
   note('an approved plugin gets only what its manifest allows: no files without permission, no unknown calls, its own button');
 
-  fs.writeFileSync(path.join(probe, 'agent-desk-ui.json'), JSON.stringify({...manifest, permissions: ['files.read']}));
+  fs.writeFileSync(path.join(probe, 'plugin.json'), JSON.stringify({...manifest, permissions: ['files.read']}));
   await page.evaluate(() => refreshPlugins());
   await until(async () => (await pane.locator('.pane-dock-frame[data-plugin="probe"]').count()) === 0, 'a plugin that asks for more should be switched off and its page unloaded');
   // Like a tool that stops, a plugin switched off while shown closes the dock.

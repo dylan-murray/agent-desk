@@ -87,7 +87,7 @@ const APP=process.env.AGENT_DESK_TEST_URL||'http://127.0.0.1:4310/';
    assert.equal(remembered,'claude-personal','the agent last used for tools is remembered');
    assert.equal(build.cwd,'/home/me/.agents/skills');assert.equal(build.name,'Build tool · api-diff-review');
    assert.match(buildPrompt,/Pin comments on changed endpoints\./);assert.match(buildPrompt,/\/home\/me\/\.agents\/skills\/api-diff-review\//);
-   assert.match(buildPrompt,/"runtime":"python-http"/);assert.match(buildPrompt,/"target":"file\|directory\|none"/);
+   assert.match(buildPrompt,/plugin\.json: \{"name":"…","description":"…","server":\{"run":"<script>\.py"/);assert.match(buildPrompt,/"target":"file\|directory\|none"/);
    // The building agent decides what the tool opens on; the dialog does not ask.
    assert.match(buildPrompt,/Decide from that what the tool opens on: a file, a folder or repository, or nothing at all/);
    assert.match(buildPrompt,/readme-review skill at \/home\/me\/\.agents\/skills\/readme-review/);

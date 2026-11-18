@@ -26,8 +26,8 @@ from agent_desk.event_bus import EventError, MAX_BYTES
 from agent_desk import desk_tokens, pane_guard, skill_harnesses, tool_registration, web_pages
 from agent_desk.conversation_bridge import ConversationBridge
 from agent_desk.special_agents import SpecialAgents, launch_payload
-from agent_desk.tool_runtime import BUNDLED, ToolRuntime
-from agent_desk.plugins import Plugins
+from agent_desk.tool_runtime import ToolRuntime
+from agent_desk.plugins import BUNDLED, Plugins
 from scripts.control_mailbox import Mailbox
 from agent_desk.coordinator_runtime import CoordinatorRuntime
 from agent_desk.annotations import AnnotationStore

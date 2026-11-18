@@ -1,5 +1,5 @@
-// The page side of a dock plugin. The page runs sandboxed with no network, so everything it does in
-// the pane goes through this channel, and the desk answers only what the plugin's manifest allows.
+// The page side of a plugin. The page runs sandboxed with no network, so everything it does in
+// the pane goes through this channel, and the desk answers only what the plugin's plugin.json allows.
 //   AgentDesk.call('files.list').then(({files})=>...)
 //   AgentDesk.on('button',({id,pressed})=>...)
 (()=>{

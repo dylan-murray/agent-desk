@@ -13,7 +13,7 @@ const profile = path.join(fixture, 'profile');
 const data = path.join(profile, 'data');fs.mkdirSync(data, {recursive:true, mode: 0o700});
 const skill = path.join(fixture, 'skills/fixture');fs.mkdirSync(skill, {recursive: true});
 fs.copyFileSync(path.join(root, 'tests/fixtures/desktop/tool.py'), path.join(skill, 'tool.py'));
-fs.writeFileSync(path.join(skill, 'agent-desk-ui.json'), JSON.stringify({runtime: 'python-http', entrypoint: 'tool.py', title: 'Fixture review', target: 'none', transports: ['unix-http-v1']}));
+fs.writeFileSync(path.join(skill, 'plugin.json'), JSON.stringify({name: 'Fixture review', server: {run: 'tool.py', target: 'none', transports: ['unix-http-v1']}}));
 const env = {...process.env, AGENT_DESK_DESKTOP_TEST: '1', AGENT_DESK_PROFILE_DIR: profile, AGENT_DESK_SOCKET_ROOT: path.join(fixture, 's'), AGENT_DESK_TOOL_ROOTS: path.join(fixture, 'skills')};
 let electron, manager, electronLog = '';
 (async () => {

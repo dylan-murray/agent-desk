@@ -103,23 +103,25 @@ Only the desk page can read and save files, or open a pane's review, this way; a
 
 **Files** shows the pane's folder as a tree, the same files ⌘P searches, with file icons tinted by type. Files changed since the last commit are marked **M** (changed), **A** (added), **U** (new, not in Git yet), **R** (renamed) or **D** (deleted, shown struck through), with the lines added and removed and a five-block bar like GitHub's; a closed folder shows how many changed files it holds. The title bar names the folder and how many files changed. Folders with changes open the first time you look. Type in **Filter files** to narrow the tree to matching paths (Escape clears it), and press **Changed** beside it to show only changed files; the collapse button closes every folder. Click a file to open it in the Editor; Files highlights whichever file the Editor shows. The list refreshes every few seconds.
 
-### Dock plugins
+### Plugins
 
-Files is a plugin, and you can add your own. A dock plugin is a folder with an `agent-desk-ui.json` beside its page, in `~/.claude/skills` or `~/.agents/skills` (plugins that ship with Agent Desk live in `agent_desk/tools`):
+Files and Code review are plugins, and you can add your own. A plugin is a folder with a `plugin.json`, in `~/.agent-desk/plugins`, `~/.claude/skills` or `~/.agents/skills` (plugins that ship with Agent Desk live in `agent_desk/plugins`). It has a page, a server, or both:
+
+- **A page** is an `index.html` beside `plugin.json`. It opens as a tab in every terminal pane's side panel, as described below.
+- **A server** is a Python program the desk starts on a file, a folder or nothing, and shows as a tool window. See [Annotation tool workspaces](#annotation-tool-workspaces).
 
 ```json
 {
-  "runtime": "static",
-  "title": "Files",
+  "name": "Files",
   "description": "Browse the pane's folder and open files in the editor.",
-  "entrypoint": "index.html",
-  "dock": {"tab": "Files", "order": 10, "icon": "folder"},
+  "icon": "folder",
+  "order": 10,
   "permissions": ["files.read", "editor.open"],
   "buttons": [{"id": "refresh", "label": "Refresh", "title": "Read the folder again"}]
 }
 ```
 
-The folder name is the plugin's ID (lowercase letters, digits and dashes). The manifest is checked strictly: unknown fields or permissions, an entry page outside the folder, more than three buttons or odd button text and the plugin does not load. Lower `order` comes first; Editor sits at 20 and Review at 40, so Files (10) leads and a plugin with the default order (50) comes after Review. `icon` picks the rail icon by name, one of `puzzle` (the default), `folder`, `code`, `review`, `chart`, `list`, `bug`, `book`, `terminal`, `globe`, `check` or `search`; a plugin never supplies its own markup for the desk.
+The folder name is the plugin's ID (lowercase letters, digits and dashes). `name` is its tab and window title. `plugin.json` is checked strictly: unknown fields or permissions, permissions or buttons without a page, more than three buttons or odd button text and the plugin does not load. Lower `order` comes first; Editor sits at 20 and Review at 40, so Files (10) leads and a plugin with the default order (50) comes after Review. `icon` picks the rail icon by name, one of `puzzle` (the default), `folder`, `code`, `review`, `chart`, `list`, `bug`, `book`, `terminal`, `globe`, `check` or `search`; a plugin never supplies its own markup for the desk.
 
 **What a plugin can do.** Its page runs in a sandbox with no origin of its own and no network: it cannot read the desk, its tokens, cookies, storage or other panes, fetch anything, submit forms or open windows, and it can only load its own files and the plugin library. Everything else goes through the library, for the pane it is shown in only:
 
@@ -252,7 +254,7 @@ For a backend-only update, use the verified listener PID with `python -m scripts
 
 ### Embedded skill UIs
 
-The **Tools** view hosts live skill interfaces at shareable local routes such as `/apps/code-review-…`. The skill launches its server and supplies the target file or repository; Agent Desk displays that UI and its context. Code review ships with Agent Desk; these other annotation skills are recognised by name once installed: `readme-review`, `document-builder`, `diagram-doc-creator`, `architecture-review` and `pull-request-description-review`. Any other skill becomes a tool by adding an `agent-desk-ui.json` manifest beside its `SKILL.md`. Launch one with:
+The **Tools** view hosts live skill interfaces at shareable local routes such as `/apps/code-review-…`. The skill launches its server and supplies the target file or repository; Agent Desk displays that UI and its context. Code review ships with Agent Desk; these other annotation skills are recognised by name once installed: `readme-review`, `document-builder`, `diagram-doc-creator`, `architecture-review` and `pull-request-description-review`. Any other skill becomes a tool by adding a `plugin.json` with a `server` beside its `SKILL.md`. Launch one with:
 
 ```sh
 python3 scripts/skill_ui.py --skill readme-review --target README.md
@@ -410,22 +412,19 @@ Terminal checkpoints also preserve saved cursor positions, scrolling margins, an
 
 **Tools** is a launcher and workspace library. Open tools have separate persistent iframe tabs: switching tabs or visiting the library does not reload the tool or discard its unsaved form state. Closing a tab stops the tool it belongs to, so nothing keeps serving after you close it; **Reopen** in the library relaunches a stopped tool with the same target and ID, on a new port and with a fresh page. The old top-bar dropdown is removed. Managed tools can be stopped and relaunched; removing a stopped/external registration does not delete the tool's annotation files. Externally registered processes are never stopped by Agent Desk.
 
-The catalog includes the annotation skills recognised by name and every skill with an `agent-desk-ui.json` manifest. Skills can continue using `scripts/skill_ui.py --skill NAME --target PATH --desk http://127.0.0.1:4310`. It uses the same lifecycle manager as the UI. By default the same skill/target reuses one running workspace; provide distinct `--id` values for intentionally separate instances. Each tool retains its own feedback workflow; the launcher does not assume that different tools share an annotation format or automatically relay their feedback.
+The catalog includes every plugin with a server, the annotation skills recognised by name, and skills that still declare their server in the older `agent-desk-ui.json` (`"runtime": "python-http"`), which keeps working. Skills can continue using `scripts/skill_ui.py --skill NAME --target PATH --desk http://127.0.0.1:4310`. It uses the same lifecycle manager as the UI. By default the same skill/target reuses one running workspace; provide distinct `--id` values for intentionally separate instances. Each tool retains its own feedback workflow; the launcher does not assume that different tools share an annotation format or automatically relay their feedback.
 
-For an additional Python annotation skill, add `agent-desk-ui.json` alongside its `SKILL.md`:
+For an additional Python annotation skill, add `plugin.json` alongside its `SKILL.md`:
 
 ```json
 {
-  "runtime": "python-http",
-  "title": "Prototype annotations",
+  "name": "Prototype annotations",
   "description": "Pin feedback on a local prototype.",
-  "entrypoint": "annotate.py",
-  "target": "file",
-  "args": ["{target}", "--port", "{port}", "--no-browser"]
+  "server": {"run": "annotate.py", "target": "file", "args": ["{target}", "--port", "{port}", "--no-browser"]}
 }
 ```
 
-The entrypoint must remain inside the skill directory. `target` is `file` or `directory`. The server must use Python's `socketserver.TCPServer`/`http.server` family, bind to `127.0.0.1` with the provided port, and remain in the foreground. The runtime reserves the socket and passes its open file descriptor to the Python wrapper; it never releases a candidate port and hopes the child acquires it. Concurrent launches cannot claim the same reserved port. A requested occupied port fails without contacting or registering the unrelated service. Startup is acknowledged by the exact child instance after it starts listening. New runtimes can be added later; other servers can register an existing local URL with `--url` today.
+`run` must be a Python file inside the plugin folder. `target` is `file`, `directory` or `none`, and `args` defaults to the line shown, without `{target}` when the target is `none`. The desktop app opens only servers whose `transports` include `"unix-http-v1"`. The server must use Python's `socketserver.TCPServer`/`http.server` family, bind to `127.0.0.1` with the provided port, and remain in the foreground. The runtime reserves the socket and passes its open file descriptor to the Python wrapper; it never releases a candidate port and hopes the child acquires it. Concurrent launches cannot claim the same reserved port. A requested occupied port fails without contacting or registering the unrelated service. Startup is acknowledged by the exact child instance after it starts listening. New runtimes can be added later; other servers can register an existing local URL with `--url` today.
 
 Write the skill's instructions to launch through this helper and return its `/apps/ID` endpoint. Store annotations beside the target or in a persistent workspace directory, and give the calling agent a concrete command to read or await submitted feedback. Tool process records and logs live in `data/tool-runtime`; process identity is checked before stopping a managed server. The app can recognize these processes after an Agent Desk server restart.
 

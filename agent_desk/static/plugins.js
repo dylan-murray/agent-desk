@@ -1,6 +1,6 @@
-// Dock plugins (agent_desk/plugins.py): each opens as a tab in a terminal pane's dock, in a sandboxed
+// Plugin pages (agent_desk/plugins): each opens as a tab in a terminal pane's dock, in a sandboxed
 // frame with no network. Its only way to the pane is the channel set up here, and every call is checked
-// against the permissions its manifest declared, for the pane it sits in and nothing else.
+// against the permissions its plugin.json declared, for the pane it sits in and nothing else.
 let dockPlugins=[];
 const pluginBridges=new WeakMap(),pluginButtons=new Map(),pluginTabs=new Map();
 async function refreshPlugins(){

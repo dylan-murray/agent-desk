@@ -9,8 +9,8 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from agent_desk import pane_files, server
-from agent_desk.plugins import Plugins, parse
-from agent_desk.tool_runtime import BUNDLED
+from agent_desk.plugins import BUNDLED, Plugins, parse
+from agent_desk.tool_runtime import ToolRuntime
 from account_fixtures import use_accounts
 
 
@@ -18,13 +18,13 @@ def setUpModule():
     use_accounts()
 
 
-def plugin(root, name, **changes):
-    folder = Path(root) / name
+def plugin(root, folder_name, **changes):
+    folder = Path(root) / folder_name
     folder.mkdir(parents=True, exist_ok=True)
     (folder / 'index.html').write_text('<!doctype html><p>fixture</p>')
     (folder / 'tool.py').write_text('print("never served")')
-    manifest = {'runtime': 'static', 'title': 'Fixture', 'entrypoint': 'index.html', 'dock': {'tab': 'Fixture'}, 'permissions': [], 'buttons': []} | changes
-    (folder / 'agent-desk-ui.json').write_text(json.dumps({k: v for k, v in manifest.items() if v is not None}))
+    manifest = {'name': 'Fixture', 'permissions': [], 'buttons': []} | changes
+    (folder / 'plugin.json').write_text(json.dumps({k: v for k, v in manifest.items() if v is not None}))
     return folder
 
 
@@ -45,16 +45,18 @@ class ManifestTests(unittest.TestCase):
             'an unknown field': dict(network=True),
             'an unknown permission': dict(permissions=['terminal.input']),
             'a permission twice': dict(permissions=['files.read', 'files.read']),
-            'an entry outside the folder': dict(entrypoint='../index.html'),
-            'an entry that is not a page': dict(entrypoint='tool.py'),
-            'no dock tab': dict(dock={}),
-            'a dock field it does not know': dict(dock={'tab': 'X', 'position': 'left'}),
+            'no name': dict(name=None),
+            'the old dock block': dict(dock={'tab': 'X'}),
+            'a server outside the folder': dict(server={'run': '../tool.py'}),
+            'a server that is not Python': dict(server={'run': 'index.html'}),
+            'a server target it does not know': dict(server={'run': 'tool.py', 'target': 'url'}),
+            'a server field it does not know': dict(server={'run': 'tool.py', 'env': {'A': 'b'}}),
             'too many buttons': dict(buttons=[{'id': f'b{i}', 'label': 'B'} for i in range(4)]),
             'a button id with odd characters': dict(buttons=[{'id': 'Do It', 'label': 'B'}]),
             'a button label with control characters': dict(buttons=[{'id': 'b', 'label': 'B\x1b[2J'}]),
             'two buttons with one id': dict(buttons=[{'id': 'b', 'label': 'B'}, {'id': 'b', 'label': 'C'}]),
-            'a long tab name': dict(dock={'tab': 'x' * 25}),
-            'an icon the desk does not draw': dict(dock={'tab': 'X', 'icon': '<svg onload=alert(1)>'}),
+            'a long name': dict(name='x' * 41),
+            'an icon the desk does not draw': dict(icon='<svg onload=alert(1)>'),
         }
         for index, (case, changes) in enumerate(refused.items()):
             with self.subTest(case):
@@ -64,6 +66,68 @@ class ManifestTests(unittest.TestCase):
             parse(plugin(self.temp.name, 'sdk'))
         with self.assertRaises(ValueError):
             parse(plugin(self.temp.name, 'Has_Caps'))
+        page_only = plugin(self.temp.name, 'buttons-without-page', permissions=None, buttons=None, server={'run': 'tool.py'})
+        (page_only / 'index.html').unlink()
+        self.assertNotIn('entrypoint', parse(page_only))
+        (page_only / 'plugin.json').write_text(json.dumps({'name': 'X', 'permissions': ['files.read'], 'server': {'run': 'tool.py'}}))
+        with self.assertRaisesRegex(ValueError, 'for a plugin with a page'):
+            parse(page_only)
+        (page_only / 'plugin.json').write_text(json.dumps({'name': 'Nothing'}))
+        with self.assertRaisesRegex(ValueError, 'a page'):
+            parse(page_only)
+
+
+class ServerPluginTests(unittest.TestCase):
+    """A plugin's server is what the tool launcher runs; older skills keep loading the way they did."""
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name) / 'skills'
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def catalogs(self):
+        tools = {t['id']: t for t in ToolRuntime(state=Path(self.temp.name) / 'state', roots=[BUNDLED, self.root]).catalog()}
+        pages = {p['id']: p for p in Plugins([BUNDLED, self.root], BUNDLED, Path(self.temp.name) / 'plugins.json').public()}
+        return tools, pages
+
+    def test_code_review_is_a_bundled_server_plugin_and_not_a_dock_tab(self):
+        tools, pages = self.catalogs()
+        self.assertEqual((tools['code-review']['target'], Path(tools['code-review']['script']).name), ('directory', 'review_app.py'))
+        self.assertEqual(tools['code-review']['args'], ['{target}', '--port', '{port}', '--no-browser'])
+        self.assertNotIn('code-review', pages)
+        self.assertNotIn('files', tools)
+
+    def test_one_plugin_can_have_a_page_and_a_server(self):
+        plugin(self.root, 'both', server={'run': 'tool.py', 'target': 'none'})
+        tools, pages = self.catalogs()
+        self.assertEqual((tools['both']['title'], tools['both']['target'], tools['both']['args']), ('Fixture', 'none', ['--port', '{port}', '--no-browser']))
+        self.assertEqual((pages['both']['tab'], pages['both']['status']), ('Fixture', 'needs approval'))
+        self.assertNotIn('server', pages['both'])
+
+    def test_older_skills_still_load_as_servers(self):
+        old = self.root / 'old-tool'
+        old.mkdir(parents=True)
+        (old / 'tool.py').write_text('')
+        (old / 'agent-desk-ui.json').write_text(json.dumps({'runtime': 'python-http', 'entrypoint': 'tool.py', 'title': 'Old', 'target': 'file'}))
+        named = self.root / 'readme-review'
+        named.mkdir()
+        (named / 'readme_annotate.py').write_text('')
+        (self.root / 'document-builder').mkdir()
+        tools, pages = self.catalogs()
+        self.assertEqual((tools['old-tool']['title'], tools['old-tool']['target']), ('Old', 'file'))
+        self.assertEqual((tools['readme-review']['title'], tools['readme-review']['target']), ('Markdown review', 'file'))
+        # A folder with the old name but not its script is not a tool, and not a problem either.
+        self.assertNotIn('document-builder', tools)
+        self.assertFalse({'old-tool', 'readme-review', 'document-builder'} & set(pages))
+
+    def test_the_desktop_app_opens_only_servers_that_take_its_socket(self):
+        plugin(self.root, 'tcp-only', permissions=None, buttons=None, server={'run': 'tool.py'})
+        (self.root / 'tcp-only' / 'index.html').unlink()
+        with patch.dict('os.environ', AGENT_DESK_WORKSPACE_ID='0' * 32):
+            tools, _ = self.catalogs()
+        self.assertIn('code-review', tools)
+        self.assertNotIn('tcp-only', tools)
 
 
 class ApprovalTests(unittest.TestCase):
@@ -150,7 +214,7 @@ class PluginRouteTests(unittest.TestCase):
         wrong = '/plugins/not-the-key/files/index.html'
         self.assertEqual(self.get(wrong, {'Sec-Fetch-Site': 'cross-site', 'Sec-Fetch-Dest': 'script'})[0], 403)
         self.assertEqual(self.get(wrong)[0], 404)
-        self.assertEqual(self.get(files['entry'].replace('index.html', 'agent-desk-ui.json'))[0], 404)
+        self.assertEqual(self.get(files['entry'].replace('index.html', 'plugin.json'))[0], 404)
         self.assertEqual(self.get(files['entry'].replace('index.html', '..%2f..%2fplugins.py'))[0], 404)
         self.assertEqual(self.get(self.entries()['probe']['entry'])[0], 404, 'an unapproved plugin is not served')
 

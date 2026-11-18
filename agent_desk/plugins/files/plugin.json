@@ -1,8 +1,7 @@
 {
-  "runtime": "static",
-  "title": "Files",
+  "name": "Files",
   "description": "Browse the pane's folder, see what changed, and open files in the editor.",
-  "entrypoint": "index.html",
-  "dock": {"tab": "Files", "order": 10, "icon": "folder"},
+  "icon": "folder",
+  "order": 10,
   "permissions": ["files.read", "editor.open"]
 }
