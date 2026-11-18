@@ -165,6 +165,32 @@ class WorkflowTests(unittest.TestCase):
         for invalid in (None,[],{},'',True):
             with self.subTest(invalid=invalid),self.assertRaises(ValueError):self.runtime.delete_config(invalid)
 
+    def test_deleting_an_automation_releases_its_configurations_and_schedules(self):
+        mine=self.runtime.save_config(dict(name='Fixer task',kind='automation',role_id='role-1'))
+        other=self.runtime.save_config(dict(name='Watcher task',kind='automation',role_id='role-2'))
+        command=self.config('Report')
+        save=lambda nodes,**values:self.runtime.save_workflow({'name':'Pipeline','trigger':'manual','timezone':'UTC','nodes':nodes}|values)
+        only=save([dict(id='fix',config_id=mine['id'],depends_on=[])],name='Nightly fix',trigger='cron',cron='0 9 * * 1-5',enabled=True)
+        shared=save([dict(id='fix',config_id=mine['id'],depends_on=[]),dict(id='report',config_id=command['id'],depends_on=['fix'])],name='Fix then report')
+        untouched=save([dict(id='watch',config_id=other['id'],depends_on=[])],name='Watch')
+        uses=self.runtime.automation_uses('role-1')
+        self.assertEqual(uses['configs'],[{'id':mine['id'],'name':'Fixer task'}])
+        self.assertEqual(sorted((s['name'],s['others'],s['trigger']) for s in uses['schedules']),[('Fix then report',1,'manual'),('Nightly fix',0,'cron')])
+        self.assertEqual(next(s for s in uses['schedules'] if s['name']=='Nightly fix')['cron'],'0 9 * * 1-5')
+        run=self.runtime.start(mine['id'])
+        with self.assertRaisesRegex(ValueError,'running this automation'):self.runtime.release_automation('role-1')
+        self.assertEqual(len(self.runtime.snapshot()['workflows']),3,'a refused release removes nothing')
+        self.runtime.update(run['id'],state='succeeded',finished=time.time())
+        self.assertEqual(self.runtime.release_automation('role-1'),{'configs':[mine['id']],'removed':['Nightly fix'],'trimmed':['Fix then report']})
+        state=self.runtime.snapshot()
+        self.assertEqual(sorted(c['id'] for c in state['configs']),sorted([other['id'],command['id']]))
+        workflows={w['id']:w for w in state['workflows']}
+        self.assertNotIn(only['id'],workflows)
+        self.assertEqual(workflows[shared['id']]['nodes'],[dict(id='report',config_id=command['id'],depends_on=[])],'the report no longer waits on the removed task')
+        self.assertEqual(workflows[untouched['id']]['nodes'],untouched['nodes'])
+        self.assertEqual(self.runtime.automation_uses('role-1'),{'configs':[],'schedules':[]})
+        self.assertEqual(self.runtime.release_automation('role-1'),{'configs':[],'removed':[],'trimmed':[]})
+
     def test_configuration_deleted_during_workflow_validation_is_rejected(self):
         config=self.config('Concurrent delete')
         original=self.runtime.config

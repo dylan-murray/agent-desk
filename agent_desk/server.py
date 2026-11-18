@@ -578,7 +578,11 @@ class Handler(SimpleHTTPRequestHandler):
             if not self.terminal_authorized():
                 return self.send_json({'error': 'Terminal authentication required'}, 403)
             SPECIAL_AGENTS.reconcile({t['id'] for t in TERMINALS.list() if t['exit_code'] is None})
-            return self.send_json(SPECIAL_AGENTS.snapshot())
+            snapshot = SPECIAL_AGENTS.snapshot()
+            # Each card shows its schedule, and Delete says what it removes with the automation.
+            for role in snapshot['roles']:
+                role['uses'] = WORKFLOWS.automation_uses(role['id'])
+            return self.send_json(snapshot)
         if route == '/api/tool-launchers':
             if not self.terminal_authorized():
                 return self.send_json({'error': 'Terminal authentication required'}, 403)
@@ -1066,10 +1070,13 @@ class Handler(SimpleHTTPRequestHandler):
                     return self.send_json(skill_harnesses.add_local_skill(payload.get('path')))
                 if self.path == '/api/special-agents/delete':
                     identity = SPECIAL_AGENTS.text(payload, 'id', 100)
-                    used = [c['name'] for c in WORKFLOWS.snapshot()['configs'] if c.get('role_id') == identity]
-                    if used:
-                        raise ValueError('Run & Schedule still uses this automation as a task (' + ', '.join(sorted(set(used))[:3]) + '). Remove that launch configuration first.')
-                    return self.send_json(SPECIAL_AGENTS.delete_role(identity))
+                    SPECIAL_AGENTS.check_deletable(identity)
+                    uses = WORKFLOWS.automation_uses(identity)
+                    # Its schedules go only when the person deleting it was shown them and agreed.
+                    if uses['configs'] and payload.get('remove_schedules') is not True:
+                        raise ValueError('Run & Schedule still uses this automation (' + ', '.join(sorted({c['name'] for c in uses['configs']})[:3]) + '). Delete it from Automations to remove those too.')
+                    released = WORKFLOWS.release_automation(identity) if uses['configs'] else None
+                    return self.send_json(SPECIAL_AGENTS.delete_role(identity) | {'released': released})
                 if self.path == '/api/special-agents/finding':
                     return self.send_json(SPECIAL_AGENTS.publish(payload))
                 if self.path == '/api/special-agents/review':

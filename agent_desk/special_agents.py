@@ -85,6 +85,15 @@ class SpecialAgents:
             db.execute('INSERT OR REPLACE INTO roles VALUES (?,?)', (identity, json.dumps(role)))
         return role
 
+    RUNNING = 'This automation has a run in progress. Wait for it to finish or stop its session first.'
+
+    def check_deletable(self, identity):
+        """Refuse before anything else is removed with the automation, such as its schedules."""
+        self.role(identity)
+        with self.db() as db:
+            if db.execute("SELECT 1 FROM runs WHERE role_id=? AND state IN ('launching','running')", (identity,)).fetchone():
+                raise ValueError(self.RUNNING)
+
     def delete_role(self, identity):
         """Remove a saved automation. Its past runs and inbox findings are kept:
         the reports are the record of work that already happened."""
@@ -92,7 +101,7 @@ class SpecialAgents:
         with self.db() as db:
             db.execute('BEGIN IMMEDIATE')
             if db.execute("SELECT 1 FROM runs WHERE role_id=? AND state IN ('launching','running')", (identity,)).fetchone():
-                raise ValueError('This automation has a run in progress. Wait for it to finish or stop its session first.')
+                raise ValueError(self.RUNNING)
             db.execute('DELETE FROM roles WHERE id=?', (identity,))
         return {'deleted': identity}
 
