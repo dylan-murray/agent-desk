@@ -880,8 +880,10 @@ class Handler(SimpleHTTPRequestHandler):
             if self.foreign_browser_request():
                 return self.send_json({'error': 'Cross-site requests are not allowed'}, 403)
             return self.event_webhook()
+        # A pane's own processes (its $EDITOR, its readouts) hold only that pane's token, which these routes check.
+        pane_route = self.path == '/api/readouts' or self.path.startswith('/api/pane-editor/')
         if self.server.desktop:
-            if not self.terminal_authorized():
+            if not (pane_route or self.terminal_authorized()):
                 return self.send_json({'error': 'Desktop authorization required'}, 403)
             if self.path.startswith('/api/desktop/'):
                 from agent_desk.desktop_backend import lifecycle_request

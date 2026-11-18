@@ -1,8 +1,9 @@
-#!/usr/bin/env python3
 """The editor inside an Agent Desk pane: opens a file in the page's editor and waits for it.
 
 Claude Code's ctrl+g, git and anything else that runs $VISUAL or $EDITOR from a terminal end up
-here. Saving in the page writes the file and exits; Cancel leaves it as it was. Without a
+here, through the launcher agent_desk.terminals writes. It runs on the desk's own Python and sends
+through the desk's transport, so it reaches a browser desk on its port and the desktop app on its
+socket. Saving in the page writes the file and exits; Cancel leaves it as it was. Without a
 terminal (an agent's own command), without an open page, or for a file too large to send, the
 editor you had before Agent Desk runs instead.
 """
@@ -12,17 +13,24 @@ import shlex
 import signal
 import sys
 from pathlib import Path
-from urllib.error import HTTPError, URLError
-from urllib.request import ProxyHandler, Request, build_opener
 
-OPENER = build_opener(ProxyHandler({}))
+if __package__ in (None, ''):
+    # Run by path from the launcher: the desk's package sits one folder up.
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from urllib.error import HTTPError, URLError  # noqa: E402
+from urllib.request import Request  # noqa: E402
+
+from agent_desk.local_transport import urlopen  # noqa: E402
+
+NAME = 'agent-desk-edit'
 
 
 def fallback(args, reason=None):
     if reason:
-        print(f'agent-desk-edit: {reason}; using your own editor', file=sys.stderr)
+        print(f'{NAME}: {reason}; using your own editor', file=sys.stderr)
     command = shlex.split(os.environ.get('AGENT_DESK_FALLBACK_EDITOR') or '') or ['vi']
-    if Path(command[0]).name == 'agent-desk-edit':
+    if Path(command[0]).name == NAME:
         command = ['vi']
     os.execvp(command[0], command + args)
 
@@ -31,7 +39,7 @@ def call(desk, token, route, payload, timeout):
     request = Request(desk.rstrip('/') + route, data=json.dumps(payload).encode(),
                       headers={'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'})
     try:
-        with OPENER.open(request, timeout=timeout) as response:
+        with urlopen(request, timeout=timeout) as response:
             return json.load(response)
     except HTTPError as error:
         try:
@@ -71,10 +79,10 @@ def main():
         try:
             result = call(desk, token, '/api/pane-editor/wait', dict(id=terminal, edit=edit), 35)
         except (URLError, OSError) as error:
-            print(f'agent-desk-edit: lost Agent Desk ({getattr(error, "reason", error)}); the file is unchanged', file=sys.stderr)
+            print(f'{NAME}: lost Agent Desk ({getattr(error, "reason", error)}); the file is unchanged', file=sys.stderr)
             sys.exit(1)
         except RuntimeError as error:
-            print(f'agent-desk-edit: {error}; the file is unchanged', file=sys.stderr)
+            print(f'{NAME}: {error}; the file is unchanged', file=sys.stderr)
             sys.exit(1)
         if not result.get('done'):
             continue

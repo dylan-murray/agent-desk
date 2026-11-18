@@ -36,6 +36,17 @@ let electron, manager, electronLog = '';
   await page.waitForSelector('.xterm');
   await page.evaluate(id => terminalRequest('/api/terminals/input', {id, data: btoa('echo desktop-stream-ok\n')}), terminal.id);
   await page.waitForFunction(id => {const b=paneViews.get(id)?.term?.buffer.active;if(!b)return false;for(let i=0;i<b.length;i++)if(b.getLine(i)?.translateToString(true).includes('desktop-stream-ok'))return true;return false;}, terminal.id, {timeout:10000});
+  // $EDITOR in a desktop pane reaches the page over the workspace socket: git and ctrl+g get the text back.
+  const draft = path.join(fixture, 'p.md');fs.writeFileSync(draft, 'draft prompt');
+  await page.evaluate(([id, file]) => terminalRequest('/api/terminals/input', {id, data: btoa(`"$EDITOR" ${file}; echo "EXIT:$?"\n`)}), [terminal.id, draft]);
+  await page.locator('.pane-editor-tab[data-kind=edit]').waitFor({timeout: 15000});
+  assert.equal(await page.evaluate(() => document.querySelector('.pane-editor-ace').env.editor.getValue()), 'draft prompt');
+  await page.evaluate(() => {const e = document.querySelector('.pane-editor-ace').env.editor;e.navigateFileEnd();e.focus();});
+  await page.keyboard.type(' from the desktop editor');
+  await page.keyboard.press('Meta+s');
+  await page.waitForFunction(id => {const b=paneViews.get(id)?.term?.buffer.active;if(!b)return false;for(let i=0;i<b.length;i++)if(b.getLine(i)?.translateToString(true).includes('EXIT:0'))return true;return false;}, terminal.id, {timeout:10000});
+  assert.equal(fs.readFileSync(draft, 'utf8'), 'draft prompt from the desktop editor');
+  console.log('$EDITOR in a desktop pane round-trips through the page editor');
   // Notifications go through the shell, since the page's own permission stays denied: a newer one for the
   // same session replaces the older, a malformed one is dropped, and a click opens the session it names.
   await electron.evaluate(({Notification})=>{global.fixtureNotices=[];Notification.prototype.show=function(){global.fixtureNotices.push(this);};Notification.prototype.close=function(){this.closedByShell=true;};});

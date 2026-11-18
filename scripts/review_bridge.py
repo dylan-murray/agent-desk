@@ -9,11 +9,12 @@ import json
 import sys
 from pathlib import Path
 from urllib.error import HTTPError, URLError
-from urllib.request import ProxyHandler, Request, build_opener
+from urllib.request import Request
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from agent_desk.desk_tokens import read_terminal_token  # noqa: E402
+from agent_desk.local_transport import urlopen  # noqa: E402
 
 
 def deliver(desk, event):
@@ -25,7 +26,8 @@ def deliver(desk, event):
                'notes': [{'id': submission, 'note': message}]}
     request = Request(desk.rstrip('/') + '/api/coordinators/submit-feedback', data=json.dumps(payload).encode(),
                       headers={'Content-Type': 'application/json', 'X-Agent-Desk-Terminal': read_terminal_token(desk)})
-    with build_opener(ProxyHandler({})).open(request, timeout=10) as response:
+    # The desk's own transport: a browser desk's port or the desktop app's socket.
+    with urlopen(request, timeout=10) as response:
         result = json.load(response)
     if result.get('target_id') != session or not (result.get('sent') or result.get('queued')):
         raise ValueError('Agent Desk did not confirm the pane')

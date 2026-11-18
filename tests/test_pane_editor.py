@@ -12,10 +12,14 @@ from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-from agent_desk import server
+from http.server import BaseHTTPRequestHandler
+import socketserver
+
+from agent_desk import pane_edit, paths, server, terminals
 from agent_desk.pane_editor import PaneEdits
 from agent_desk import pane_files
-from agent_desk.terminals import PANE_EDITOR, TerminalManager, pane_environment
+from agent_desk.local_transport import runtime_directory
+from agent_desk.terminals import PANE_EDIT, TerminalManager, pane_editor, pane_environment
 from account_fixtures import use_accounts
 
 
@@ -102,7 +106,13 @@ class PaneEditsTests(unittest.TestCase):
 class PaneEditorEnvironmentTests(unittest.TestCase):
     def test_panes_edit_with_the_shim_and_remember_the_editor_they_had(self):
         env = pane_environment({'EDITOR': 'nano', 'PATH': '/bin'}, 'terminal-a', 'token', None)
-        self.assertEqual((env['VISUAL'], env['EDITOR'], env['AGENT_DESK_FALLBACK_EDITOR']), (str(PANE_EDITOR), str(PANE_EDITOR), 'nano'))
+        launcher = pane_editor()
+        self.assertEqual((env['VISUAL'], env['EDITOR'], env['AGENT_DESK_FALLBACK_EDITOR']), (str(launcher), str(launcher), 'nano'))
+        # git runs $EDITOR through a shell, so the path has no spaces; it runs the desk's own Python, not one off PATH.
+        self.assertNotIn(' ', str(launcher))
+        self.assertTrue(os.access(launcher, os.X_OK))
+        self.assertIn(sys.executable, launcher.read_text())
+        self.assertIn(str(PANE_EDIT), launcher.read_text())
         nested = pane_environment(env, 'terminal-b', 'token', None)
         self.assertEqual(nested['AGENT_DESK_FALLBACK_EDITOR'], 'nano')
 
@@ -111,8 +121,57 @@ class PaneEditorEnvironmentTests(unittest.TestCase):
             target = Path(folder) / 'message.txt'
             env = dict(os.environ, AGENT_DESK_TERMINAL_ID='terminal-a', AGENT_DESK_PANE_TOKEN='token', AGENT_DESK_URL='http://127.0.0.1:9',
                        AGENT_DESK_FALLBACK_EDITOR="/bin/sh -c 'echo fell back to the old editor for \"$0\"'")
-            result = subprocess.run([sys.executable, str(PANE_EDITOR), str(target)], env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=10)
+            result = subprocess.run([str(pane_editor()), str(target)], env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=10)
         self.assertEqual(result.stdout.strip(), f'fell back to the old editor for {target}')
+
+
+    def test_a_data_folder_with_spaces_keeps_the_launcher_under_the_socket_root(self):
+        with tempfile.TemporaryDirectory() as folder:
+            data, root = Path(folder) / 'Application Support' / 'Agent Desk', Path(folder) / 'sockets'
+            data.mkdir(parents=True)
+            with patch.object(paths, 'DATA_DIR', data), patch.object(terminals, '_launcher', None), patch.dict(os.environ, AGENT_DESK_SOCKET_ROOT=str(root)):
+                launcher = pane_editor()
+        self.assertTrue(launcher.is_relative_to(root), launcher)
+        self.assertNotIn(' ', str(launcher))
+
+
+class DesktopAddressTests(unittest.TestCase):
+    """A desktop pane's desk is agent-desk://WORKSPACE, reached over a Unix socket rather than a port."""
+    def test_the_pane_editor_reaches_a_desktop_desk_over_its_socket(self):
+        seen = []
+
+        class Desk(BaseHTTPRequestHandler):
+            def address_string(self):
+                return 'socket'
+
+            def log_message(self, *args):
+                pass
+
+            def do_POST(self):
+                body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+                seen.append((self.path, self.headers['Host'], self.headers['Authorization'], body))
+                data = json.dumps({'id': 'edit-1'}).encode()
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Content-Length', str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+        # A socket path must stay under about 100 bytes, which macOS's own temp folder is not.
+        with tempfile.TemporaryDirectory(prefix='ad-', dir='/private/tmp' if sys.platform == 'darwin' else None) as folder:
+            data = Path(folder) / 'data'
+            data.mkdir()
+            with patch.object(paths, 'DATA_DIR', data), patch.dict(os.environ, AGENT_DESK_SOCKET_ROOT=str(Path(folder) / 's')):
+                socket_path = runtime_directory(data, '0123456789abcdef0123456789abcdef') / 'backend.sock'
+                listener = socketserver.UnixStreamServer(str(socket_path), Desk)
+                threading.Thread(target=listener.serve_forever, daemon=True).start()
+                try:
+                    answer = pane_edit.call('agent-desk://0123456789abcdef0123456789abcdef', 'fixture-token', '/api/pane-editor/open', {'id': 'terminal-a', 'name': 'a.txt', 'text': 'hi'}, 5)
+                finally:
+                    listener.shutdown()
+                    listener.server_close()
+        self.assertEqual(answer, {'id': 'edit-1'})
+        self.assertEqual(seen, [('/api/pane-editor/open', 'app', 'Bearer fixture-token', {'id': 'terminal-a', 'name': 'a.txt', 'text': 'hi'})])
 
 
 class PaneEditorRoundTripTests(unittest.TestCase):
@@ -197,6 +256,20 @@ class PaneEditorRoundTripTests(unittest.TestCase):
         self.assertEqual(caught.exception.code, 403)
         self.assertEqual(self.edits.pending(None, 0)['edits'], [])
 
+    def test_a_desktop_desk_takes_the_panes_token_on_its_own_routes_only(self):
+        self.http.desktop, self.http.paused = True, False
+        self.edits.pending(None, 0)
+        session = self.manager.launch(dict(cwd=self.temp.name, argv=['/bin/sh'], name='Editor pane'))
+        def call(route, payload):
+            request = Request(self.manager.desk + route, data=json.dumps(payload).encode(),
+                              headers={'Host': 'app', 'Authorization': 'Bearer ' + session.pane_token, 'Content-Type': 'application/json'})
+            with urlopen(request, timeout=5) as response:
+                return json.load(response)
+        edit = call('/api/pane-editor/open', dict(id=session.id, name='desktop.md', text='before'))['id']
+        self.assertEqual([row['id'] for row in self.edits.pending(None, 0)['edits']], [edit])
+        with self.assertRaises(HTTPError) as caught:
+            call('/api/terminals/input', dict(id=session.id, data=''))
+        self.assertEqual((caught.exception.code, json.load(caught.exception)['error']), (403, 'Desktop authorization required'))
 
 if __name__ == '__main__':
     unittest.main()
