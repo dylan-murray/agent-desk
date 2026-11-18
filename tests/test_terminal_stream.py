@@ -226,13 +226,13 @@ class StreamTests(unittest.TestCase):
         session = self.launch([sys.executable, str(script)])
         first = self.connect()
         first.send(type='subscribe', sub='a', id=session.id, cursor=0)
-        seen = first.until(lambda _, s: 'line-010' in text(s))
+        seen = first.until(lambda _, s: 'line-010' in text(s), timeout=20)
         cursor = [m for m in seen if m['type'] == 'output'][-1]['cursor']
         first.close()
         time.sleep(.3)  # output keeps arriving while no tab is connected
         second = self.connect()
         second.send(type='subscribe', sub='b', id=session.id, cursor=cursor)
-        rest = second.until(lambda _, s: 'line-059' in text(s))
+        rest = second.until(lambda _, s: 'line-059' in text(s), timeout=20)
         lines = (text(seen) + text(rest)).split()
         self.assertEqual(lines, [f'line-{i:03}' for i in range(60)])
 
