@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import socket
@@ -261,6 +262,154 @@ class ReviewAppTests(unittest.TestCase):
             self.assertEqual(review_app.branch_pr(self.repo), {'url': 'https://github.com/fixture/project/pull/7', 'base': start})
             (tools / 'gh').write_text('#!/bin/sh\necho \'{"url": "https://github.com/fixture/project/pull/7", "state": "MERGED", "baseRefName": "main"}\'\n')
             self.assertIsNone(review_app.branch_pr(self.repo), 'a merged pull request is not followed')
+
+
+FAKE_GH = '''import json, os, sys
+args = sys.argv[1:]
+prs = json.load(open(os.environ['FAKE_PRS']))
+if args[:2] == ['pr', 'view']:
+    print(json.dumps(prs[args[2]] if len(args) > 2 and not args[2].startswith('-') else prs['branch']))
+elif args[:1] == ['api']:
+    print(json.dumps([prs.get('api:' + args[-1], [])]))
+else:
+    sys.exit('fake gh: ' + ' '.join(args))
+'''
+
+
+class PullRequestSwitchTests(unittest.TestCase):
+    """Review can show another of the terminal's pull requests, read from Git without checking it out."""
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.repo = Path(self.temp.name) / 'project'
+        self.repo.mkdir()
+        tools = Path(self.temp.name) / 'bin'
+        tools.mkdir()
+        (tools / 'gh').write_text(f'#!{sys.executable}\n' + FAKE_GH)
+        (tools / 'gh').chmod(0o755)
+        self.prs = Path(self.temp.name) / 'prs.json'
+        self.environment = {k: v for k, v in os.environ.items() if not k.startswith('AGENT_DESK_')} | {
+            'REVIEW_APP_HOME': str(Path(self.temp.name) / 'notes'), 'GIT_AUTHOR_NAME': 'Fixture', 'GIT_AUTHOR_EMAIL': 'fixture@example.com',
+            'GIT_COMMITTER_NAME': 'Fixture', 'GIT_COMMITTER_EMAIL': 'fixture@example.com', 'FAKE_PRS': str(self.prs),
+            'GROUND_CONTROL_DATA_DIR': str(Path(self.temp.name) / 'submissions'), 'REVIEW_APP_PR_POLL_SECONDS': '3600',
+            'PATH': f'{tools}{os.pathsep}{os.environ["PATH"]}'}
+        self.git('init', '-q', '-b', 'main')
+        (self.repo / 'app.py').write_text('one\n')
+        self.git('add', '.')
+        self.git('commit', '-q', '-m', 'Start')
+        self.main = self.git('rev-parse', 'HEAD')
+        self.git('checkout', '-q', '-b', 'other')
+        (self.repo / 'other.py').write_text('hello\n')
+        self.git('add', '.')
+        self.git('commit', '-q', '-m', 'Other')
+        self.other = self.git('rev-parse', 'HEAD')
+        self.git('checkout', '-q', '-b', 'feature', 'main')
+        (self.repo / 'app.py').write_text('two\n')
+        self.git('commit', '-qam', 'Feature')
+        self.git('update-ref', 'refs/remotes/origin/main', self.main)
+        self.git('remote', 'add', 'origin', 'https://github.com/fixture/project.git')
+        self.url = 'https://github.com/fixture/project/pull/8'
+        comment = {'id': 81, 'path': 'other.py', 'line': 1, 'side': 'RIGHT', 'body': 'Say hello properly', 'user': {'login': 'reviewer'},
+                   'created_at': '2026-11-18T10:00:00Z', 'html_url': self.url + '#discussion_r81'}
+        self.prs.write_text(json.dumps({
+            'branch': {'url': 'https://github.com/fixture/project/pull/7', 'state': 'OPEN', 'baseRefName': 'main'},
+            self.url: {'number': 8, 'title': 'Add other', 'state': 'OPEN', 'url': self.url, 'headRefName': 'other', 'headRefOid': self.other,
+                       'baseRefName': 'main', 'baseRefOid': self.main},
+            'api:repos/fixture/project/pulls/8/comments': [comment]}))
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def git(self, *args, cwd=None):
+        return subprocess.run(['git', *args], cwd=cwd or self.repo, env=self.environment, check=True, capture_output=True, text=True).stdout.strip()
+
+    def start(self):
+        with socket.socket() as probe:
+            probe.bind(('127.0.0.1', 0))
+            port = probe.getsockname()[1]
+        process = subprocess.Popen([sys.executable, str(BUNDLED / 'code-review' / 'review_app.py'), str(self.repo), '--port', str(port), '--no-browser',
+                                    '--follow-pr', '--feedback-adapter', 'manual'], env=self.environment, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        self.addCleanup(lambda: (process.terminate(), process.wait(timeout=10), process.stderr.close()))
+        base = f'http://127.0.0.1:{port}'
+        for _ in range(100):
+            try:
+                if json.load(urlopen(base + '/state', timeout=2))['pr']:
+                    return base
+            except OSError:
+                pass
+            time.sleep(.1)
+        self.fail('the review app did not pick up the branch pull request')
+
+    def post(self, base, route, payload, headers=None):
+        request = Request(base + route, data=json.dumps(payload).encode(), headers={'Content-Type': 'application/json', **(headers or {})})
+        try:
+            with urlopen(request, timeout=30) as response:
+                return response.status, json.load(response)
+        except HTTPError as error:
+            return error.code, json.load(error)
+
+    def test_another_pull_request_is_reviewed_from_its_commits_with_its_own_notes(self):
+        base = self.start()
+        get = lambda route: json.load(urlopen(base + route, timeout=10))
+        self.post(base, '/annotate', {'kind': 'line', 'file': 'app.py', 'side': 'new', 'start': 1, 'end': 1, 'quote': 'two', 'comment': 'on the checked-out work'})
+        self.assertEqual(get('/state')['repos'], ['fixture/project'])
+
+        code, answer = self.post(base, '/pr-select', {'url': self.url})
+        self.assertEqual((code, answer['view']), (200, {'url': self.url, 'number': 8, 'title': 'Add other', 'branch': 'other'}))
+        model = get('/diff')
+        self.assertEqual(([f['path'] for f in model['files']], model['branch'], model['checked_out']), (['other.py'], 'other', False))
+        self.assertEqual(urlopen(base + '/file?path=other.py&side=new', timeout=10).read(), b'hello\n', 'the file is read at the PR head, not from disk')
+        self.assertFalse((self.repo / 'other.py').exists())
+        self.assertEqual(self.git('rev-parse', '--abbrev-ref', 'HEAD'), 'feature', 'nothing was checked out')
+        state = get('/state')
+        self.assertEqual([(n['author'], n['comment'], n['start']) for n in state['annotations']], [('reviewer', 'Say hello properly', 1)])
+        self.post(base, '/annotate', {'kind': 'line', 'file': 'other.py', 'side': 'new', 'start': 1, 'end': 1, 'quote': 'hello', 'comment': 'on PR 8'})
+        state = get('/state')
+        self.assertEqual([(n['comment'], n['pr']) for n in state['annotations']], [('Say hello properly', self.url), ('on PR 8', self.url)])
+
+        token = re.search(r'"token": ?"([^"]+)"', urlopen(base + '/', timeout=10).read().decode()).group(1)
+        code, sent = self.post(base, '/_ground-control/submit', {}, {'X-Ground-Control-Token': token})
+        self.assertEqual(code, 200, sent)
+        snapshot = json.loads(Path(sent['snapshot']).read_text())
+        self.assertEqual(sorted(n['comment'] for n in snapshot['annotations']), ['Say hello properly', 'on PR 8'], 'Send carries only the notes on the PR shown')
+        self.assertIn('pull request #8 (branch other), which is not checked out', sent['prompt'])
+
+        self.assertEqual(self.post(base, '/second-opinion', {'reviewers': ['codex']})[0], 409)
+        code, refused = self.post(base, '/pr-select', {'url': 'https://github.com/someone/else/pull/1'})
+        self.assertEqual((code, refused['error']), (502, 'that pull request is in another repository'))
+        self.assertEqual(get('/state')['view']['number'], 8, 'a refused switch keeps the PR shown')
+
+        self.assertEqual(self.post(base, '/pr-select', {'url': None}), (200, {'view': None}))
+        self.assertEqual([f['path'] for f in get('/diff')['files']], ['app.py'])
+        self.assertEqual([n['comment'] for n in get('/state')['annotations']], ['on the checked-out work'])
+
+    def test_a_pull_request_whose_commits_are_missing_is_fetched_without_checking_it_out(self):
+        hub = Path(self.temp.name) / 'hub.git'
+        self.git('init', '-q', '--bare', str(hub))
+        self.git('push', '-q', str(hub), 'main', f'{self.other}:refs/pull/8/head')
+        clone = Path(self.temp.name) / 'clone'
+        self.git('clone', '-q', '--no-local', '--branch', 'main', str(hub), str(clone))
+        self.assertNotEqual(subprocess.run(['git', 'cat-file', '-e', self.other + '^{commit}'], cwd=clone, capture_output=True).returncode, 0)
+        sys.path.insert(0, str(BUNDLED / 'code-review'))
+        try:
+            import review_app
+        finally:
+            sys.path.remove(str(BUNDLED / 'code-review'))
+        with patch.dict(os.environ, {'PATH': self.environment['PATH'], 'FAKE_PRS': str(self.prs)}), \
+                patch.object(review_app, 'github_remotes', return_value={'fixture/project': 'origin'}):
+            view = review_app.other_pr(clone, self.url)
+        self.assertEqual((view['number'], view['branch'], view['head'], view['base']), (8, 'other', self.other, self.main))
+        self.assertEqual(self.git('rev-parse', '--abbrev-ref', 'HEAD', cwd=clone), 'main')
+        self.assertIn('other.py', self.git('diff', '--name-only', view['base'], view['head'], cwd=clone))
+
+    def test_remotes_are_matched_by_owner_and_name(self):
+        sys.path.insert(0, str(BUNDLED / 'code-review'))
+        try:
+            import review_app
+        finally:
+            sys.path.remove(str(BUNDLED / 'code-review'))
+        self.git('remote', 'add', 'fork', 'git@github.com:Someone/Project-Fork')
+        self.git('remote', 'add', 'elsewhere', 'https://gitlab.com/fixture/project.git')
+        self.assertEqual(review_app.github_remotes(self.repo), {'fixture/project': 'origin', 'someone/project-fork': 'fork'})
 
 
 if __name__ == '__main__':
