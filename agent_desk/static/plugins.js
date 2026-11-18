@@ -36,7 +36,8 @@ function connectPlugin(frame,plugin,pane){
     const channel=new MessageChannel(),bridge={port:channel.port1,plugin,pane,busy:0};
     pluginBridges.set(frame,bridge);
     channel.port1.onmessage=event=>answerPlugin(bridge,event.data);
-    frame.contentWindow?.postMessage({agentDesk:'connect',version:1},'*',[channel.port2]);
+    // The frame is sandboxed without allow-same-origin, so its origin is opaque and no origin string can name it.
+    frame.contentWindow?.postMessage({agentDesk:'connect',version:1},'*',[channel.port2]); // nosemgrep: javascript.browser.security.wildcard-postmessage-configuration.wildcard-postmessage-configuration
     if(plugin.permissions.includes('editor.open'))sendPlugin(bridge,'editor',{path:window.paneEditor?.current(pane)||null});
   });
 }

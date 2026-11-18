@@ -32,7 +32,8 @@ def fallback(args, reason=None):
     command = shlex.split(os.environ.get('AGENT_DESK_FALLBACK_EDITOR') or '') or ['vi']
     if Path(command[0]).name == NAME:
         command = ['vi']
-    os.execvp(command[0], command + args)
+    # The editor the user had before Agent Desk, run the way git would run it.
+    os.execvp(command[0], command + args)  # nosemgrep: python.lang.security.audit.dangerous-os-exec-tainted-env-args.dangerous-os-exec-tainted-env-args
 
 
 def call(desk, token, route, payload, timeout):

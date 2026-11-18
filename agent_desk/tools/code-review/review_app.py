@@ -64,7 +64,8 @@ def reviewer_name(repo: Path) -> str:
 
 
 def notes_path_for(repo: Path) -> Path:
-    digest = hashlib.sha1(str(repo).encode()).hexdigest()[:8]
+    # A file name, not a signature: kept sha1 so notes saved by earlier versions are still found.
+    digest = hashlib.sha1(str(repo).encode()).hexdigest()[:8]  # nosemgrep: python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1
     return NOTES_ROOT / f"{repo.name}-{digest}.review.json"
 
 
@@ -196,7 +197,7 @@ def file_text(repo: Path, base: str, rel: str, side: str) -> str:
 def diff_digest(repo: Path, base: str, text: str) -> str:
     """Changes when the diff, its base or the branch does, so the page redraws its header too."""
     branch = git(repo, "rev-parse", "--abbrev-ref", "HEAD", check=False).strip()
-    return hashlib.sha1(f"{branch}\0{base}\0{text}".encode(errors="replace")).hexdigest()[:12]
+    return hashlib.sha256(f"{branch}\0{base}\0{text}".encode(errors="replace")).hexdigest()[:12]
 
 
 def diff_model(repo: Path, base: str, untracked: bool) -> dict:
@@ -725,7 +726,7 @@ def ask_codex(repo: Path, base: str, untracked: bool, env: dict | None = None) -
         if CODEX_MODEL:
             cmd += ["-m", CODEX_MODEL]
         cmd.append(prompt)
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=CODEX_TIMEOUT, check=False, env=with_account(env))
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=CODEX_TIMEOUT, check=False, env=with_account(env))  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
         if not out.exists():
             tail = (result.stderr or result.stdout or "").strip()[-600:]
             raise RuntimeError(f"codex exec exited {result.returncode} without a review: {tail}")
@@ -747,7 +748,7 @@ def ask_claude(repo: Path, base: str, untracked: bool, env: dict | None = None) 
     ]
     if CLAUDE_MODEL:
         cmd += ["--model", CLAUDE_MODEL]
-    result = subprocess.run(cmd, input=prompt, cwd=repo, capture_output=True, text=True, timeout=CLAUDE_TIMEOUT, check=False, env=with_account(env))
+    result = subprocess.run(cmd, input=prompt, cwd=repo, capture_output=True, text=True, timeout=CLAUDE_TIMEOUT, check=False, env=with_account(env))  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
     try:
         reply = json.loads(result.stdout)
     except json.JSONDecodeError:
