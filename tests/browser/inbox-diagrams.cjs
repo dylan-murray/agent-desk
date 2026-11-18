@@ -8,7 +8,7 @@ const {chromium}=require('playwright');const withAccounts=require('./accounts-fi
  const store={roles:[{id:'watcher',name:'Workflow explainer',kind:'watcher'}],runs:[],inbox:[{id:'diagram-report',event_key:'source:diagram',role_id:'watcher',title:'How reports reach your Inbox',detail,state:'review',created:1788980000,findings:[]}]};
  await context.route('**/api/**',route=>{const path=new URL(route.request().url()).pathname;const data={'/api/special-agents':store,'/api/terminal-auth':{token:'fixture',cwd:'/tmp'},'/api/agents':{agents:[]},'/api/feedback':{notes:[],deleted:[]},'/api/tool-launchers':{launchers:[]},'/api/skill-uis':{uis:[]},'/api/skills':{skills:[]}};return route.fulfill({json:data[path]||{}});});
  const base=process.env.AGENT_DESK_TEST_URL||'http://127.0.0.1:4310';
- await page.goto(base);await page.locator('#open-inbox').click();await page.locator('[data-inbox-filter="review"]').click();await page.locator('.document-diagram iframe').waitFor({timeout:5000}).catch(async e=>{console.error(await page.locator('#inbox-detail').innerHTML());throw e;});
+ await page.goto(base);await page.locator('#open-inbox').click();await page.locator('.inbox-row').first().click();await page.locator('.document-diagram iframe').waitFor({timeout:5000}).catch(async e=>{console.error(await page.locator('#inbox-detail').innerHTML());throw e;});
  const frame=page.frameLocator('.document-diagram iframe');await frame.locator('.step').first().waitFor();assert.equal(await frame.locator('.step').count(),3);
  assert.equal(await page.locator('.document-diagram iframe').getAttribute('sandbox'),'');assert.equal(await page.locator('.document-diagram-source code').textContent(),html+'\n');
  assert.equal(await page.locator('.inbox-body > .coord-code-block').count(),1);

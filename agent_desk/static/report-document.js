@@ -7,8 +7,14 @@ const text=(tag,value)=>{const n=document.createElement(tag);n.textContent=value
       if(marker){if(!fence)fence=marker[1][0];else if(fence===marker[1][0])fence=null;return line;}
       if(fence)return line;
       const divider=value=>/^\s*[=─_-]{6,}\s*$/.test(value||'');
+      const underline=value=>/^\s*(?:-{3,}|={3,})\s*$/.test(value||'');
       if(divider(line))return '';
-      if(line.trim()&&divider(lines[i-1])&&divider(lines[i+1]))return '## '+line.trim();
+      // A line between two dividers is a section title, unless it reads as a sentence: then it is the
+      // report's banner ("RESULT: could not finish. No PR opened.") and stands out as a callout instead.
+      if(line.trim()&&divider(lines[i-1])&&divider(lines[i+1]))return /[.!?]$/.test(line.trim())?'> **'+line.trim()+'**':'## '+line.trim();
+      // A short line underlined with dashes or equals signs ("What I tried" over "----") is a heading.
+      if(line.trim().length<=60&&underline(lines[i+1])&&!divider(lines[i-1])&&!/^\s*([-*+>|#`]|\d+[.)])/.test(line)&&!(i>0&&lines[i-1].trim()))return '## '+line.trim();
+      if(underline(line)&&lines[i-1]?.trim()&&lines[i-1].trim().length<=60&&!(i>1&&lines[i-2].trim()))return '';
       if(/^\s{2,}[a-z]\.\s+/.test(line))return '- '+line.trim();
       return line;
     }).join('\n');
@@ -64,5 +70,17 @@ const text=(tag,value)=>{const n=document.createElement(tag);n.textContent=value
       const sources=document.createElement('details');sources.className='inbox-sources';sources.append(text('summary','Sources checked'));paragraph.before(sources);sources.append(paragraph);
     }
   }
+  // A report's own first line, when it is a heading or a short title line, names the report; the rest is
+  // its body. Reports that open straight into prose keep their text and fall back to the item's title.
+  function reportTitle(source){
+    const lines=String(source||'').split('\n'),first=lines.findIndex(line=>line.trim());
+    if(first<0)return {title:'',body:''};
+    const line=lines[first].trim();
+    const heading=line.match(/^#{1,2}\s+(.+)/);
+    const plain=!heading&&line.length<=90&&!/^([-*+>|`=─_]|\d+[.)]|<)/.test(line)&&!/[.:;,]$/.test(line)&&(!lines[first+1]?.trim()||/^\s*[=─_-]{3,}\s*$/.test(lines[first+1]));
+    if(!heading&&!plain)return {title:'',body:String(source)};
+    return {title:(heading?heading[1]:line).replace(/\*\*/g,'').trim(),body:lines.slice(first+1).join('\n').replace(/^\s*\n/,'')};
+  }
 window.renderDeskDocument=renderDocument;
+window.deskReportTitle=reportTitle;
 })();

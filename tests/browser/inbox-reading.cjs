@@ -47,10 +47,10 @@ Open the review workspace, check the validation notes, and choose the next task.
  });
  await page.goto(process.env.AGENT_DESK_TEST_URL || 'http://127.0.0.1:4310/');await page.locator('#open-inbox').click();await page.waitForFunction(()=>document.getElementById('review-count').textContent==='3');
  assert.equal(await page.locator('.inbox-row').count(),3);
- await page.locator('[data-inbox-filter="attention"]').click();assert.equal(await page.locator('.inbox-row').count(),2);
+ assert.deepEqual(await page.locator('.inbox-group').evaluateAll(groups=>groups.map(g=>[...g.children].map(c=>c.textContent))),[['Waiting on you','1'],['Reports','2']],'only the waiting session is waiting on you');assert.equal(await page.locator('[data-inbox-item="blocked"] .inbox-category').textContent(),'Blocked');
  await page.locator('[data-inbox-item="session:approval"]').click();assert.equal(await page.locator('[data-inbox-action="done"]').count(),0);
  await page.locator('[data-inbox-action="session"]').click();await page.locator('#agents-page').waitFor({state:'visible'});
- await page.locator('#open-inbox').click();await page.locator('[data-inbox-filter="review"]').click();if(process.env.CAPTURE_BEFORE){await page.screenshot({path:evidence('inbox-reading-before.png')});return;}
+ await page.locator('#open-inbox').click();await page.locator('[data-inbox-item="finding"]').click();if(process.env.CAPTURE_BEFORE){await page.screenshot({path:evidence('inbox-reading-before.png')});return;}
  assert.ok(await page.locator('#inbox-detail .inbox-body :is(h2,h3)').count()>=4);
  assert.equal(await page.locator('#inbox-detail').textContent().then(t=>t.includes('========')),false);
  assert.match(await page.locator('.document-section').first().textContent(),/01Example project — current priorities/);
@@ -74,7 +74,7 @@ Open the review workspace, check the validation notes, and choose the next task.
  await page.locator('[data-inbox-action="done"]').click();await page.waitForFunction(()=>document.getElementById('review-count').textContent==='2');
  await page.locator('[data-inbox-filter="history"]').click();assert.equal(await page.locator('.inbox-row').count(),1);
  await page.locator('[data-inbox-action="review"]').click();await page.waitForFunction(()=>document.getElementById('review-count').textContent==='3');
- await page.locator('[data-inbox-filter="all"]').click();await page.locator('#inbox-search').fill('connector');assert.equal(await page.locator('.inbox-row').count(),1);await page.locator('#inbox-search').fill('');
+ await page.locator('[data-inbox-filter="open"]').click();await page.locator('#inbox-search').fill('connector');assert.equal(await page.locator('.inbox-row').count(),1);await page.locator('#inbox-search').fill('');
  waiting=false;await page.evaluate(()=>refresh());await page.waitForFunction(()=>document.getElementById('review-count').textContent==='2');
  await page.reload();await page.locator('#open-inbox').click();await page.waitForFunction(()=>document.querySelectorAll('.inbox-row').length===2);
  await page.locator('#open-special-agents').click();assert.equal(await page.locator('#breadcrumb').innerText(),'Automations');assert.equal(await page.locator('.automation-trigger-note').count(),0,'each card shows its own schedule, so the page has no trigger note');

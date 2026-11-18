@@ -14,7 +14,7 @@ const {chromium}=require('playwright');const assert=require('node:assert/strict'
   if(path==='/api/special-agents/review'){const body=route.request().postDataJSON();writes.push(path);store.inbox.find(item=>item.id===body.id).state=body.state;return route.fulfill({json:{ok:true}});}
   if(path==='/api/workflows/review'){const body=route.request().postDataJSON();writes.push(path);workflows.executions.find(run=>run.id===body.id).review_state=body.state;return route.fulfill({json:{ok:true}});}
   if(path==='/api/coordinator-events/ack'){writes.push(path);tasks[0].acknowledged=true;return route.fulfill({json:{ok:true}});}
-  if(method==='POST'&&path!=='/api/feedback')writes.push(path);
+  if(method==='POST'&&!['/api/feedback','/api/editor/pending'].includes(path))writes.push(path);
   const data={'/api/agents':{agents:[agent,coordinator]},'/api/feedback':{notes:[],deleted:[]},'/api/special-agents':store,'/api/workflows':workflows,'/api/coordinator-events':{tasks,event_delivery:true,supported_harnesses:['claude']},'/api/terminal-auth':{token:'fixture',cwd:'/tmp'},'/api/skill-uis':{uis:[]},'/api/tool-launchers':{launchers:[]},'/api/skills':{skills:[]}};
   return route.fulfill({json:data[path]||{}});});
  await page.goto(process.env.AGENT_DESK_TEST_URL || 'http://127.0.0.1:4310/');await page.locator('#open-inbox').click();

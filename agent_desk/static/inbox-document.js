@@ -14,6 +14,8 @@ try{
  if(kind==='pr')item=(data.events||[]).find(t=>t.id===id);
  if(kind==='session'){const t=(data.agents||[]).find(t=>t.id===id);if(t)item={title:t.name,detail:t.question||'This session has no current response request.',created:t.updated};}
  if(!item)throw Error('This message is no longer available.');
+ // An automation's report names itself in its first line, as it does in the Inbox.
+ const own=kind==='automation'?window.deskReportTitle(item.detail||''):{title:''};if(own.title)item={...item,title:own.title,detail:own.body};
  root.replaceChildren(text('p','AGENT DESK / INBOX','document-kicker'),text('h1',item.title));document.title=item.title+' · Agent Desk';
  if(item.created)root.append(text('p',new Date(item.created*1000).toLocaleString(),'document-meta'));
  const body=text('article','','inbox-body');window.renderDeskDocument(body,item.detail||'');root.append(body);

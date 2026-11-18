@@ -48,15 +48,16 @@ const {chromium}=require('playwright');const withAccounts=require('./accounts-fi
  await page.locator('#open-inbox').click();await page.locator('.inbox-row').first().click();
  const body=page.locator('#inbox-detail .inbox-body');await body.locator('table').waitFor();
 
- // Hierarchy: one title, sections, subsections and fine print all distinct.
- assert.equal(await body.locator('h1.document-title').count(),1);
+ // Hierarchy: the title in the header, then sections, subsections and fine print all distinct.
+ assert.equal(await body.locator('h1.document-title').count(),0);
+ assert.equal(await page.locator('.inbox-head h2').textContent(),'Friday build debrief');
  assert.equal(await body.locator('h2.document-section').count(),2);
  assert.match(await body.locator('h2').first().textContent(),/01Where things stand/);
  assert.equal(await body.locator('h2').nth(1).textContent(),'Signals');
  assert.equal(await body.locator('h3').first().textContent(),'Cache and the slow suite');
  assert.equal(await body.locator('h4').first().textContent(),'Fine print');
- const sizes=await body.evaluate(n=>['h1','h2','h3','h4','p'].map(tag=>parseFloat(getComputedStyle(n.querySelector(tag)).fontSize)));
- assert.ok(sizes[0]>sizes[1]&&sizes[1]>sizes[2]&&sizes[2]>sizes[3],'heading scale descends: '+sizes);
+ const sizes=await body.evaluate(n=>['h2','h3','h4','p'].map(tag=>parseFloat(getComputedStyle(n.querySelector(tag)).fontSize)));
+ assert.ok(sizes[0]>sizes[1]&&sizes[1]>sizes[2],'heading scale descends: '+sizes);
 
  // Pipe tables become real tables with the authored alignment; no raw pipes remain.
  assert.equal(await body.locator('table').count(),1);
