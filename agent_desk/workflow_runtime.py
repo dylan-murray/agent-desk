@@ -164,6 +164,43 @@ class WorkflowRuntime:
             db.execute('DELETE FROM configs WHERE id=?',(identity,))
         return dict(deleted=True,id=identity)
 
+    def automation_uses(self,role_id):
+        """The launch configurations that run a saved automation, and the schedules that use them, each with how
+        many other tasks it runs: a schedule that runs only this automation goes with it, the others keep theirs."""
+        with self.db() as db:
+            configs=[c for c in (json.loads(r[0]) for r in db.execute('SELECT payload FROM configs')) if c.get('kind')=='automation' and c.get('role_id')==role_id]
+            ids,schedules={c['id'] for c in configs},[]
+            for row in db.execute('SELECT payload FROM workflows'):
+                workflow=json.loads(row[0]);mine=sum(1 for n in workflow['nodes'] if n['config_id'] in ids)
+                if mine:schedules.append({k:workflow.get(k) for k in ('id','name','trigger','cron','at','timezone','enabled')}|dict(others=len(workflow['nodes'])-mine))
+        return dict(configs=[{k:c[k] for k in ('id','name')} for c in configs],schedules=schedules)
+
+    def release_automation(self,role_id):
+        """Remove what runs a saved automation, so the automation itself can be deleted: its launch configurations,
+        the schedules that run only it, and its tasks in schedules that also run others. Refused while one of those
+        configurations is running."""
+        with self.lock,self.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            ids={c['id'] for c in (json.loads(r[0]) for r in db.execute('SELECT payload FROM configs')) if c.get('kind')=='automation' and c.get('role_id')==role_id}
+            if any(db.execute("SELECT 1 FROM executions WHERE config_id=? AND state IN ('queued','starting','running','ready')",(i,)).fetchone() for i in ids):
+                raise ValueError('Run & Schedule is running this automation. Stop that run or wait for it to finish before deleting.')
+            removed,trimmed=[],[]
+            for row in db.execute('SELECT id,payload FROM workflows').fetchall():
+                workflow=json.loads(row['payload']);kept=[n for n in workflow['nodes'] if n['config_id'] not in ids]
+                if len(kept)==len(workflow['nodes']):continue
+                if not kept:
+                    self.events.discard(db,'workflow_id',workflow['id'],'Rule deleted with its automation; waiting events discarded')
+                    db.execute('DELETE FROM workflows WHERE id=?',(workflow['id'],));removed.append(workflow['name']);continue
+                # Tasks that waited on the removed one now start with the rest of the schedule.
+                gone={n['id'] for n in workflow['nodes']}-{n['id'] for n in kept}
+                workflow['nodes']=[dict(n,depends_on=[d for d in n['depends_on'] if d not in gone]) for n in kept]
+                if workflow['trigger']=='event':
+                    workflow['enabled']=False
+                    self.events.discard(db,'workflow_id',workflow['id'],'A task was removed with its automation; enable the rule again')
+                db.execute('UPDATE workflows SET payload=? WHERE id=?',(json.dumps(workflow),workflow['id']));trimmed.append(workflow['name'])
+            db.executemany('DELETE FROM configs WHERE id=?',[(i,) for i in ids])
+        return dict(configs=sorted(ids),removed=removed,trimmed=trimmed)
+
     def save_workflow(self,p):
         name=p.get('name');nodes=p.get('nodes');zone=p.get('timezone','UTC');trigger=p.get('trigger','manual');now=time.time()
         if not isinstance(name,str) or not 1<=len(name.strip())<=100:raise ValueError('Enter a workflow name')

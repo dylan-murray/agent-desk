@@ -9,7 +9,7 @@ Agent Desk should bring work in, let agents act within a defined scope, and retu
 - **Inbox:** requests that need an answer, blocked runs, findings, and work ready for review.
 - **Tools:** persistent annotation and review surfaces associated with the task being reviewed.
 
-Automations currently run on demand. The UI must say “Manual trigger” until a real scheduler or event source is connected. An empty inbox must never imply that a disconnected source was checked successfully.
+Automations run on demand or from Run & Schedule (cron or an event), and each card shows its schedule, or that it has none. An empty inbox must never imply that a disconnected source was checked successfully.
 
 ## Current implementation
 
