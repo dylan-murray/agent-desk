@@ -95,7 +95,10 @@ def diff_base(repo: Path, base: str | None) -> str:
     return git(repo, "merge-base", base, "HEAD").strip()
 
 
-def raw_diff(repo: Path, base: str, untracked: bool = True) -> str:
+def raw_diff(repo: Path, base: str, untracked: bool = True, head: str | None = None) -> str:
+    """The working tree against base, or with head, a commit against base (another branch's pull request)."""
+    if head:
+        return git(repo, "diff", base, head, "--no-color", "--no-ext-diff", "-U3", "--find-renames", "--", check=False)
     text = git(
         repo, "diff", base, "--no-color", "--no-ext-diff", "-U3", "--find-renames", "--",
         check=False,
@@ -183,8 +186,10 @@ def parse_diff(text: str) -> list[dict]:
     return files
 
 
-def file_text(repo: Path, base: str, rel: str, side: str) -> str:
+def file_text(repo: Path, base: str, rel: str, side: str, head: str | None = None) -> str:
     """Full contents of one side of a file, for whole-file syntax highlighting."""
+    if side == "new" and head:
+        return git(repo, "show", f"{head}:{rel}", check=False)
     if side == "new":
         target = repo / rel
         try:
@@ -200,13 +205,13 @@ def diff_digest(repo: Path, base: str, text: str) -> str:
     return hashlib.sha256(f"{branch}\0{base}\0{text}".encode(errors="replace")).hexdigest()[:12]
 
 
-def diff_model(repo: Path, base: str, untracked: bool) -> dict:
-    text = raw_diff(repo, base, untracked)
+def diff_model(repo: Path, base: str, untracked: bool, head: str | None = None, branch: str | None = None) -> dict:
+    text = raw_diff(repo, base, untracked, head)
     files = parse_diff(text)
     digest = diff_digest(repo, base, text)
-    branch = git(repo, "rev-parse", "--abbrev-ref", "HEAD", check=False).strip()
+    branch = branch or git(repo, "rev-parse", "--abbrev-ref", "HEAD", check=False).strip()
     return {
-        "repo": str(repo), "branch": branch, "base": base, "digest": digest,
+        "repo": str(repo), "branch": branch, "base": base, "digest": digest, "checked_out": not head,
         "files": files,
         "additions": sum(f["additions"] for f in files),
         "deletions": sum(f["deletions"] for f in files),
@@ -934,19 +939,104 @@ def branch_pr(repo: Path) -> dict | None:
     return {"url": data["url"], "base": base or None}
 
 
+def github_remotes(repo: Path) -> dict:
+    """This repository's GitHub remotes by owner/name (lowercase), so a pull request can be matched to one."""
+    found = {}
+    for line in git(repo, "remote", "-v", check=False).splitlines():
+        parts = line.split()
+        m = re.search(r"github\.com[:/]([^/\s]+)/([^/\s]+?)(?:\.git)?/?$", parts[1]) if len(parts) > 1 else None
+        if m:
+            found.setdefault(f"{m.group(1)}/{m.group(2)}".lower(), parts[0])
+    return found
+
+
+def other_pr(repo: Path, url: str) -> dict:
+    """Another of this repository's open pull requests, with its head and base commits fetched if they
+    are missing. Nothing is checked out: the review reads the PR from Git."""
+    owner, name, _ = pr_coordinates(url)
+    remote = github_remotes(repo).get(f"{owner}/{name}".lower())
+    if not remote:
+        raise RuntimeError("that pull request is in another repository")
+    result = subprocess.run(["gh", "pr", "view", url, "--json", "number,title,state,url,headRefName,headRefOid,baseRefName,baseRefOid"],
+                            cwd=repo, capture_output=True, text=True, timeout=30, check=False, stdin=subprocess.DEVNULL)
+    if result.returncode:
+        raise RuntimeError((result.stderr or result.stdout).strip()[-300:] or "gh pr view failed")
+    data = json.loads(result.stdout)
+    if data.get("state") != "OPEN":
+        raise RuntimeError(f"#{data.get('number')} is {str(data.get('state', '')).lower()}")
+    head, base_oid = str(data.get("headRefOid") or ""), str(data.get("baseRefOid") or "")
+    if not re.fullmatch(r"[0-9a-f]{40}", head) or not re.fullmatch(r"[0-9a-f]{40}", base_oid):
+        raise RuntimeError("GitHub did not say which commits the pull request compares")
+    have = lambda oid: subprocess.run(["git", "-C", str(repo), "cat-file", "-e", oid + "^{commit}"], capture_output=True, check=False).returncode == 0
+    if not (have(head) and have(base_oid)):
+        git(repo, "fetch", "--quiet", "--no-tags", remote, f"pull/{data['number']}/head", "refs/heads/" + str(data.get("baseRefName") or ""))
+    base = git(repo, "merge-base", base_oid, head).strip()
+    return {"url": data["url"], "number": data["number"], "title": str(data.get("title") or "")[:200], "branch": str(data.get("headRefName") or ""),
+            "head": head, "base": base}
+
+
+VIEW_LOCK = threading.Lock()
+
+
+def in_view(item: dict) -> bool:
+    """Notes belong to what they were made on: another PR's notes show only while that PR is reviewed."""
+    view = Handler.view
+    if view:
+        return item.get("pr") == view["url"]
+    return item.get("pr") in (None, (Handler.notes.pr() or {}).get("url"))
+
+
+def current_model() -> dict:
+    view = Handler.view
+    if view:
+        return diff_model(Handler.repo, view["base"], False, view["head"], view["branch"])
+    return diff_model(Handler.repo, Handler.base, Handler.untracked)
+
+
+def select_pr(url: str | None) -> dict | None:
+    """Review another pull request, or the checked-out work again with url None."""
+    view = other_pr(Handler.repo, url) if url else None
+    if view and view["branch"] == git(Handler.repo, "rev-parse", "--abbrev-ref", "HEAD", check=False).strip():
+        view = None
+    with VIEW_LOCK:
+        Handler.view = view
+        if Handler.feedback:
+            Handler.feedback.answer = Handler.answer + (
+                f" These notes are on pull request #{view['number']} (branch {view['branch']}), which is not checked out in "
+                f"{Handler.repo}: check that branch out, or work in a worktree of it, before changing code." if view else "")
+    if view:
+        try:
+            import_github_reviews(Handler.notes, current_model(), fetch_github_reviews(view["url"]), view["url"])
+        except (RuntimeError, ValueError, OSError, subprocess.SubprocessError) as exc:
+            print(f"could not pull reviews: {exc}", file=sys.stderr, flush=True)
+    return view
+
+
 def follow_pr(notes: Notes, repo: Path, interval: float) -> None:
     """Once the branch has a pull request, review all of it rather than only uncommitted work, so GitHub's
-    line comments land on their lines, and keep bringing its new review comments in."""
+    line comments land on their lines, and keep bringing its new review comments in. While another of the
+    terminal's pull requests is shown, keep that one current instead."""
     while True:
-        pr = branch_pr(repo)
-        if pr:
-            if (notes.pr() or {}).get("url") != pr["url"]:
-                notes.set_pr(pr["url"])
-            Handler.base = pr["base"] or Handler.base
+        view = Handler.view
+        if view:
             try:
-                import_github_reviews(notes, diff_model(repo, Handler.base, Handler.untracked), fetch_github_reviews(pr["url"]))
+                fresh = other_pr(repo, view["url"])
+                with VIEW_LOCK:
+                    if Handler.view and Handler.view["url"] == fresh["url"]:
+                        Handler.view = fresh
+                import_github_reviews(notes, current_model(), fetch_github_reviews(fresh["url"]), fresh["url"])
             except (RuntimeError, ValueError, OSError, subprocess.SubprocessError) as exc:
-                print(f"could not pull reviews: {exc}", file=sys.stderr, flush=True)
+                print(f"could not refresh #{view['number']}: {exc}", file=sys.stderr, flush=True)
+        else:
+            pr = branch_pr(repo)
+            if pr:
+                if (notes.pr() or {}).get("url") != pr["url"]:
+                    notes.set_pr(pr["url"])
+                Handler.base = pr["base"] or Handler.base
+                try:
+                    import_github_reviews(notes, current_model(), fetch_github_reviews(pr["url"]), pr["url"])
+                except (RuntimeError, ValueError, OSError, subprocess.SubprocessError) as exc:
+                    print(f"could not pull reviews: {exc}", file=sys.stderr, flush=True)
         time.sleep(interval)
 
 
@@ -958,9 +1048,10 @@ def github_text(body: str | None) -> str:
     return re.sub(r"\n{3,}", "\n\n", text).strip()
 
 
-def import_github_reviews(notes: Notes, model: dict, data: dict) -> dict:
+def import_github_reviews(notes: Notes, model: dict, data: dict, pr: str | None = None) -> dict:
     """Turn a PR's GitHub review comments, review summaries and conversation into
-    notes authored by each GitHub user. Each GitHub item is imported once."""
+    notes authored by each GitHub user. Each GitHub item is imported once, marked
+    with the PR it came from so it shows only while that PR is reviewed."""
     by_path = {f["path"]: f for f in model["files"]}
     when = lambda c: (c.get("created_at") or c.get("submitted_at") or "")[:19].replace("T", " ")
     counts = {"comments": 0, "replies": 0, "reviews": 0, "conversation": 0, "approvals": 0}
@@ -975,6 +1066,8 @@ def import_github_reviews(notes: Notes, model: dict, data: dict) -> dict:
             next_id += 1
             item.update({"id": next_id, "gh_id": gh_id, "gh_url": c.get("html_url"), "author": (c.get("user") or {}).get("login", "github"),
                          "created": when(c) or time.strftime("%Y-%m-%d %H:%M:%S"), "status": "open"})
+            if pr:
+                item["pr"] = pr
             items.append(item)
             thread[gh_id] = item
             seen.add(gh_id)
@@ -1095,6 +1188,20 @@ svg.i{display:block;flex-shrink:0;width:14px;height:14px;fill:none;stroke:curren
 #prstate .pending{color:var(--fg-muted);overflow:hidden;text-overflow:ellipsis}
 #prstate .ready{border:0;background:none;color:#a9c4ea;cursor:pointer;padding:0}
 #prstate .ready:hover{text-decoration:underline}
+#prstate .prpick{display:inline-grid;place-items:center;width:20px;height:20px;margin-left:-4px;padding:0;border:0;border-radius:5px;background:none;color:var(--fg-muted);cursor:pointer}
+#prstate .prpick:hover,#prstate .prpick[aria-expanded=true]{background:#ffffff12;color:var(--fg)}
+#prstate .prpick svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:1.6}
+#meta.away{color:var(--amber)}
+#pr-menu{position:fixed;z-index:60;width:330px;max-width:calc(100vw - 16px);padding:5px;border:1px solid var(--border-strong);border-radius:10px;background:var(--raised);box-shadow:0 14px 40px #000a}
+#pr-menu[hidden]{display:none}
+#pr-menu .mh{padding:6px 8px 7px;color:var(--fg-muted);font-size:11px}
+#pr-menu button{display:flex;align-items:center;gap:8px;width:100%;height:32px;padding:0 8px;border:0;border-radius:6px;background:none;color:inherit;font-size:12.5px;text-align:left;cursor:pointer}
+#pr-menu button:hover,#pr-menu button:focus-visible{background:#ffffff0d;outline:0}
+#pr-menu .ck{display:inline-grid;place-items:center;flex:none;width:14px;color:var(--accent)}
+#pr-menu .num{flex:none;color:var(--fg-muted);font:11.5px var(--mono)}
+#pr-menu .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#pr-menu .st{flex:none;color:var(--fg-muted);font-size:11px}
+#pr-menu .st.amb{color:var(--amber)}
 
 /* ---------- tabs ---------- */
 #tabs{position:sticky;top:var(--prrow);z-index:49;display:flex;align-items:flex-end;gap:2px;height:var(--tabs);padding:0 6px 0 10px;background:var(--bg);border-bottom:1px solid #ffffff0b}
@@ -1355,6 +1462,7 @@ tr.thread td{background:var(--bg)!important;padding:6px 12px 8px 46px;white-spac
 </div>
 <div id="bubble">💬 Comment on selection</div>
 <div id="toast"></div>
+<div id="pr-menu" role="menu" aria-label="Pull requests" hidden></div>
 <script src="./vendor/highlight.min.js"></script>
 <script>
 const $=s=>document.querySelector(s);
@@ -1444,7 +1552,8 @@ function fileAnchor(p){return 'f-'+p.replace(/[^a-zA-Z0-9]/g,'_');}
 function statusBadge(f){return {added:'A',deleted:'D',renamed:'R',modified:'M'}[f.status]||'M';}
 async function render(){
  const main=$('#main');
- $('#meta').textContent=`${model.branch} · vs ${model.base==='HEAD'?'HEAD (working tree)':model.base.slice(0,10)}`;
+ $('#meta').textContent=model.checked_out===false?`${model.branch} · not checked out here`:`${model.branch} · vs ${model.base==='HEAD'?'HEAD (working tree)':model.base.slice(0,10)}`;
+ $('#meta').classList.toggle('away',model.checked_out===false);
  $('#stats').innerHTML=`<span class="stat-add">+${model.additions}</span> <span class="stat-del">−${model.deletions}</span>`;
  $('#nfiles').textContent=model.files.length;
  for(const b of document.querySelectorAll('#viewseg button'))b.setAttribute('aria-pressed',String(b.dataset.view===view));
@@ -1748,13 +1857,45 @@ document.addEventListener('mouseup',e=>{const part=e.target.closest('#prdraft .p
 function ghSeen(){try{return new Set(JSON.parse(localStorage.getItem('ra-gh-seen:'+(model?model.repo:''))||'[]'));}catch(e){return new Set();}}
 function markGhSeen(){if(!model)return;const seen=ghSeen();let changed=false;for(const a of notes)if(a.gh_id&&!seen.has(a.gh_id)){seen.add(a.gh_id);changed=true;}
  if(!changed)return;try{localStorage.setItem('ra-gh-seen:'+model.repo,JSON.stringify([...seen]));}catch(e){}renderPr(prState.req,prState.pr,prState.draft);}
-function renderPr(req,pr,draft){const el=$('#prstate');if(!el)return;prState={req,pr,draft};renderPrDraft();
+// The terminal's pull requests come from the desk page that shows this review in a pane; the desk already
+// watches them for its PR chip. Another one than the checked-out branch's is read from Git, not checked out.
+let deskPrs=[],prView=null,repoSlugs=[];
+const slugOf=url=>((/github\.com\/([^/]+\/[^/]+)\/pull\//.exec(url||'')||[])[1]||'').toLowerCase();
+addEventListener('message',e=>{
+ if(e.source!==parent||parent===window||e.data?.agentDesk!=='pull-requests'||!Array.isArray(e.data.prs))return;
+ deskPrs=e.data.prs.filter(p=>p&&typeof p.url==='string'&&/^https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+$/.test(p.url)).slice(0,20)
+  .map(p=>({url:p.url,number:+p.url.split('/').pop(),title:String(p.title||'').slice(0,200),branch:String(p.branch||'').slice(0,200),comments:Number.isInteger(p.comments)?p.comments:0}));
+ renderPr(prState.req,prState.pr,prState.draft);});
+function prChoices(){const home=prState.pr&&prState.pr.url,list=deskPrs.filter(p=>repoSlugs.includes(slugOf(p.url)));
+ if(home&&list.length&&!list.some(p=>p.url===home))list.unshift({url:home,number:+home.split('/').pop(),title:'',branch:'',comments:0});
+ if(prView&&!list.some(p=>p.url===prView.url))list.push({...prView,comments:0});return list;}
+const prMenu=$('#pr-menu');
+function closePrMenu(){prMenu.hidden=true;$('#prpick')?.setAttribute('aria-expanded','false');}
+function openPrMenu(e){e.stopPropagation();if(!prMenu.hidden)return closePrMenu();
+ const home=prState.pr&&prState.pr.url,current=(prView||prState.pr||{}).url;
+ prMenu.innerHTML='<div class="mh">This terminal&#39;s pull requests</div>'+prChoices().map(p=>{const st=[p.url===home&&'checked out',p.comments&&`${p.comments} comment${p.comments===1?'':'s'}`].filter(Boolean).join(' · ');
+  return `<button role="menuitemradio" aria-checked="${p.url===current}" data-url="${esc(p.url)}"><span class="ck">${p.url===current?ICONS.check:''}</span><span class="num">#${p.number}</span><span class="t">${esc(p.title||p.branch||'')}</span><span class="st${p.comments?' amb':''}">${esc(st)}</span></button>`;}).join('');
+ const r=e.currentTarget.getBoundingClientRect();prMenu.hidden=false;e.currentTarget.setAttribute('aria-expanded','true');
+ prMenu.style.top=(r.bottom+6)+'px';prMenu.style.left=Math.max(8,Math.min(r.right-prMenu.offsetWidth,innerWidth-prMenu.offsetWidth-8))+'px';
+ prMenu.querySelector('[aria-checked=true]')?.focus();}
+prMenu.onclick=e=>{const b=e.target.closest('button[data-url]');if(!b)return;e.stopPropagation();closePrMenu();selectPr(b.dataset.url===(prState.pr&&prState.pr.url)?null:b.dataset.url);};
+document.addEventListener('click',e=>{if(!prMenu.hidden&&!prMenu.contains(e.target))closePrMenu();});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!prMenu.hidden){closePrMenu();$('#prpick')?.focus();}});
+async function selectPr(url){if(url===((prView&&prView.url)||null))return;
+ toast(url?`Opening #${url.split('/').pop()}…`:'Back to the checked-out work');
+ try{const r=await fetch('./pr-select',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url})});const c=await r.json();if(!r.ok)throw Error(c.error||'failed');
+  prView=c.view;await refresh(true);}
+ catch(err){toast('Could not open that pull request: '+err.message.slice(0,120));}}
+function renderPr(req,branchPr,draft){const el=$('#prstate');if(!el)return;prState={req,pr:branchPr,draft};renderPrDraft();
+ const pr=prView||branchPr,choices=prChoices();
  $('#openpr').hidden=!!(pr&&pr.url)||!!(req&&req.n);
  const gh=notes.filter(a=>a.gh_id),seen=ghSeen(),fresh=gh.filter(a=>!seen.has(a.gh_id));
- const key=JSON.stringify([req,pr,draft&&draft.rev,gh.length,fresh.length]);if(el.dataset.key===key)return;el.dataset.key=key;
+ const key=JSON.stringify([req,pr,draft&&draft.rev,gh.length,fresh.length,choices.map(c=>c.url+':'+c.comments)]);if(el.dataset.key===key)return;el.dataset.key=key;
+ const pick=choices.length>1?`<button class="prpick" id="prpick" aria-haspopup="menu" aria-expanded="false" title="Switch to another of this terminal's pull requests" aria-label="Switch pull request"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></button>`:'';
  if(pr&&pr.url){const m=/github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)/.exec(pr.url)||[];
-  el.innerHTML=`<span class="sep"></span>${ICONS.pr}<a href="${esc(pr.url)}" target="_blank" rel="noopener" title="${esc(pr.url)}">${m[1]?esc(m[1])+'#'+m[2]:esc(pr.url.replace(/^https?:\/\/(www\.)?/,''))}</a><span class="ghc">${gh.length?`${gh.length} GitHub comment${gh.length===1?'':'s'}`:'no GitHub comments'}</span>${fresh.length?`<button class="newc" id="newgh" title="Show the comments that came in from GitHub">${fresh.length} new</button>`:''}<button class="tlink" id="pull-reviews" title="GitHub comments come in on their own every two minutes; this checks now">Check now</button>`;
+  el.innerHTML=`<span class="sep"></span>${ICONS.pr}<a href="${esc(pr.url)}" target="_blank" rel="noopener" title="${esc(pr.title?'#'+m[2]+' '+pr.title:pr.url)}">${m[1]?esc(m[1])+'#'+m[2]:esc(pr.url.replace(/^https?:\/\/(www\.)?/,''))}</a>${pick}<span class="ghc">${gh.length?`${gh.length} GitHub comment${gh.length===1?'':'s'}`:'no GitHub comments'}</span>${fresh.length?`<button class="newc" id="newgh" title="Show the comments that came in from GitHub">${fresh.length} new</button>`:''}<button class="tlink" id="pull-reviews" title="GitHub comments come in on their own every two minutes; this checks now">Check now</button>`;
   $('#newgh')?.addEventListener('click',()=>{noteFilter='gh';setTab('notes');renderNotes();});
+  $('#prpick')?.addEventListener('click',openPrMenu);
   $('#pull-reviews').onclick=async e=>{const b=e.currentTarget;b.disabled=true;b.textContent='Checking…';
    try{const r=await fetch('./pull-reviews',{method:'POST'});const c=await r.json();if(!r.ok)throw Error(c.error||'failed');
     const parts=[c.comments&&`${c.comments} comment${c.comments>1?'s':''}`,c.replies&&`${c.replies} repl${c.replies>1?'ies':'y'}`,c.reviews&&`${c.reviews} review${c.reviews>1?'s':''}`,c.conversation&&`${c.conversation} conversation comment${c.conversation>1?'s':''}`].filter(Boolean);
@@ -1797,7 +1938,10 @@ function renderReviewer(all){if(!all)return;reviewerState=all;renderOpinionMenu(
 /* ---------- state / hot reload ---------- */
 async function refresh(force){
  let d;try{d=await (await fetch('./state')).json();}catch(e){return;}
+ prView=d.view||null;repoSlugs=d.repos||[];
  renderReviewer(d.reviewers);renderPr(d.pr_request,d.pr,d.pr_draft);
+ // A second opinion reads the files on disk, which belong to the checked-out branch.
+ $('#codex').disabled=!!prView;if(prView)$('#codex').title='A second opinion reads the checked-out work. Switch back to it first.';
  const changed=d.digest!==digest;const notesKey=JSON.stringify([d.annotations,d.round_replies,d.submission,d.pr_request,d.pr,d.pr_draft]);const notesChanged=notesKey!==lastNotesKey;lastNotesKey=notesKey;notes=d.annotations;force=force||notesChanged;
  if(changed||force){if(changed){const m=await (await fetch('./diff')).json();model=m;digest=d.digest;hlCache={};rawCache={};expandState={};await render();if(digest!==null&&changed&&model)toast('diff reloaded');}
   else if(model){model.submission=d.submission;model.round_replies=d.round_replies;decorateThreads();}
@@ -1829,6 +1973,11 @@ class Handler(BaseHTTPRequestHandler):
     untracked: bool
     notes: Notes
     user: str = "You"
+    # Another of the terminal's pull requests while it is shown, else None for the checked-out work.
+    view: dict | None = None
+    feedback = None
+    answer: str = ""
+    remotes: tuple = ()
 
     def log_message(self, *a):
         pass
@@ -1855,7 +2004,7 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self._send(404, b"// not vendored")
         elif path == "/diff":
-            model = diff_model(self.repo, self.base, self.untracked)
+            model = current_model()
             model["submission"] = self.notes.submission()
             self._send(200, json.dumps(model).encode())
         elif path == "/file":
@@ -1866,7 +2015,8 @@ class Handler(BaseHTTPRequestHandler):
             if self.repo.resolve() not in target.parents:
                 self._send(403, b"forbidden", "text/plain")
                 return
-            self._send(200, file_text(self.repo, self.base, rel, side).encode(errors="replace"),
+            view = self.view
+            self._send(200, file_text(self.repo, view["base"] if view else self.base, rel, side, view and view["head"]).encode(errors="replace"),
                        "text/plain; charset=utf-8")
         elif path.startswith("/proof/"):
             asset = self.notes.proof_dir() / Path(path).name
@@ -1877,10 +2027,14 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/dump":
             self._send(200, dump(self.notes).encode(), "text/plain; charset=utf-8")
         elif path == "/state":
-            text = raw_diff(self.repo, self.base, self.untracked)
+            view = self.view
+            base = view["base"] if view else self.base
+            text = raw_diff(self.repo, base, self.untracked and not view, view and view["head"])
             body = {
-                "digest": diff_digest(self.repo, self.base, text),
-                "annotations": self.notes.load(),
+                "digest": diff_digest(self.repo, base, text),
+                "annotations": [a for a in self.notes.load() if in_view(a)],
+                "view": {k: view[k] for k in ("url", "number", "title", "branch")} if view else None,
+                "repos": list(self.remotes),
                 "submission": self.notes.submission(),
                 "round_replies": self.notes.round_replies(),
                 "reviewers": {key: r.status() for key, r in REVIEWERS.items()},
@@ -1918,6 +2072,8 @@ class Handler(BaseHTTPRequestHandler):
             if kind == "pin":
                 item["relX"] = round(float(data.get("relX", 0)), 4)
                 item["relY"] = round(float(data.get("relY", 0)), 4)
+            if self.view:
+                item["pr"] = self.view["url"]
             self.notes.add(item)
         elif path == "/reply":
             self.notes.reply(int(data["id"]), data.get("author", self.user), data.get("text", ""))
@@ -1940,17 +2096,32 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(keys, list) or not keys or any(k not in REVIEWERS for k in keys):
                 self._send(400, json.dumps({"error": f"reviewers must be a list of {sorted(REVIEWERS)}"}).encode())
                 return
+            if self.view:
+                self._send(409, json.dumps({"error": "A second opinion reads the checked-out work. Switch back to it first."}).encode())
+                return
             started = {k: REVIEWERS[k].start(self.repo, self.base, self.untracked, self.notes) for k in keys}
             self._send(200, json.dumps({"started": started, "reviewers": {k: r.status() for k, r in REVIEWERS.items()}}).encode())
             return
         elif path == "/pull-reviews":
-            pr = self.notes.pr() or {}
+            url = (self.view or self.notes.pr() or {}).get("url", "")
             try:
-                counts = import_github_reviews(self.notes, diff_model(self.repo, self.base, self.untracked), fetch_github_reviews(pr.get("url", "")))
+                counts = import_github_reviews(self.notes, current_model(), fetch_github_reviews(url), url or None)
             except (RuntimeError, ValueError, OSError, subprocess.SubprocessError) as exc:
                 self._send(502, json.dumps({"error": str(exc)}).encode())
                 return
             self._send(200, json.dumps(counts).encode())
+            return
+        elif path == "/pr-select":
+            url = data.get("url")
+            if url is not None and not isinstance(url, str):
+                self._send(400, json.dumps({"error": "url is a pull request link, or null for the checked-out work"}).encode())
+                return
+            try:
+                view = select_pr(url)
+            except (RuntimeError, ValueError, OSError, subprocess.SubprocessError) as exc:
+                self._send(502, json.dumps({"error": str(exc)}).encode())
+                return
+            self._send(200, json.dumps({"view": {k: view[k] for k in ("url", "number", "title", "branch")} if view else None}).encode())
             return
         elif path == "/pr-request":
             try:
@@ -2151,8 +2322,10 @@ def main():
         answer = (f"Answer every note on the review page when you finish it: {command} --author YOUR_NAME --reply ID 'what you changed' "
                   "--resolve ID --proof 'the check you ran and what it showed' (add --proof-file PATH for a screenshot). "
                   "A note you could not address gets only a --reply saying why.")
-        feedback = Feedback(args, Path(__file__).parent.name, repo, notes.path, notes.load, on_submit=notes.submit, answer=answer)
-        Handler.feedback = feedback
+        # Send delivers what the page shows: the notes on the work or pull request being reviewed.
+        feedback = Feedback(args, Path(__file__).parent.name, repo, notes.path, lambda: [a for a in notes.load() if in_view(a)],
+                            on_submit=notes.submit, answer=answer)
+        Handler.feedback, Handler.answer, Handler.remotes = feedback, answer, tuple(sorted(github_remotes(repo)))
         server = ThreadingHTTPServer(("127.0.0.1", args.port), wrap_handler(Handler, feedback))
     except OSError as e:
         sys.exit(f"cannot bind port {args.port}: {e} (try --port)")

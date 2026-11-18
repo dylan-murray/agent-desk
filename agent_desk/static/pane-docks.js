@@ -168,6 +168,7 @@ function showDock(view,agent,dock,entries){
     }
     frame.title=entry.ui.title;
     if(frame.dataset.url!==entry.ui.url){frame.src=framePageUrl(entry.ui.url)||'about:blank';frame.dataset.url=entry.ui.url;}
+    if(entry.id==='@review')sendReviewPullRequests(frame,agent,entry.ui.url);
   }else if(entry.id==='@review')showReviewStart(view,agent,note);
   panel.querySelectorAll('.pane-dock-frame').forEach(item=>item.hidden=item!==frame);
   renderPluginButtons(panel,id,entry);
@@ -178,6 +179,15 @@ function showDock(view,agent,dock,entries){
   if(entry.id==='@editor')window.paneEditor.mount(view,id,editor);
 }
 
+// Review switches between the pane's open pull requests, which the desk already watches for the PR chip. The list
+// goes only to the review's own origin, again whenever its page loads, and the review reads each one from Git.
+function sendReviewPullRequests(frame,agent,url){
+  const pr=agent.pull_request,list=pr?[pr,...(pr.others||[])].filter(p=>p.state==='open'||p.state==='draft').map(p=>({url:p.url,title:p.title||'',branch:p.branch||'',comments:p.comments||0})):[];
+  try{const at=new URL(url);frame.reviewOrigin=at.protocol+'//'+at.host;}catch{return;}
+  if(!frame.reviewPrs)frame.addEventListener('load',()=>frame.contentWindow?.postMessage({agentDesk:'pull-requests',prs:frame.reviewPrs},frame.reviewOrigin));
+  if(JSON.stringify(list)===JSON.stringify(frame.reviewPrs))return;
+  frame.reviewPrs=list;frame.contentWindow?.postMessage({agentDesk:'pull-requests',prs:list},frame.reviewOrigin);
+}
 // Review's send button names the coding agent it goes to; a pane whose agent the desk can't tell names the session.
 const reviewTarget=agent=>{
   const names={claude:'Claude',codex:'Codex',grok:'Grok',opencode:'OpenCode',pi:'Pi',cortex:'Cortex Code'};
