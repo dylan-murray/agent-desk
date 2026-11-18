@@ -29,7 +29,7 @@ def resolve(cwd, relative):
         raise ValueError('Name a file')
     root = _root(cwd)
     target = os.path.realpath(os.path.join(root, relative))
-    if target != str(root) and not target.startswith(os.path.join(root, '')):
+    if not target.startswith(os.path.join(root, '')):
         raise PermissionError('Only files inside the pane\'s folder can be opened here')
     return root, Path(target)
 
