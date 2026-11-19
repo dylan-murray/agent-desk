@@ -43,6 +43,7 @@ from agent_desk.desks import Desks
 from agent_desk.pane_editor import PaneEdits
 from agent_desk import pane_files
 from agent_desk.pull_requests import PullRequests
+from agent_desk.inbox_cleared import InboxCleared
 from agent_desk import saved_desks
 
 
@@ -141,30 +142,9 @@ PROTECTED_PANES = pane_guard.ProtectedPanes(DATA_DIR / 'protected-panes.json')
 PANE_WRITES = ('/api/terminals/input', '/api/terminals/rename', '/api/terminals/stop',
                '/api/coordinators/message', '/api/coordinators/close', '/api/coordinators/pause',
                '/api/coordinators/submit-feedback', '/api/coordinators/submit-annotations')
-INBOX_CLEARED_FILE = DATA_DIR / 'inbox-cleared.json'
-INBOX_CLEARED_LOCK = threading.Lock()
+INBOX_CLEARED = InboxCleared(DATA_DIR / 'inbox.sqlite3', legacy=DATA_DIR / 'inbox-cleared.json')
 SKILL_UIS_LOCK = threading.Lock()
 
-
-def read_inbox_cleared():
-    try:
-        keys = json.loads(INBOX_CLEARED_FILE.read_text())
-    except (OSError, ValueError):
-        return []
-    return [key for key in keys if isinstance(key, str)] if isinstance(keys, list) else []
-
-
-def clear_inbox_history(keys):
-    """Hide History items from the Inbox. Nothing is deleted: the reports, runs and results stay where they live."""
-    if not isinstance(keys, list) or not all(isinstance(key, str) and 0 < len(key) <= 200 for key in keys) or len(keys) > 5000:
-        raise ValueError('Invalid inbox items')
-    with INBOX_CLEARED_LOCK:
-        cleared = list(dict.fromkeys(read_inbox_cleared() + keys))[-20000:]
-        INBOX_CLEARED_FILE.parent.mkdir(parents=True, exist_ok=True)
-        temp = INBOX_CLEARED_FILE.with_suffix('.tmp')
-        temp.write_text(json.dumps(cleared))
-        os.replace(temp, INBOX_CLEARED_FILE)
-    return cleared
 
 
 
@@ -592,7 +572,7 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.send_json({'error': 'Terminal authentication required'}, 403)
             return self.send_json(PULL_REQUESTS.snapshot())
         if route == '/api/inbox/cleared':
-            return self.send_json({'keys': read_inbox_cleared()})
+            return self.send_json({'keys': INBOX_CLEARED.keys()})
         if route == '/api/skill-uis':
             try:
                 with SKILL_UIS_LOCK:
@@ -1155,7 +1135,7 @@ class Handler(SimpleHTTPRequestHandler):
                         raise ValueError('url, session and terminal must be strings')
                     return self.send_json(PULL_REQUESTS.history(**fields, limit=payload.get('limit') or 50))
                 if self.path == '/api/inbox/clear-history':
-                    return self.send_json({'keys': clear_inbox_history(payload.get('keys'))})
+                    return self.send_json({'keys': INBOX_CLEARED.clear(payload.get('keys'))})
                 if self.path == '/api/projects/create':
                     return self.send_json(create_directory(payload.get('parent'), payload.get('name')))
                 if self.path == '/api/terminals/launch':

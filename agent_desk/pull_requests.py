@@ -23,6 +23,8 @@ import time
 from contextlib import closing
 from pathlib import Path
 
+from agent_desk import schema
+
 FIELDS = 'number,title,url,state,isDraft,reviewDecision,statusCheckRollup,latestReviews,headRefName'
 FAILED = {'FAILURE', 'ERROR', 'TIMED_OUT', 'CANCELLED', 'ACTION_REQUIRED', 'STARTUP_FAILURE'}
 PASSED = {'SUCCESS', 'NEUTRAL', 'SKIPPED'}
@@ -169,12 +171,8 @@ def reviews_of(data):
 
 
 def migrate(db):
-    """Bring the schema up to date. True when the database was new. A database a newer Agent Desk has migrated
-    further is left as it is: steps only add, so this version's queries still work on it."""
-    version = db.execute('PRAGMA user_version').fetchone()[0]
-    for number, step in enumerate(MIGRATIONS[version:], start=version + 1):
-        db.executescript(f'BEGIN; {step} PRAGMA user_version = {number}; COMMIT;')
-    return version == 0
+    """Bring this store's schema up to date. True when the database was new."""
+    return schema.migrate(db, MIGRATIONS)
 
 
 def parts_of(url):
