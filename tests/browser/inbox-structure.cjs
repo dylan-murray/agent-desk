@@ -48,9 +48,9 @@ const {chromium}=require('playwright');const withAccounts=require('./accounts-fi
  await page.locator('#open-inbox').click();await page.locator('.inbox-row').first().click();
  const body=page.locator('#inbox-detail .inbox-body');await body.locator('table').waitFor();
 
- // Hierarchy: the title in the header, then sections, subsections and fine print all distinct.
+ // Hierarchy: the title above the report, then sections, subsections and fine print all distinct.
  assert.equal(await body.locator('h1.document-title').count(),0);
- assert.equal(await page.locator('.inbox-head h2').textContent(),'Friday build debrief');
+ assert.equal(await page.locator('#inbox-detail > h2').textContent(),'Friday build debrief');
  assert.equal(await body.locator('h2.document-section').count(),2);
  assert.match(await body.locator('h2').first().textContent(),/01Where things stand/);
  assert.equal(await body.locator('h2').nth(1).textContent(),'Signals');

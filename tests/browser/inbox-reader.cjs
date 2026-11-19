@@ -1,4 +1,4 @@
-// The Inbox reader with mocked APIs: grouping, the report header, folding, links, the outline, and where replies go.
+// The Inbox with mocked APIs: what needs you, each report's own title, folding, links, the outline, and where replies go.
 const {chromium}=require('playwright');const assert=require('node:assert/strict');const evidence=require('./evidence.cjs');
 (async()=>{const browser=await chromium.launch({executablePath:process.env.CHROME_PATH||undefined,headless:true});try{
  const page=await browser.newPage({viewport:{width:1440,height:900}}),errors=[],sent=[];page.on('pageerror',e=>errors.push(e.message));
@@ -20,14 +20,13 @@ const {chromium}=require('playwright');const assert=require('node:assert/strict'
   return route.fulfill({json:data[path]||{}});});
  await page.goto(process.env.AGENT_DESK_TEST_URL||'http://127.0.0.1:4310/');await page.locator('#open-inbox').click();
  await page.waitForFunction(()=>document.querySelectorAll('.inbox-row').length===3);
- // Only the session stopped on a question waits on you; a blocked run is a report that says it is blocked.
- assert.deepEqual(await page.locator('.inbox-group').evaluateAll(g=>g.map(x=>[...x.children].map(c=>c.textContent))),[['Waiting on you','1'],['Reports','2']]);
- assert.deepEqual(await page.locator('.inbox-row').evaluateAll(rows=>rows.map(r=>[r.querySelector('strong').textContent,r.querySelector('.inbox-source').textContent,r.querySelector('.inbox-category').textContent])),
-  [['Run the migration on staging now?','Demo agent','Waiting on you'],['Flaky test fixer — run 08:00','Flaky test fixer','Blocked'],['Release notes since v0.9.0','Release notes researcher','Ready for review']]);
- assert.equal(await page.locator('[data-inbox-filter]').evaluateAll(b=>b.map(x=>x.dataset.inboxFilter).join(',')),'open,history');
+ // A session stopped on a question and a blocked run both need you; a finished report is ready for review.
+ assert.deepEqual(await page.locator('.inbox-row').evaluateAll(rows=>rows.map(r=>[r.querySelector('strong').textContent,r.querySelector('.special-meta').textContent,r.querySelector('.inbox-category').textContent])),
+  [['Run the migration on staging now?','Demo agent','Needs you'],['Flaky test fixer — run 08:00','Flaky test fixer','Needs you'],['Release notes since v0.9.0','Release notes researcher','Ready for review']]);
+ assert.equal(await page.locator('[data-inbox-filter]').evaluateAll(b=>b.map(x=>x.dataset.inboxFilter).join(',')),'open,attention,review,history,all');
 
  // A waiting session: its offered answers become buttons, and an answer goes into its prompt as written.
- assert.equal(await page.locator('.inbox-head h2').textContent(),'Run the migration on staging now?');
+ assert.equal(await page.locator('#inbox-detail > h2').textContent(),'Run the migration on staging now?');
  assert.equal(await page.locator('[data-inbox-action="reply"]').textContent(),'Answer');
  assert.deepEqual(await page.locator('.inbox-reply-quick button').allTextContents(),['Yes','No']);
  await page.screenshot({path:evidence('inbox-reader-01-waiting.png')});
@@ -37,8 +36,8 @@ const {chromium}=require('playwright');const assert=require('node:assert/strict'
 
  // A report whose session is still open: the reply is typed in, with the report it answers named.
  await page.locator('[data-inbox-item="fixer"]').click();
- assert.equal(await page.locator('.inbox-head h2').textContent(),'Flaky test fixer — run 08:00');
- assert.match(await page.locator('.inbox-meta').textContent(),/Blocked.*Flaky test fixer/);
+ assert.equal(await page.locator('#inbox-detail > h2').textContent(),'Flaky test fixer — run 08:00');
+ assert.match(await page.locator('#inbox-detail > .special-meta').textContent(),/Blocked/);assert.match(await page.locator('.inbox-kicker').textContent(),/Flaky test fixer/);
  assert.match(await page.locator('.inbox-reply-route').textContent(),/Typed into its session, or queued/);
  await page.locator('.inbox-body li').first().hover();await page.locator('.inbox-quote-reply').click();
  await page.locator('#inbox-reply-text').press('End');await page.keyboard.type('Yes, for this test only.');
@@ -52,9 +51,9 @@ const {chromium}=require('playwright');const assert=require('node:assert/strict'
  await page.waitForFunction(n=>document.querySelectorAll('.inbox-reply-status').length===n,1);
  assert.deepEqual([sent[1].body.target_id,sent[1].body.prompt],['t-open','Reply from your Inbox about “Flaky test fixer — run 08:00”:\n\n> OK to raise the wait to 20s?\n\nYes, for this test only.']);
 
- // A finished run's long report: title in the header, folded log and list, links, outline, and a follow-up pass.
+ // A finished run's long report: its own title, folded log and list, links, outline, and a follow-up pass.
  await page.locator('[data-inbox-item="notes"]').click();
- const head=page.locator('.inbox-head h2');assert.equal(await head.textContent(),'Release notes since v0.9.0');
+ const head=page.locator('#inbox-detail > h2');assert.equal(await head.textContent(),'Release notes since v0.9.0');
  assert.equal(await page.locator('#inbox-detail .inbox-body h1').count(),0,'the title is not repeated in the body');
  assert.equal(await page.locator('.inbox-show-all').allTextContents().then(t=>t.join('|')),'Show 3 more|Show all 18 lines');
  assert.equal(await page.locator('.inbox-body li:visible',{hasText:'Seven'}).count(),0);
@@ -64,12 +63,10 @@ const {chromium}=require('playwright');const assert=require('node:assert/strict'
  assert.deepEqual(await page.locator('.inbox-body a.inbox-footnote').evaluateAll(a=>a.map(x=>[x.textContent,x.title])),[['1','https://github.com/fixture/project/actions/runs/7/job/11']]);
  assert.deepEqual(await page.locator('.inbox-links li').allTextContents(),['github.com/fixture/project/actions/runs/7/job/11']);
  assert.deepEqual(await page.locator('.inbox-outline a').evaluateAll(a=>a.map(x=>[x.textContent,x.className.includes('sub')])),[['Features',false],['Plugins',true],['Fixes',false],['Logs',false],['Sources',false],['Open questions',false]]);
- assert.equal(await page.locator('.inbox-outline a.on').textContent(),'Features');
+ await page.locator('#inbox-detail').evaluate(d=>{d.style.scrollBehavior='auto';d.scrollTo(0,0);});
+ await page.waitForFunction(()=>document.querySelector('.inbox-outline a.on')?.textContent==='Features');
  await page.locator('#inbox-detail').evaluate(d=>{d.style.scrollBehavior='auto';d.scrollTo(0,d.scrollHeight);});
- await page.waitForFunction(()=>document.getElementById('inbox-detail').classList.contains('shrunk'));
  await page.waitForFunction(()=>document.querySelector('.inbox-outline a.on')?.textContent==='Open questions');
- // While you read, the header keeps only the title and the actions.
- await page.waitForFunction(()=>getComputedStyle(document.querySelector('.inbox-meta')).opacity==='0');
  await page.screenshot({path:evidence('inbox-reader-02-report-scrolled.png')});
  assert.match(await page.locator('.inbox-reply-route').textContent(),/session has ended/);
  await page.locator('#inbox-reply-text').fill('Call out the plugin move as a migration.');await page.locator('.inbox-reply-send').click();
@@ -80,7 +77,7 @@ const {chromium}=require('playwright');const assert=require('node:assert/strict'
  await page.setViewportSize({width:390,height:844});await page.waitForTimeout(300);
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth),390);
  assert.equal(await page.locator('.inbox-outline').isVisible(),false,'no outline at phone width');
- await page.locator('.inbox-head').scrollIntoViewIfNeeded();await page.screenshot({path:evidence('inbox-reader-03-narrow.png')});
+ await page.locator('#inbox-detail > h2').scrollIntoViewIfNeeded();await page.screenshot({path:evidence('inbox-reader-03-narrow.png')});
  assert.deepEqual(errors,[]);
- console.log('PASS: inbox reader: only waiting sessions wait on you, report titles in the header, quick answers, replies to open sessions and follow-up passes, drafts survive redraws, folded logs and lists, addresses and footnotes, nested outline that follows the scroll, shrinking header, 390px; mocked APIs');
+ console.log('PASS: inbox reader: waiting sessions and blocked runs need you, reports show their own title, quick answers, replies to open sessions and follow-up passes, drafts survive redraws, folded logs and lists, addresses and footnotes, nested outline that follows the scroll, 390px; mocked APIs');
 }finally{await browser.close()}})().catch(e=>{console.error(e);process.exit(1)});

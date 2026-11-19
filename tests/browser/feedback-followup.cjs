@@ -37,7 +37,7 @@ const capture=(page,name)=>page.screenshot({path:path.join(evidence,'2026-09-17-
     submissions.push(request.postDataJSON());await new Promise(resolve=>setTimeout(resolve,100));
     return route.fulfill(busy?{status:400,json:{error:'Agent prompt is busy. Nothing was sent.'}}:{json:{sent:true}});
    }
-   if(request.method()==='POST'&&!['/api/terminals/resize'].includes(p)){otherWrites.push(p);return route.fulfill({status:400,json:{error:'Fixture prevents live actions'}});}
+   if(request.method()==='POST'&&!['/api/terminals/resize','/api/editor/pending'].includes(p)){otherWrites.push(p);return route.fulfill({status:400,json:{error:'Fixture prevents live actions'}});}
    if(p==='/api/event-bus')return route.fulfill(unsupported?{status:404,json:{error:'Not found'}}:{json:{sources:[
     {id:'source-slack',name:'Slack triage',kind:'webhook',enabled:true,last_seen:1789659000,last_error:null,settings:{}},
     {id:'source-files',name:'Project files',kind:'directory',enabled:false,last_seen:null,last_error:null,settings:{path:'/tmp/agent-desk-example'}}

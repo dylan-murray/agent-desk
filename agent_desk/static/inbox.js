@@ -38,10 +38,9 @@
     // A pull request's checks failing or a new review on it, seen by the server's gh poll.
     const pullRequestItems=(demo?[]:pullRequestEvents).map(event=>({id:event.id,title:event.title,detail:event.detail,source:'Pull request · '+event.repo+' #'+event.number,
       category:event.state!=='review'?'history':'review',problem:event.state==='review'&&event.category==='attention'?(event.kind==='checks'?'Checks failing':'Changes requested'):null,state:event.state,terminal:event.terminal,created:event.created,url:event.url,pr:true}));
-    return [...live,...reports,...workflowItems,...coordinatorItems,...pullRequestItems].map(item=>item.category==='history'&&cleared.has(historyKey(item))?{...item,cleared:true}:item).sort((a,b)=>(a.category==='attention'?0:1)-(b.category==='attention'?0:1)||b.created-a.created);
+    return [...live,...reports,...workflowItems,...coordinatorItems,...pullRequestItems].map(item=>item.category==='review'&&item.problem?{...item,category:'attention'}:item).map(item=>item.category==='history'&&cleared.has(historyKey(item))?{...item,cleared:true}:item).sort((a,b)=>(a.category==='attention'?0:1)-(b.category==='attention'?0:1)||b.created-a.created);
   }
   function matches(item,key){if(item.cleared&&!(showCleared&&key==='history'))return false;return key==='open'?item.state==='review':key==='all'?true:item.category===key;}
-  // Only a session stopped on a question is waiting on you; everything else is a report that says how it went.
   const PROBLEM=new Set(['failed','blocked','interrupted']);
   const replies=new Map(),drafts=new Map();
   const live=id=>agents.some(agent=>agent.id===id&&agent.exit_code===null);
@@ -162,9 +161,8 @@
     const caret=focused?.tagName==='TEXTAREA'?[focused.selectionStart,focused.selectionEnd]:null;
     const scroll=el('inbox-list').scrollTop;
     const filters=el('inbox-filters');filters.replaceChildren();
-    for(const [key,label] of [['open','Open'],['history','History']]){
-      const button=action(label,()=>{filter=key;selected=null;render();});
-      button.append(text('span',String(all.filter(item=>matches(item,key)).length),'inbox-filter-count'));
+    for(const [key,label] of [['open','Open'],['attention','Needs you'],['review','Ready for review'],['history','History'],['all','All']]){
+      const button=action(`${label} ${all.filter(item=>matches(item,key)).length}`,()=>{filter=key;selected=null;render();});
       button.dataset.inboxFilter=key;button.setAttribute('aria-pressed',filter===key);filters.append(button);
     }
     const visible=all.filter(item=>matches(item,filter)&&`${item.title} ${titleOf(item)} ${item.detail} ${item.source} ${(item.findings||[]).map(f=>f.title+' '+f.detail).join(' ')}`.toLowerCase().includes(query));
@@ -173,54 +171,21 @@
     if(!visible.some(item=>item.id===selected))selected=visible[0]?.id||null;
     const list=el('inbox-list');list.replaceChildren();
     if(!visible.length)list.append(text('div',query?'No matching items.':filter==='open'?'You’re caught up. New findings and requests will appear here.':'No items in this view.','special-empty'));
-    // Open groups itself: what is waiting on you, then the reports.
-    const groups=filter==='open'?[['waiting','Waiting on you',visible.filter(item=>item.live)],['reports','Reports',visible.filter(item=>!item.live)]]:[[null,'',visible]];
-    for(const [key,label,members] of groups){
-      if(!members.length)continue;
-      if(key){const group=document.createElement('div');group.className='inbox-group '+key;group.append(text('span',label),text('span',String(members.length)));list.append(group);}
-      for(const item of members){
-        const row=document.createElement('button');row.className='inbox-row';row.dataset.inboxItem=item.id;row.setAttribute('aria-pressed',item.id===selected);
-        const dot=text('span','','inbox-dot');dot.dataset.tone=toneOf(item);dot.title=stateOf(item);
-        const when=text('span',item.created?deskSince(item.created):'','inbox-when');if(item.created)when.title=new Date(item.created*1000).toLocaleString();
-        row.append(dot,text('span',item.source,'special-meta inbox-source'),when,text('strong',titleOf(item)),
-          text('span',bodyOf(item).replace(/^[#=─_>-]+\s*/gm,'').replace(/\[([^\]]+)\]\([^)]*\)/g,'$1').replace(/[*`|]/g,'').replace(/\s+/g,' ').trim().slice(0,160),'inbox-excerpt'),
-          text('span',stateOf(item),'inbox-category '+toneOf(item)));
-        row.onclick=()=>{selected=item.id;render();};list.append(row);
-      }
+    for(const item of visible){
+      const row=document.createElement('button');row.className='inbox-row';row.dataset.inboxItem=item.id;row.setAttribute('aria-pressed',item.id===selected);
+      row.append(text('span',item.category==='attention'?'Needs you':item.category==='history'?(item.state==='done'?'Reviewed':'Dismissed'):'Ready for review','inbox-category '+item.category),text('strong',titleOf(item)),text('span',item.source,'special-meta'),
+        text('span',bodyOf(item).replace(/^[#=─_>-]+\s*/gm,'').replace(/\[([^\]]+)\]\([^)]*\)/g,'$1').replace(/[*`|]/g,'').slice(0,160),'inbox-excerpt'));
+      row.onclick=()=>{selected=item.id;render();};list.append(row);
     }
     list.scrollTop=scroll;
     const detail=el('inbox-detail');const detailScroll=detail.scrollTop;
     const previous=detail.dataset.item;detail.replaceChildren();detail.dataset.item=selected||'';detail.onscroll=null;
     const item=visible.find(item=>item.id===selected);
-    if(!item){detail.classList.remove('shrunk');detail.append(text('div','Select an item to see its context and next steps.','special-empty'));return;}
-    // The header stays while you read: the report's own title, what it is, and what you can do with it.
-    const head=document.createElement('header');head.className='inbox-head';
-    const heading=document.createElement('div');heading.className='inbox-heading';
-    const meta=document.createElement('p');meta.className='inbox-meta';
-    const state=text('span',stateOf(item),'inbox-state');state.dataset.tone=toneOf(item);meta.append(state,text('span',item.source,'inbox-meta-source'));
-    if(item.created){const when=text('span',deskSince(item.created),'inbox-meta-when');when.title=new Date(item.created*1000).toLocaleString();meta.append(when);}
-    const popout=text('a','Open as document ↗','inbox-popout');popout.href='/inbox-document.html?kind='+(item.live?'session':item.coord?'worker':item.workflow?'workflow':item.pr?'pr':'automation')+'&item='+encodeURIComponent(item.live?item.terminal:item.id);popout.target='_blank';popout.rel='noopener noreferrer';meta.append(popout);
-    heading.append(text('h2',titleOf(item)),meta);
-    const actions=document.createElement('div');actions.className='special-actions inbox-head-actions';
-    const route=replyRoute(item);let reply=null;
-    if(route){const button=action(item.live?'Answer':'Reply',()=>{reply?.box.scrollIntoView({behavior:'smooth',block:'center'});setTimeout(()=>reply?.area.focus(),250);});button.classList.add('inbox-reply-open');button.dataset.inboxAction='reply';actions.append(button);}
-    if(item.terminal){const button=action(item.live?'Open session':'Open session',()=>openSession(item.terminal));button.dataset.inboxAction='session';actions.append(button);}
-    if(item.workflow)actions.append(action('Open output',()=>window.openWorkflowRun?.(item.id)));
-    if(item.coord){
-      if(item.state==='review'){
-        actions.append(action('Mark handled',async()=>{await terminalRequest('/api/coordinator-events/ack',{id:item.id,controller:item.coord});await refreshCoordinatorEvents();}));
-        if(item.terminal&&item.connection!=='policy-blocked'&&!(item.harness==='grok'&&item.connection==='delivery-error'))actions.append(action('Retry notification',async()=>{
-          if(!confirm('This may send a duplicate notification. Check the coordinator first. Retry?'))return;
-          await terminalRequest('/api/coordinator-events/retry',{id:item.id,controller:item.coord});await refreshCoordinatorEvents();
-        }));
-      }
-    }else if(!item.live){
-      for(const [label,state] of item.state==='review'?[['Mark reviewed','done'],['Dismiss','dismissed']]:[['Reopen','review']]){
-        const button=action(label,async()=>{await terminalRequest(item.workflow?'/api/workflows/review':item.pr?'/api/pull-requests/review':'/api/special-agents/review',{id:item.id,state});if(item.workflow)await window.refreshWorkflows();else if(item.pr)await refreshPullRequests();else await window.refreshAutomations();});
-        button.dataset.inboxAction=state;if(state==='dismissed')button.classList.add('inbox-quiet');actions.append(button);
-      }
-    }
-    head.append(heading,actions);detail.append(head);
+    if(!item){detail.append(text('div','Select an item to see its context and next steps.','special-empty'));return;}
+    detail.append(text('p',item.live?'SESSION · RESPONSE REQUESTED':item.coord?'WORKER REPLY · '+item.source:item.pr?item.source.toUpperCase():'AUTOMATION · '+item.source,'inbox-kicker'),text('h2',titleOf(item)));
+    if(item.created)detail.append(text('p',new Date(item.created*1000).toLocaleString()+(item.problem&&item.category!=='history'?' · '+item.problem:''),'special-meta'));
+    const popout=text('a','Open as document ↗','inbox-popout');popout.href='/inbox-document.html?kind='+(item.live?'session':item.coord?'worker':item.workflow?'workflow':item.pr?'pr':'automation')+'&item='+encodeURIComponent(item.live?item.terminal:item.id);popout.target='_blank';popout.rel='noopener noreferrer';detail.append(popout);
+    // The report reads in a column; when it has sections, an outline of them sits on the right.
     const doc=document.createElement('div');doc.className='inbox-doc';const column=document.createElement('div');column.className='inbox-column';doc.append(column);detail.append(doc);
     const body=document.createElement('article');body.className='inbox-body';renderDocument(body,bodyOf(item));column.append(body);
     for(const finding of item.findings||[]){
@@ -232,13 +197,32 @@
     if(item.url&&/^https?:\/\//.test(item.url)){
       const link=text('a',item.pr?'Open on GitHub ↗':'View source ↗','inbox-source-link');link.href=item.url;link.target='_blank';link.rel='noreferrer';column.append(link);
     }
-    if(item.live)column.append(text('p','This request stays open until the agent’s prompt clears. Opening the session does not approve it.','muted'));
     foldLongBlocks(column);footnoteLinks(column);
+    const actions=document.createElement('div');actions.className='special-actions inbox-actions-row';
+    const route=replyRoute(item);let reply=null;
+    if(route){const button=action(item.live?'Answer':'Reply',()=>{reply?.box.scrollIntoView({behavior:'smooth',block:'center'});setTimeout(()=>reply?.area.focus(),250);});button.classList.add('inbox-reply-open');button.dataset.inboxAction='reply';actions.append(button);}
+    if(item.terminal){const button=action(item.live?'Open session to respond':'Open session',()=>openSession(item.terminal));button.dataset.inboxAction='session';actions.append(button);}
+    if(item.workflow)actions.append(action('Open output',()=>window.openWorkflowRun?.(item.id)));
+    if(item.coord){
+      if(item.state==='review'){
+        actions.append(action('Mark handled',async()=>{await terminalRequest('/api/coordinator-events/ack',{id:item.id,controller:item.coord});await refreshCoordinatorEvents();}));
+        if(item.terminal&&item.connection!=='policy-blocked'&&!(item.harness==='grok'&&item.connection==='delivery-error'))actions.append(action('Retry notification',async()=>{
+          if(!confirm('This may send a duplicate notification. Check the coordinator first. Retry?'))return;
+          await terminalRequest('/api/coordinator-events/retry',{id:item.id,controller:item.coord});await refreshCoordinatorEvents();
+        }));
+      }
+    }else if(!item.live){
+      for(const [label,state] of item.state==='review'?[['Mark reviewed','done'],['Dismiss','dismissed']]:[['Reopen','review']]){
+        const button=action(label,async()=>{await terminalRequest(item.workflow?'/api/workflows/review':item.pr?'/api/pull-requests/review':'/api/special-agents/review',{id:item.id,state});if(item.workflow)await window.refreshWorkflows();else if(item.pr)await refreshPullRequests();else await window.refreshAutomations();});button.dataset.inboxAction=state;actions.append(button);
+      }
+    }
+    column.append(actions);
+    if(item.live)column.append(text('p','This request stays open until the agent’s prompt clears. Opening the session does not approve it.','muted'));
     if(route)reply=replyBox(item,route,column);
     const spy=outline(detail,column,doc);
-    detail.onscroll=()=>{detail.classList.toggle('shrunk',detail.scrollTop>40);spy?.();};
+    detail.onscroll=()=>spy?.();
     if(previous===selected)detail.scrollTop=detailScroll;else detail.scrollTop=0;
-    detail.classList.toggle('shrunk',detail.scrollTop>40);spy?.();
+    spy?.();
     if(focusAttribute){const replacement=[...document.querySelectorAll(`[${focusAttribute}]`)].find(node=>node.getAttribute(focusAttribute)===focusKey);replacement?.focus({preventScroll:true});if(caret&&replacement?.tagName==='TEXTAREA')replacement.setSelectionRange(...caret);}
   }
   const dismissDialog=document.createElement('dialog');dismissDialog.className='schedule-delete-dialog inbox-dismiss-dialog';dismissDialog.setAttribute('aria-labelledby','inbox-dismiss-title');
