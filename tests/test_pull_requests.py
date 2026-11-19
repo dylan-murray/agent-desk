@@ -11,7 +11,8 @@ import base64
 import sqlite3
 from contextlib import closing
 
-from agent_desk.pull_requests import PullRequests, checks_of, links_in
+from agent_desk import pull_requests
+from agent_desk.pull_requests import MIGRATIONS, PullRequests, checks_of, links_in
 
 FAKE_GH = Path(__file__).with_name('fixtures') / 'fake_gh.py'
 PR_URL = 'https://github.com/example-org/example-repo/pull/42'
@@ -453,6 +454,29 @@ class StoredPullRequestTests(PrintedLinkTests):
         listed = self.folder / 'data' / 'listed.json'
         listed.write_text(json.dumps([event]))
         self.assertEqual(PullRequests(self.folder / 'data' / 'listed.sqlite3', legacy=listed, now=self.now).snapshot()['events'], [event])
+
+    def test_the_schema_moves_forward_one_step_at_a_time(self):
+        self.answer(pull_request())
+        self.poll()
+        self.assertEqual(self.rows('PRAGMA user_version'), [(len(MIGRATIONS),)])
+        added = MIGRATIONS + ('ALTER TABLE pull_requests ADD COLUMN fixture_note TEXT;',)
+        with mock.patch.object(pull_requests, 'MIGRATIONS', added):
+            self.assertEqual([pr['number'] for pr in PullRequests(self.db, now=self.now).history()['pull_requests']], [42])
+            # A second open finds nothing left to run, so the column isn't added twice.
+            self.assertEqual(PullRequests(self.db, now=self.now).history()['pull_requests'][0]['fixture_note'], None)
+        self.assertEqual(self.rows('PRAGMA user_version'), [(len(added),)])
+        # A database a newer desk migrated further is left alone, and still works.
+        self.assertEqual([pr['number'] for pr in PullRequests(self.db, now=self.now).history()['pull_requests']], [42])
+        self.assertEqual(self.rows('PRAGMA user_version'), [(len(added),)])
+
+    def test_a_step_that_fails_leaves_the_database_as_it_was(self):
+        self.answer(pull_request())
+        self.poll()
+        broken = MIGRATIONS + ('ALTER TABLE pull_requests ADD COLUMN half_done TEXT; ALTER TABLE missing ADD COLUMN x TEXT;',)
+        with mock.patch.object(pull_requests, 'MIGRATIONS', broken), self.assertRaises(sqlite3.OperationalError):
+            PullRequests(self.db, now=self.now).history()
+        self.assertEqual(self.rows('PRAGMA user_version'), [(len(MIGRATIONS),)])
+        self.assertNotIn('half_done', [column[1] for column in self.rows('PRAGMA table_info(pull_requests)')])
 
     def test_building_one_touches_nothing_on_disk(self):
         PullRequests(self.folder / 'elsewhere' / 'pull-requests.sqlite3', legacy=self.folder / 'elsewhere' / 'pull-requests.json')

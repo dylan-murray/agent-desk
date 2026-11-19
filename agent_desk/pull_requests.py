@@ -56,7 +56,9 @@ MERGE_RECHECK_GAP = 3
 KEPT_UNSEEN = 365 * 86400
 PRUNE_EVERY = 3600
 HISTORY_LIMIT = 200
-SCHEMA = '''
+# Schema changes, in order. A database's PRAGMA user_version is how many it has had: opening it runs the rest, each
+# once and in its own transaction. Change the schema by adding a step, never by editing one that has shipped.
+MIGRATIONS = ('''
 CREATE TABLE IF NOT EXISTS pull_requests (
   url TEXT PRIMARY KEY, repo TEXT NOT NULL, number INTEGER NOT NULL, title TEXT, branch TEXT,
   state TEXT, checks TEXT, review TEXT,
@@ -69,7 +71,7 @@ CREATE TABLE IF NOT EXISTS pull_request_sightings (
 CREATE INDEX IF NOT EXISTS pull_request_sightings_session ON pull_request_sightings (native_session);
 CREATE INDEX IF NOT EXISTS pull_requests_last_seen ON pull_requests (last_seen_at);
 CREATE TABLE IF NOT EXISTS pull_request_events (id TEXT PRIMARY KEY, created REAL NOT NULL, data TEXT NOT NULL);
-'''
+''',)
 
 
 def run(argv, cwd, timeout=20):
@@ -166,6 +168,15 @@ def reviews_of(data):
             for r in data.get('latestReviews') or [] if r.get('id') and str(r.get('state') or '').upper() in VERBS}
 
 
+def migrate(db):
+    """Bring the schema up to date. True when the database was new. A database a newer Agent Desk has migrated
+    further is left as it is: steps only add, so this version's queries still work on it."""
+    version = db.execute('PRAGMA user_version').fetchone()[0]
+    for number, step in enumerate(MIGRATIONS[version:], start=version + 1):
+        db.executescript(f'BEGIN; {step} PRAGMA user_version = {number}; COMMIT;')
+    return version == 0
+
+
 def parts_of(url):
     """The repository (owner/name) and number of a pull request link."""
     match = PR_PARTS.match(url)
@@ -206,9 +217,7 @@ class PullRequests:
                 return
             now = time.time() if self.created is None else self.created
             with closing(self.open()) as db, db:
-                fresh = not db.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'pull_requests'").fetchone()
-                db.executescript(SCHEMA)
-                if fresh and self.legacy:
+                if migrate(db) and self.legacy:
                     self.import_legacy(db, self.legacy, now)
             self.prune(now)
             self.load()
