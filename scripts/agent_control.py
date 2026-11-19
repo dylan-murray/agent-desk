@@ -156,6 +156,11 @@ def main():
     route.add_argument('--route-file', help='UTF-8 file with the task to route (for longer tasks)')
     launch.add_argument('--harness', choices=['claude', 'codex', 'grok'], help='With routing: only consider models that run in this harness')
     launch.add_argument('argv', nargs=argparse.REMAINDER, help='-- executable arg ...')
+    history = commands.add_parser('pr-history', help='Pull requests the desk has seen, with the terminals and harness sessions that showed them')
+    history.add_argument('--url'); history.add_argument('--session', help='A harness session id'); history.add_argument('--terminal')
+    history.add_argument('--limit', type=int, default=50)
+    hidden = commands.add_parser('pr-hidden', help='Pull requests a terminal hid'); hidden.add_argument('id')
+    unhide = commands.add_parser('pr-unhide', help='Show a pull request a terminal hid again'); unhide.add_argument('id'); unhide.add_argument('url')
     checkpoint=commands.add_parser('publish-check',help='Open configured local review UIs and check approval before publishing')
     checkpoint.add_argument('--coordinator',required=True);checkpoint.add_argument('--target',required=True);checkpoint.add_argument('--base',required=True)
     args = parser.parse_args()
@@ -165,6 +170,12 @@ def main():
             result=client.request('/api/coordinators/publish-check',{'id':args.coordinator,'target':args.target,'base':args.base})
         elif args.command == 'list':
             result = {'agents': client.agents()}
+        elif args.command == 'pr-history':
+            result = client.request('/api/pull-requests/history', {'url': args.url, 'session': args.session, 'terminal': args.terminal, 'limit': args.limit})
+        elif args.command == 'pr-hidden':
+            result = client.request('/api/pull-requests/hidden', {'id': args.id})
+        elif args.command == 'pr-unhide':
+            result = client.request('/api/pull-requests/unhide', {'id': args.id, 'url': args.url})
         elif args.command == 'read':
             if not 1 <= args.tail <= 131072 or (args.cursor is not None and args.cursor < 0):
                 raise ValueError('Tail must be 1–131072 bytes and cursor must be nonnegative')

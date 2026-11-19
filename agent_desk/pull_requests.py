@@ -5,16 +5,22 @@ links the terminal prints (gh pr create prints one, agents paste theirs) join it
 
 Nothing here reaches the page as an error: without gh, a sign-in, a GitHub remote or a pull
 request for the branch, a folder simply has no pull request. GitHub Enterprise works the same way:
-gh knows which hosts it is signed into, so any remote with a host is asked about."""
+gh knows which hosts it is signed into, so any remote with a host is asked about.
+
+Every pull request the desk sees is kept in SQLite with each terminal that showed it, and that terminal's
+harness session, so a pull request leads back to the conversation it came from. Hiding one is a mark on
+that terminal's sighting, and it can be undone. Pull requests nobody has seen for a year are dropped."""
 import base64
 import json
 import os
 import re
 import secrets
 import shutil
+import sqlite3
 import subprocess
 import threading
 import time
+from contextlib import closing
 from pathlib import Path
 
 FIELDS = 'number,title,url,state,isDraft,reviewDecision,statusCheckRollup,latestReviews,headRefName'
@@ -46,6 +52,24 @@ SCAN_OVERLAP = 400
 # terminal is rarer, so it waits less; a redrawn screen can print the same line again.
 RECHECK_GAP = 15
 MERGE_RECHECK_GAP = 3
+# A pull request no terminal has shown or polled for this long is dropped, with its sightings.
+KEPT_UNSEEN = 365 * 86400
+PRUNE_EVERY = 3600
+HISTORY_LIMIT = 200
+SCHEMA = '''
+CREATE TABLE IF NOT EXISTS pull_requests (
+  url TEXT PRIMARY KEY, repo TEXT NOT NULL, number INTEGER NOT NULL, title TEXT, branch TEXT,
+  state TEXT, checks TEXT, review TEXT,
+  first_seen_at REAL NOT NULL, last_seen_at REAL NOT NULL, closed_at REAL);
+CREATE TABLE IF NOT EXISTS pull_request_sightings (
+  url TEXT NOT NULL REFERENCES pull_requests(url) ON DELETE CASCADE, terminal_id TEXT NOT NULL,
+  native_session TEXT, harness TEXT, cwd TEXT, source TEXT NOT NULL,
+  first_seen_at REAL NOT NULL, last_seen_at REAL NOT NULL, hidden_at REAL,
+  PRIMARY KEY (url, terminal_id));
+CREATE INDEX IF NOT EXISTS pull_request_sightings_session ON pull_request_sightings (native_session);
+CREATE INDEX IF NOT EXISTS pull_requests_last_seen ON pull_requests (last_seen_at);
+CREATE TABLE IF NOT EXISTS pull_request_events (id TEXT PRIMARY KEY, created REAL NOT NULL, data TEXT NOT NULL);
+'''
 
 
 def run(argv, cwd, timeout=20):
@@ -142,8 +166,17 @@ def reviews_of(data):
             for r in data.get('latestReviews') or [] if r.get('id') and str(r.get('state') or '').upper() in VERBS}
 
 
+def parts_of(url):
+    """The repository (owner/name) and number of a pull request link."""
+    match = PR_PARTS.match(url)
+    if not match:
+        raise ValueError('Not a pull request link')
+    return f'{match.group(2)}/{match.group(3)}', int(match.group(4))
+
+
 class PullRequests:
-    def __init__(self, path, interval=None, output=None):
+    def __init__(self, path, interval=None, output=None, legacy=None, now=None):
+        """path is the SQLite file. legacy is the JSON file earlier versions kept, read once into a new database."""
         self.path = Path(path)
         self.interval = interval or float(os.environ.get('AGENT_DESK_PR_POLL_SECONDS') or 90)
         # output(terminal, cursor) returns {data: base64, cursor}: the terminal's bytes from cursor.
@@ -156,20 +189,113 @@ class PullRequests:
         self.overlap = {}
         self.repos = {}
         self.merges = {}
+        # Each running terminal's harness session, harness and folder, recorded with what it shows.
+        self.terminals = {}
         self.stopping = threading.Event()
         self.woken = threading.Event()
+        self.legacy, self.created = (Path(legacy) if legacy else None), now
+        self.events, self.forgotten = [], {}
+        self.ready, self.preparing, self.pruned = False, threading.Lock(), 0
+
+    def prepare(self):
+        """Open the database on first use, so building this touches nothing on disk. Call before taking self.lock."""
+        if self.ready:
+            return
+        with self.preparing:
+            if self.ready:
+                return
+            now = time.time() if self.created is None else self.created
+            with closing(self.open()) as db, db:
+                fresh = not db.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'pull_requests'").fetchone()
+                db.executescript(SCHEMA)
+                if fresh and self.legacy:
+                    self.import_legacy(db, self.legacy, now)
+            self.prune(now)
+            self.load()
+            self.ready = True
+
+    def open(self):
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        db = sqlite3.connect(self.path, timeout=10)
+        self.path.chmod(0o600)
+        db.execute('PRAGMA foreign_keys = ON')
+        return db
+
+    def connect(self):
+        self.prepare()
+        return self.open()
+
+    def load(self):
+        with closing(self.open()) as db:
+            events = [json.loads(data) for data, in db.execute('SELECT data FROM pull_request_events ORDER BY rowid')]
+            hidden = {}
+            for terminal, url in db.execute('SELECT terminal_id, url FROM pull_request_sightings WHERE hidden_at IS NOT NULL'):
+                hidden.setdefault(terminal, set()).add(url)
+        with self.lock:
+            self.events, self.forgotten = events, hidden
+
+    def import_legacy(self, db, legacy, now):
         try:
-            saved = json.loads(self.path.read_text())
+            saved = json.loads(legacy.read_text())
         except (OSError, ValueError):
-            saved = []
-        # Earlier versions saved only the list of Inbox items.
+            return
+        # The first versions saved only the list of Inbox items.
         saved = {'events': saved} if isinstance(saved, list) else saved if isinstance(saved, dict) else {}
-        self.events = [e for e in saved.get('events') or [] if isinstance(e, dict)]
-        self.forgotten = {key: set(value) for key, value in (saved.get('forgotten') or {}).items() if isinstance(value, list)}
+        events = [e for e in saved.get('events') or [] if isinstance(e, dict) and isinstance(e.get('id'), str)][-EVENT_LIMIT:]
+        db.executemany('INSERT OR IGNORE INTO pull_request_events (id, created, data) VALUES (?, ?, ?)',
+                       [(e['id'], float(e.get('created') or now), json.dumps(e)) for e in events])
+        for terminal, urls in (saved.get('forgotten') or {}).items():
+            for url in urls if isinstance(urls, list) else []:
+                try:
+                    self.ensure(db, url, now)
+                except ValueError:
+                    continue
+                db.execute('INSERT OR IGNORE INTO pull_request_sightings (url, terminal_id, source, first_seen_at, last_seen_at, hidden_at) '
+                           "VALUES (?, ?, 'imported', ?, ?, ?)", (url, terminal, now, now, now))
+
+    def ensure(self, db, url, now):
+        repo, number = parts_of(url)
+        db.execute('INSERT INTO pull_requests (url, repo, number, first_seen_at, last_seen_at) VALUES (?, ?, ?, ?, ?) '
+                   'ON CONFLICT (url) DO UPDATE SET last_seen_at = MAX(last_seen_at, excluded.last_seen_at)', (url, repo, number, now, now))
+
+    def sighted(self, db, url, terminal, source, now, hidden=None):
+        meta = self.terminals.get(terminal) or {}
+        self.ensure(db, url, now)
+        db.execute('INSERT INTO pull_request_sightings (url, terminal_id, native_session, harness, cwd, source, first_seen_at, last_seen_at, hidden_at) '
+                   'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (url, terminal_id) DO UPDATE SET '
+                   'native_session = COALESCE(excluded.native_session, native_session), harness = COALESCE(excluded.harness, harness), '
+                   'cwd = COALESCE(excluded.cwd, cwd), last_seen_at = excluded.last_seen_at, hidden_at = COALESCE(excluded.hidden_at, hidden_at)',
+                   (url, terminal, meta.get('native_session'), meta.get('harness'), meta.get('cwd'), source, now, now, hidden))
+
+    def record(self, pr, terminals, source, now):
+        """Keep what gh said about a pull request, and that these terminals showed it. Polling carries on if the disk can't."""
+        try:
+            with closing(self.connect()) as db, db:
+                self.ensure(db, pr['url'], now)
+                db.execute('UPDATE pull_requests SET title = ?, branch = ?, state = ?, checks = ?, review = ?, '
+                           "closed_at = CASE WHEN ? IN ('open', 'draft') THEN NULL ELSE COALESCE(closed_at, ?) END WHERE url = ?",
+                           (pr['title'], pr['branch'], pr['state'], pr['checks'], pr['review'], pr['state'], now, pr['url']))
+                for terminal in terminals:
+                    self.sighted(db, pr['url'], terminal, source, now)
+        except sqlite3.Error:
+            pass
+
+    def prune(self, now):
+        """Drop pull requests nobody has seen for a year. At most once an hour."""
+        if now - self.pruned < PRUNE_EVERY:
+            return 0
+        self.pruned = now
+        with closing(self.open()) as db, db:
+            dropped = db.execute('DELETE FROM pull_requests WHERE last_seen_at < ?', (now - KEPT_UNSEEN,)).rowcount
+        return dropped
 
     def status(self, repo, terminal=None, now=None):
         """The terminal's main pull request with the others it printed under 'others', or None."""
         now = time.time() if now is None else now
+        try:
+            self.prepare()
+        except sqlite3.Error:
+            pass
         with self.lock:
             entry = self.folders.get(repo) if repo else None
             hidden = self.forgotten.get(terminal, ())
@@ -188,38 +314,98 @@ class PullRequests:
             return dict(main, others=others)
 
     def snapshot(self):
+        try:
+            self.prepare()
+        except sqlite3.Error:
+            pass
         with self.lock:
             return {'events': [dict(e) for e in self.events]}
 
     def review(self, payload):
         if payload.get('state') not in ('review', 'done', 'dismissed'):
             raise ValueError('Invalid review state')
+        self.prepare()
         with self.lock:
             event = next((e for e in self.events if e['id'] == payload.get('id')), None)
             if not event:
                 raise ValueError('Pull request item not found')
             event['state'] = payload['state']
-            self.save()
+            with closing(self.open()) as db, db:
+                db.execute('UPDATE pull_request_events SET data = ? WHERE id = ?', (json.dumps(event), event['id']))
             return dict(event)
 
-    def forget(self, terminal, url, repo=None):
+    def forget(self, terminal, url, repo=None, now=None):
         """Stop showing a pull request in this terminal, even if it is printed again: one it printed, or
         its folder's branch pull request, open or not. It sends nothing more to the Inbox for this terminal.
-        A new pull request on that branch has a new URL, so it still shows."""
+        A new pull request on that branch has a new URL, so it still shows. unhide() undoes it."""
+        now = time.time() if now is None else now
+        self.prepare()
         with self.lock:
             entry = self.folders.get(repo) if repo else None
-            if url not in self.printed.get(terminal, {}) and not (entry and entry['pr'] and entry['pr']['url'] == url):
+            branch = bool(entry and entry['pr'] and entry['pr']['url'] == url)
+            if url not in self.printed.get(terminal, {}) and not branch:
                 raise ValueError('This terminal is not showing that pull request')
+            with closing(self.open()) as db, db:
+                self.sighted(db, url, terminal, 'branch' if branch else 'printed', now, hidden=now)
             self.forgotten.setdefault(terminal, set()).add(url)
             self.printed.get(terminal, {}).pop(url, None)
-            self.save()
         return {'ok': True}
 
-    def save(self):
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        temp = self.path.with_suffix('.tmp')
-        temp.write_text(json.dumps({'events': self.events[-EVENT_LIMIT:], 'forgotten': {k: sorted(v) for k, v in self.forgotten.items() if v}}, indent=2) + '\n')
-        os.replace(temp, self.path)
+    def unhide(self, terminal, url, now=None):
+        """Show a pull request this terminal hid again. One it printed comes back to its list; a branch pull
+        request comes back as the chip once the folder is still on that branch."""
+        now = time.time() if now is None else now
+        self.prepare()
+        with self.lock:
+            if url not in self.forgotten.get(terminal, ()):
+                raise ValueError('This terminal is not hiding that pull request')
+            with closing(self.open()) as db, db:
+                source = db.execute('SELECT source FROM pull_request_sightings WHERE url = ? AND terminal_id = ?', (url, terminal)).fetchone()
+                db.execute('UPDATE pull_request_sightings SET hidden_at = NULL, last_seen_at = ? WHERE url = ? AND terminal_id = ?',
+                           (now, url, terminal))
+            self.forgotten[terminal].discard(url)
+            if source and source[0] != 'branch' and terminal in self.terminals:
+                self.printed.setdefault(terminal, {})[url] = now
+        self.woken.set()
+        return {'ok': True}
+
+    def hidden(self, terminal):
+        """The pull requests this terminal hid, newest first."""
+        with closing(self.connect()) as db:
+            db.row_factory = sqlite3.Row
+            rows = db.execute('SELECT p.url, p.repo, p.number, p.title, p.state, s.hidden_at FROM pull_request_sightings s '
+                              'JOIN pull_requests p ON p.url = s.url WHERE s.terminal_id = ? AND s.hidden_at IS NOT NULL '
+                              'ORDER BY s.hidden_at DESC', (terminal,)).fetchall()
+        return {'hidden': [dict(row) for row in rows]}
+
+    def history(self, url=None, session=None, terminal=None, limit=50):
+        """Pull requests with every terminal and harness session that showed them: one link, one session's,
+        one terminal's, or the most recently seen."""
+        limit = max(1, min(int(limit), HISTORY_LIMIT))
+        with closing(self.connect()) as db:
+            db.row_factory = sqlite3.Row
+            if url:
+                rows = db.execute('SELECT * FROM pull_requests WHERE url = ?', (url.rstrip('/'),)).fetchall()
+            elif session or terminal:
+                column = 'native_session' if session else 'terminal_id'
+                rows = db.execute(f'SELECT * FROM pull_requests WHERE url IN (SELECT url FROM pull_request_sightings WHERE {column} = ?) '
+                                  'ORDER BY last_seen_at DESC LIMIT ?', (session or terminal, limit)).fetchall()
+            else:
+                rows = db.execute('SELECT * FROM pull_requests ORDER BY last_seen_at DESC LIMIT ?', (limit,)).fetchall()
+            found = []
+            for row in rows:
+                sightings = db.execute('SELECT terminal_id, native_session, harness, cwd, source, first_seen_at, last_seen_at, hidden_at '
+                                       'FROM pull_request_sightings WHERE url = ? ORDER BY first_seen_at', (row['url'],)).fetchall()
+                found.append(dict(row, sightings=[dict(s) for s in sightings]))
+        return {'pull_requests': found}
+
+    def remember(self, added):
+        """Keep new Inbox items, and only the latest EVENT_LIMIT of them. The database is open by then."""
+        with closing(self.open()) as db, db:
+            db.executemany('INSERT OR IGNORE INTO pull_request_events (id, created, data) VALUES (?, ?, ?)',
+                           [(e['id'], e['created'], json.dumps(e)) for e in added])
+            db.execute('DELETE FROM pull_request_events WHERE rowid NOT IN (SELECT rowid FROM pull_request_events ORDER BY rowid DESC LIMIT ?)',
+                       (EVENT_LIMIT,))
 
     def scan(self, terminal, now):
         """Read the terminal's new output for pull request links. True when it shows a merge it hasn't shown before."""
@@ -248,6 +434,13 @@ class PullRequests:
             seen = self.merges.setdefault(terminal, set())
             merges = {a or b for a, b in MERGED.findall(ESCAPES.sub('', text))} - seen
             seen.update(merges)
+        if found:
+            try:
+                with closing(self.connect()) as db, db:
+                    for url in found:
+                        self.sighted(db, url, terminal, 'printed', now)
+            except (sqlite3.Error, ValueError):
+                pass
         return bool(merges)
 
     def hurry(self, terminals, now=None, gap=RECHECK_GAP):
@@ -270,14 +463,23 @@ class PullRequests:
         now = time.time() if now is None else now
         gh = shutil.which('gh')
         repos, running, repo_of = {}, {}, {}
+        sessions = {}
         for terminal in terminals:
             if terminal.get('exit_code') is None:
                 running[terminal['id']] = terminal.get('cwd')
+                sessions[terminal['id']] = {key: terminal.get(key) for key in ('native_session', 'harness', 'cwd')}
                 if terminal.get('repo'):
                     repos.setdefault(terminal['repo'], terminal['id'])
                     repo_of[terminal['id']] = terminal['repo']
+        try:
+            self.prepare()
+            if self.prune(now):
+                self.load()
+        except sqlite3.Error:
+            pass
         with self.lock:
             self.repos = repo_of
+            self.terminals = sessions
             for repo in [r for r in self.folders if r not in repos or not gh]:
                 del self.folders[repo]
             for store in (self.printed, self.cursors, self.overlap, self.merges):
@@ -357,6 +559,9 @@ class PullRequests:
             watching = [t for t, r in self.repos.items() if r == repo and pr and pr['url'] not in self.forgotten.get(t, ())]
             if watching and previous and previous['pr'] and previous['branch'] == branch and previous['pr']['number'] == pr['number']:
                 self.compare(previous, pr, reviews, Path(repo).name, branch, terminal if terminal in watching else watching[0], now)
+            here = [t for t, r in self.repos.items() if r == repo]
+        if pr:
+            self.record(pr, here, 'branch', now)
 
     def observe_link(self, gh, url, terminal, cwd, now):
         previous = self.links.get(url)
@@ -376,6 +581,8 @@ class PullRequests:
             self.links[url] = {'pr': pr, 'reviews': reviews, 'failures': 0, 'closed': closed, 'next': now + self.interval}
             if previous and previous['pr']:
                 self.compare(previous, pr, reviews, url.split('/')[4], pr['branch'] or f"#{pr['number']}", terminal, now)
+            printers = [t for t, printed in self.printed.items() if url in printed]
+        self.record(pr, printers, 'printed', now)
 
     def compare(self, previous, pr, reviews, repo_name, branch, terminal, now):
         added = []
@@ -391,12 +598,15 @@ class PullRequests:
             verb = VERBS[fresh[0][1]] if len(fresh) == 1 else 'reviewed'
             added.append(dict(kind='review', category='attention' if any(s == 'CHANGES_REQUESTED' for _, s in fresh) else 'review',
                               title=f"{who} {verb} #{pr['number']} {pr['title']}", detail=f'New review on `{branch}`.\n\n{lines}'))
-        for item in added:
-            self.events.append(dict(item, id='pr-' + secrets.token_hex(8), terminal=terminal, repo=repo_name, branch=branch,
-                                    number=pr['number'], url=pr['url'], state='review', created=now))
+        added = [dict(item, id='pr-' + secrets.token_hex(8), terminal=terminal, repo=repo_name, branch=branch,
+                      number=pr['number'], url=pr['url'], state='review', created=now) for item in added]
         if added:
+            self.events.extend(added)
             del self.events[:-EVENT_LIMIT]
-            self.save()
+            try:
+                self.remember(added)
+            except sqlite3.Error:
+                pass
 
     def failure_log(self, cwd, repo, terminal, url=None, lines=60):
         """The failed log tail of the first failing GitHub Actions job on one of this terminal's pull requests."""

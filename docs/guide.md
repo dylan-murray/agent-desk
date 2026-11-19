@@ -162,7 +162,18 @@ Agent Desk asks the GitHub CLI with `gh pr view` in that folder, once per reposi
 
 Pull request links a terminal prints also join it: `gh pr create` prints one, and agents usually paste theirs, so pull requests opened from another worktree or a stack show up with no setup. The branch's pull request stays the main chip, and the others sit behind a **+N** segment, which turns red when one of them has failing checks or requested changes. Click it for a list of every pull request from that terminal with its branch, checks and review, a link to open it, the failed-log button, and **×** to stop showing one there. A terminal without a branch pull request leads with the most recent one it printed. Merged or closed printed pull requests leave after a day. Once the branch's own pull request is merged or closed, the chip gets a **×** too, which hides it in that terminal; a new pull request on the branch still shows. Each one is polled with `gh pr view <url>` every 90 seconds, once however many terminals printed it.
 
-When checks turn to failing, or a new review arrives, the Inbox gets an item that links to the terminal and to GitHub: failing checks and requested changes under **Needs you**, other reviews under **Ready for review**. The first look at a pull request after a terminal starts, or after Agent Desk restarts, only sets the baseline, so changes made while nothing was watching are not reported. Inbox items, and the pull requests you removed with **×**, are kept in `pull-requests.json` (per port for side desks) in the data folder.
+When checks turn to failing, or a new review arrives, the Inbox gets an item that links to the terminal and to GitHub: failing checks and requested changes under **Needs you**, other reviews under **Ready for review**. The first look at a pull request after a terminal starts, or after Agent Desk restarts, only sets the baseline, so changes made while nothing was watching are not reported. Inbox items, and the pull requests you removed with **×**, are kept in `pull-requests.sqlite3` (per port for side desks) in the data folder. On its first start, a desk reads the `pull-requests.json` earlier versions kept into it and leaves the file alone.
+
+Every pull request the desk shows is recorded there with each terminal that showed it, how (its folder's branch or printed), its folder, harness and harness session, so a pull request leads back to the conversation it came from. Pull requests no terminal has shown or polled for a year are dropped. Agents can read and change this with `scripts/agent_control.py`:
+
+```sh
+python -m scripts.agent_control pr-history --url https://github.com/owner/repo/pull/42   # every terminal and session that showed it
+python -m scripts.agent_control pr-history --session <harness session id>             # what one conversation showed
+python -m scripts.agent_control pr-hidden <terminal id>                               # what that terminal hid
+python -m scripts.agent_control pr-unhide <terminal id> <pull request url>            # show it there again
+```
+
+The same is available as `POST /api/pull-requests/history`, `/hidden` and `/unhide`. Un-hiding takes effect at once: a printed pull request returns to the terminal's list, and a branch pull request returns as the chip.
 
 When a failed check is a GitHub Actions job, the chip has a **Paste the failed log** button. It fetches the failed job's log with `gh run view --job <id> --log-failed` and pastes its last 60 lines, with the check name and pull request, into that terminal's prompt. Nothing is submitted: read it and press Enter to send it to the agent.
 
