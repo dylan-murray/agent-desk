@@ -1,43 +1,48 @@
 #special-agents-page{overflow:auto;padding:28px;min-height:0}.special-heading{display:flex;align-items:center;justify-content:space-between;gap:18px}.special-heading h1{margin:8px 0;font-size:28px;letter-spacing:-.8px}.special-heading p{color:var(--ink-2)}.special-layout{display:grid;grid-template-columns:minmax(260px,.85fr) minmax(320px,1.3fr);gap:28px;margin-top:24px}.special-layout h2{font-size:16px}.special-layout label{font-size:12px;color:var(--ink-2)}.special-card{padding:18px;border:1px solid #303035;border-radius:10px;background:#171719;margin:12px 0}.special-card h3{margin:0;font-size:15px}.special-card p{font-size:13px;line-height:1.6;overflow-wrap:anywhere}.special-meta{color:#9e9ea8;font-size:11px!important}.special-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}.special-result{white-space:pre-wrap;max-height:320px;overflow:auto}.special-empty{padding:24px 0;color:#93939d;line-height:1.7}.has-reviews{color:#f0c786}.special-card a{color:#9ccaff}#special-agent-dialog{width:min(610px,94vw);max-height:90vh;overflow:auto}#special-agent-dialog label{display:block;margin:14px 0 6px}#special-agent-dialog input,#special-agent-dialog textarea,#special-agent-dialog select{width:100%;box-sizing:border-box}#special-agent-dialog details{margin-top:18px}#special-agent-dialog .muted{font-size:12px;line-height:1.6}@media(max-width:1000px){.special-layout{grid-template-columns:1fr}.top-actions{flex-wrap:wrap}#special-agents-page{padding:16px}.special-heading{align-items:flex-start}}
-.automation-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,310px),1fr));gap:16px}.inbox-body{overflow-wrap:anywhere}.top-actions{flex-wrap:wrap}
+.automation-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,310px),1fr));gap:16px}#inbox-page{padding:28px;overflow:auto;min-height:0}#inbox-page:not(.hidden){display:flex;flex-direction:column}.inbox-controls{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:18px 0}.inbox-controls .search{max-width:300px}#inbox-filters{display:flex;gap:6px;flex-wrap:wrap}#inbox-filters .button[aria-pressed=true]{background:#292935;border-color:#777095;color:#e4dff4}.inbox-layout{display:grid;border:1px solid #303035;border-radius:10px;min-height:330px;overflow:hidden;flex:1}#inbox-list{overflow:auto;border-right:1px solid #303035;min-width:0}#inbox-detail{overflow:auto;min-width:0}#inbox-detail>h2{overflow-wrap:anywhere}#inbox-detail a{color:#9ccaff}.inbox-row{display:flex;flex-direction:column;width:100%;border:0;border-bottom:1px solid #29292f;background:transparent;color:inherit;text-align:left;cursor:pointer}.inbox-row strong{overflow-wrap:anywhere}.inbox-category.attention{color:#e1b976}.inbox-category.history{color:#91919c}.inbox-excerpt{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}.inbox-body{overflow-wrap:anywhere}#inbox-list .special-empty{padding:24px}#inbox-detail .muted{font-size:12px;line-height:1.6}.top-actions{flex-wrap:wrap}@media(max-width:1000px){#inbox-page{padding:16px}.inbox-layout{overflow:visible;flex:none}#inbox-list{border-right:0;border-bottom:1px solid #303035}.inbox-controls .search{max-width:none;width:100%}}
 
 /* Reports read as documents, with restrained typography and bounded line length. */
 .inbox-body{white-space:normal;max-width:76ch}.inbox-body p{margin:0 0 1em}.inbox-body h3{margin:1.8em 0 .7em}.inbox-body h3:first-child{margin-top:1em}.inbox-body ul,.inbox-body ol{padding-left:1.5em;margin:.6em 0 1.4em}.inbox-body strong{font-weight:600}.inbox-body code{font-family:ui-monospace,monospace;font-size:.9em}.inbox-body .coord-inline-code{color:#bdd3ef;background:#252a32;padding:2px 5px;border-radius:4px}.inbox-body .coord-code-block{max-width:100%;margin:1.3em 0;border:1px solid #33343b;border-radius:8px;overflow:hidden;background:#111216}.inbox-body .coord-code-language{padding:6px 14px;color:#9799a8;border-bottom:1px solid #2e3037;font-size:11px}.inbox-body pre{overflow:auto;margin:0;padding:14px;white-space:pre;line-height:1.6}.inbox-finding{max-width:76ch;border-top:1px solid #303139}.inbox-finding summary{cursor:pointer;font-weight:600}.inbox-finding .inbox-body{margin-top:20px}
 
-.inbox-body{font-size:14px;color:#bfc3cc;line-height:1.85}.inbox-body p{margin-bottom:18px}.inbox-body h3{font-size:16px;font-weight:600;line-height:1.55;letter-spacing:0;color:#e0e3e9;margin-top:32px;margin-bottom:14px}.inbox-body li{padding-left:4px}.inbox-body li::marker{color:#777f8e}.inbox-body a{color:#a8bddb!important;text-decoration:underline;text-decoration-color:#60748d;text-underline-offset:3px}.inbox-body strong{color:#d9dde5}.inbox-body pre{border:0!important;border-radius:0!important;background:transparent!important}.inbox-sources{margin:12px 0 28px;border-bottom:1px solid #2b2d32;padding-bottom:14px}.inbox-sources summary{cursor:pointer;font-size:12px;color:#a2a9b6}.inbox-sources p{font-size:12px;line-height:1.8;margin-top:12px;color:#a2a9b6}.inbox-finding{border-color:#2b2d32;padding-top:24px;margin-top:32px}.inbox-finding summary{font-size:14px;line-height:1.6;color:#c5cbd6}
-@media(max-width:600px){.inbox-body{font-size:14px;line-height:1.8}}
-
-
+/* Reading view: quieter chrome and a comfortable document measure. */
+.inbox-layout{grid-template-columns:minmax(240px,300px) minmax(0,1fr)}#inbox-detail{padding:40px clamp(24px,5vw,80px);scroll-behavior:smooth}#inbox-detail> *{max-width:680px;margin-left:auto;margin-right:auto}#inbox-detail>h2{margin-top:10px;margin-bottom:12px}.inbox-kicker{font-size:10px;color:#9398a3;letter-spacing:.08em;margin-top:0;margin-bottom:0}#inbox-detail>.special-meta{color:#9398a3;padding-bottom:24px;border-bottom:1px solid #2b2d32;margin-bottom:28px}.inbox-body{font-size:14px;color:#bfc3cc;line-height:1.85}.inbox-body p{margin-bottom:18px}.inbox-body h3{font-size:16px;font-weight:600;line-height:1.55;letter-spacing:0;color:#e0e3e9;margin-top:32px;margin-bottom:14px}.inbox-body li{padding-left:4px}.inbox-body li::marker{color:#777f8e}.inbox-body a{color:#a8bddb!important;text-decoration:underline;text-decoration-color:#60748d;text-underline-offset:3px}.inbox-body strong{color:#d9dde5}.inbox-body pre{border:0!important;border-radius:0!important;background:transparent!important}.inbox-row{padding:18px 20px;gap:6px}.inbox-row[aria-pressed=true]{box-shadow:inset 2px 0 #829ab9}.inbox-row strong{font-size:13px;font-weight:550;line-height:1.5}.inbox-row .special-meta{font-size:11px;color:#8e95a1}.inbox-excerpt{font-size:11px;line-height:1.65;color:#9097a3}.inbox-category{color:#9eacc1;font-size:10px}.inbox-sources{margin:12px 0 28px;border-bottom:1px solid #2b2d32;padding-bottom:14px}.inbox-sources summary{cursor:pointer;font-size:12px;color:#a2a9b6}.inbox-sources p{font-size:12px;line-height:1.8;margin-top:12px;color:#a2a9b6}.inbox-finding{border-color:#2b2d32;padding-top:24px;margin-top:32px}.inbox-finding summary{font-size:14px;line-height:1.6;color:#c5cbd6}#inbox-detail>.special-actions{padding-top:24px;margin-top:28px;border-top:1px solid #2b2d32}
+@media(max-width:1000px){.inbox-layout{grid-template-columns:1fr}#inbox-list{max-height:240px}#inbox-detail{padding:28px 22px}}@media(max-width:600px){#inbox-detail{padding:24px 18px}.inbox-body{font-size:14px;line-height:1.8}}
+/* Keep accepted report typography on Agent Desk's neutral surfaces. */
+.inbox-layout{background:var(--page);border-color:var(--border)}#inbox-list{background:var(--surface);border-color:var(--border)}#inbox-detail{background:var(--page)}#inbox-detail>h2{font-family:inherit;font-size:18px;font-weight:550;line-height:1.55;letter-spacing:0;color:var(--ink-1)}.inbox-row[aria-pressed=true]{background:var(--surface-raised)}@media(max-width:600px){#inbox-detail>h2{font-size:17px}}
+#inbox-detail>.inbox-popout{display:block;font-size:12px;margin-top:-12px;margin-bottom:24px;text-decoration:none;color:#9eb5d3}#inbox-detail>.inbox-popout:hover{text-decoration:underline}
 
 /* Document hierarchy: major sections differ from short paragraph labels. */
 .inbox-body h3.document-section{display:flex;align-items:baseline;gap:12px;font-size:20px;font-weight:600;letter-spacing:-.25px;line-height:1.45;margin:36px 0 18px;padding-top:0;border-top:0;color:#e1e3e8}.inbox-body .document-section-number{flex:none;font-size:11px;font-weight:500;letter-spacing:.06em;color:#9099a8;font-variant-numeric:tabular-nums}.inbox-body h3:not(.document-section){font-size:15px;font-weight:600;margin:26px 0 12px;color:#d4d8e0}.inbox-body p{line-height:1.8}.inbox-body li{margin:8px 0;line-height:1.8}.inbox-body li>p{margin:6px 0 0}.inbox-body .document-section:first-child{padding-top:0;border-top:0;margin-top:24px}@media(max-width:600px){.inbox-body h3.document-section{font-size:18px;gap:10px;margin-top:32px}}
 
+/* Inbox list: one clear title size instead of four competing small ones. */
+#inbox-filters{gap:4px}
+#inbox-filters .button{background:transparent;border-color:transparent;color:var(--ink-2)}
+#inbox-filters .button:hover{background:#ffffff0f;border-color:transparent;color:var(--ink-1)}
+#inbox-filters .button[aria-pressed=true]{background:var(--accent-soft);border-color:#35557b;color:#d2e5fc}
+.inbox-row{padding:14px 18px;gap:5px;transition:background .12s}
+.inbox-row:hover{background:#ffffff08}
+.inbox-row strong{font-size:14px;font-weight:600;line-height:1.45;color:var(--ink-1);letter-spacing:-.1px}
+.inbox-row .special-meta{font-size:11.5px;color:#8a919d}
+.inbox-excerpt{font-size:12.5px;line-height:1.6;color:#a2a9b5;-webkit-line-clamp:2}
+.inbox-kicker{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#868d99}
+.inbox-category.attention{color:#e1b976}
+.inbox-row[aria-pressed=true]{background:var(--surface-raised);box-shadow:inset 3px 0 var(--accent)}
+.inbox-row[aria-pressed=true] strong{color:#fff}
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+/* Bulk dismiss sits with the filters, quiet until a view has something to clear. */
+/* Search sits on the list it filters; the toolbar keeps filters left and list actions right. */
+.inbox-controls{align-items:center}
 .inbox-actions{display:flex;align-items:center;gap:2px;margin-left:auto}
 .inbox-bulk{height:30px;padding:0 10px;border:1px solid transparent;border-radius:7px;background:transparent;font-size:12px;color:#8a919d;transition:color .12s,background .12s}
 .inbox-bulk:hover{color:var(--ink-1);background:#ffffff0d}
 .inbox-bulk:active{background:#ffffff14}
 .inbox-bulk:focus-visible{outline:none;border-color:#4c8cdb;box-shadow:0 0 0 3px #4c8cdb2e}
-
-
-
-
-
-
+.inbox-list-pane{display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--surface);border-right:1px solid var(--border)}
+.inbox-list-pane #inbox-list{flex:1;border-right:0}
+.inbox-search{margin:10px 10px 4px;padding:0 10px;height:30px;gap:8px;border-radius:7px;background:var(--page);flex:none}
+.inbox-search svg{width:14px;height:14px;flex-shrink:0;color:#7d8696}
+.inbox-search input{font-size:12px}
+@media(max-width:1000px){.inbox-list-pane{border-right:0;border-bottom:1px solid var(--border)}.inbox-list-pane #inbox-list{border-bottom:0}}
 .inbox-dismiss-dialog .inbox-dismiss-scope{margin:0 0 10px;font-size:13px;color:var(--ink-1)}
 .inbox-dismiss-dialog .inbox-dismiss-confirm{color:#e6aaa8;border-color:#e6aaa845;background:#e6aaa80c}
 
@@ -91,98 +96,44 @@
 .automation-delete-what{color:var(--ink-muted);text-align:right}
 .automation-delete-dialog .automation-delete-confirm{color:#e6aaa8;border-color:#e6aaa845;background:#e6aaa80c}
 
-/* ---- Inbox reader: one bar, the list grouped by what needs you, and the report given the height ---- */
-#inbox-page{padding:0;overflow:hidden;min-height:0}
-#inbox-page:not(.hidden){display:flex;flex-direction:column}
-.inbox-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 20px;border-bottom:1px solid var(--border);background:#0e0e10}
-.inbox-bar h1{margin:0 6px 0 0;font-size:15px;font-weight:600;letter-spacing:-.1px;color:var(--ink-1)}
-#inbox-filters{display:flex;gap:2px}
-#inbox-filters .button{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border:1px solid transparent;border-radius:7px;background:transparent;color:var(--ink-2);font-size:12.5px}
-#inbox-filters .button:hover{background:#ffffff0f;color:var(--ink-1)}
-#inbox-filters .button[aria-pressed=true]{background:var(--accent-soft);color:#d2e5fc}
-.inbox-filter-count{font-size:11px;color:#8a919d;font-variant-numeric:tabular-nums}
-#inbox-filters .button[aria-pressed=true] .inbox-filter-count{color:#9ebded}
-#inbox-status{margin:0;font-size:12px}
-#inbox-status:empty{display:none}
-.inbox-bar-space{flex:1}
-.inbox-actions{display:flex;align-items:center;gap:2px}
-.inbox-bulk{height:28px;padding:0 10px;border:1px solid transparent;border-radius:7px;background:transparent;font-size:12px;color:#8a919d;transition:color .12s,background .12s}
-.inbox-bulk:hover{color:var(--ink-1);background:#ffffff0d}
-.inbox-bulk:active{background:#ffffff14}
-.inbox-bulk:focus-visible{outline:none;border-color:#4c8cdb;box-shadow:0 0 0 3px #4c8cdb2e}
-.inbox-bar .inbox-search{display:flex;align-items:center;gap:8px;width:240px;height:30px;padding:0 10px;border-radius:7px;background:var(--page)}
-.inbox-bar .inbox-search svg{width:14px;height:14px;flex-shrink:0;color:#7d8696}
-.inbox-bar .inbox-search input{min-width:0;font-size:12px}
-.inbox-layout{flex:1;min-height:0;display:grid;grid-template-columns:320px minmax(0,1fr);background:var(--page)}
-.inbox-list-pane{display:flex;flex-direction:column;min-width:0;min-height:0;background:#121214;border-right:1px solid var(--border)}
-#inbox-list{flex:1;overflow:auto;min-width:0}
-#inbox-list .special-empty{padding:24px}
-.inbox-group{display:flex;justify-content:space-between;padding:14px 16px 6px;border-bottom:1px solid var(--border);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:#767c87}
-.inbox-group.waiting{color:#e1b976}
-.inbox-row{display:grid;grid-template-columns:8px minmax(0,1fr) auto;gap:3px 10px;align-items:baseline;width:100%;padding:12px 14px 12px 16px;border:0;border-bottom:1px solid var(--border);background:transparent;color:inherit;text-align:left;cursor:pointer;transition:background .12s}
-.inbox-row:hover{background:#ffffff05}
-.inbox-row[aria-pressed=true]{background:var(--surface-raised);box-shadow:inset 2px 0 var(--accent)}
-.inbox-dot{width:7px;height:7px;border-radius:50%;align-self:center;background:#9ebded}
-.inbox-dot[data-tone=waiting]{background:var(--amber)}
-.inbox-dot[data-tone=problem]{background:#e6aaa8}
-.inbox-dot[data-tone=done]{background:#5f646d}
-.inbox-row .inbox-source{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11.5px;color:#9aa1ad}
-.inbox-when{font-size:11px;color:#767c87;white-space:nowrap}
-.inbox-row strong{grid-column:2/4;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13.5px;font-weight:600;color:var(--ink-1)}
-.inbox-excerpt{grid-column:2/4;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:#8f96a2}
-/* The state is in the dot's colour and title; screen readers hear it as words. */
-.inbox-row .inbox-category{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}
-#inbox-detail{position:relative;overflow:auto;min-width:0;min-height:0;scroll-behavior:smooth;background:var(--page)}
-#inbox-detail>.special-empty{padding:40px 28px}
-.inbox-head{position:sticky;top:0;z-index:5;display:flex;align-items:flex-start;gap:16px;padding:18px 28px 14px;border-bottom:1px solid var(--border);background:#0c0c0de8;backdrop-filter:blur(10px);transition:padding .18s}
-.inbox-heading{flex:1;min-width:0}
-.inbox-head h2{margin:0;font-size:20px;font-weight:600;letter-spacing:-.2px;line-height:1.35;color:var(--ink-1);overflow-wrap:anywhere;transition:font-size .18s}
-.inbox-meta{display:flex;flex-wrap:nowrap;align-items:center;gap:6px;min-width:0;white-space:nowrap;margin:4px 0 0;max-height:48px;overflow:hidden;font-size:12px;color:#8a919d;transition:opacity .15s,max-height .18s,margin .18s}
-.inbox-meta>*{flex:none}
-.inbox-meta>*+*::before{content:'·';margin-right:6px;color:#5f646d}
-.inbox-meta .inbox-meta-source{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
-.inbox-state{color:#9ebded}
-.inbox-state[data-tone=waiting]{color:#e1b976}
-.inbox-state[data-tone=problem]{color:#e6aaa8}
-.inbox-state[data-tone=done]{color:#8a919d}
-.inbox-meta .inbox-popout{color:#9eb5d3;text-decoration:none}
-.inbox-meta .inbox-popout:hover{text-decoration:underline}
-.inbox-head .inbox-head-actions{flex:none;margin:0;gap:6px;flex-wrap:nowrap}
-.inbox-head .inbox-head-actions .button{height:30px;padding:0 11px;font-size:12px;white-space:nowrap}
-.inbox-head .inbox-reply-open{background:var(--accent-soft);border-color:#4c8cdb66;color:#cfe0f7}
-.inbox-head .inbox-reply-open:hover{background:#3987e533}
-.inbox-head .inbox-quiet{background:transparent;border-color:transparent;color:#9aa1ad}
-.inbox-head .inbox-quiet:hover{background:#ffffff0d;color:var(--ink-1)}
-/* Once you start reading, the header keeps only the title and the actions. */
-#inbox-detail.shrunk .inbox-head{padding:10px 28px}
-#inbox-detail.shrunk .inbox-head h2{font-size:14.5px}
-#inbox-detail.shrunk .inbox-meta{opacity:0;max-height:0;margin:0}
-.inbox-doc{display:grid;grid-template-columns:minmax(0,1fr);padding:28px 28px 80px}
-.inbox-doc:has(.inbox-outline){grid-template-columns:minmax(0,1fr) 200px}
-.inbox-column{min-width:0;width:100%;max-width:680px;margin:0 auto}
+/* ---- Inbox: the old list and report given the full height, with the report's outline, folding, links and Reply ---- */
+#inbox-page{padding:20px 28px 28px}
+#inbox-page>.inbox-heading{margin:0 0 8px;padding:0;align-items:center}
+#inbox-page>.inbox-heading h1{margin:0;font-size:22px;letter-spacing:-.4px}
+#inbox-page>#inbox-status{margin:0 0 6px}
+#inbox-page>#inbox-status:empty{display:none}
+#inbox-page .inbox-controls{margin:0 0 14px;padding:0}
+#inbox-page .inbox-layout{min-height:0}
+#inbox-detail{padding:32px clamp(22px,3vw,44px) 60px}
+#inbox-detail:has(.inbox-outline)>*{max-width:900px}
+#inbox-detail>.inbox-doc{margin-left:auto;margin-right:auto}
+.inbox-doc{display:grid;grid-template-columns:minmax(0,1fr)}
+.inbox-doc:has(.inbox-outline){grid-template-columns:minmax(0,680px) 190px;gap:0 30px}
+.inbox-column{min-width:0}
 .inbox-column>.inbox-body{max-width:none}
+.inbox-column>.special-actions{padding-top:24px;margin-top:28px;border-top:1px solid #2b2d32}
 .inbox-column>.muted{font-size:12px;line-height:1.6}
+.inbox-column .inbox-reply-open{background:var(--accent-soft);border-color:#4c8cdb66;color:#cfe0f7}
+.inbox-column .inbox-reply-open:hover{background:#3987e533}
 .inbox-source-link{display:inline-block;margin-top:16px;color:#9ccaff}
-.inbox-outline{position:sticky;top:64px;align-self:start;padding:4px 0 0 20px;font-size:12px}
+.inbox-outline{position:sticky;top:8px;align-self:start;padding:4px 0 0;font-size:12px}
 .inbox-outline-heading{margin:0 0 8px;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:#767c87}
 .inbox-outline a{display:block;padding:4px 0 4px 10px;border-left:1px solid var(--border);color:#8f96a2;text-decoration:none;line-height:1.35}
 .inbox-outline a:hover{color:var(--ink-1)}
 .inbox-outline a.on{border-left-color:var(--accent);color:#cfe0f7}
 .inbox-outline a.sub{padding-left:20px;font-size:11.5px}
-/* Tables keep short cells whole and scroll sideways; logs wrap instead of running off the edge. */
 .inbox-column .inbox-body table{width:max-content;min-width:100%}
 .inbox-column .inbox-body th,.inbox-column .inbox-body td{white-space:nowrap}
 .inbox-column .inbox-body td:nth-child(2){white-space:normal;min-width:22ch}
 .inbox-column .coord-code-block pre{white-space:pre-wrap;overflow-wrap:anywhere}
 .inbox-column pre.inbox-folded{position:relative;max-height:220px;overflow:hidden}
-.inbox-column pre.inbox-folded::after{content:'';position:absolute;left:0;right:0;bottom:0;height:56px;background:linear-gradient(transparent,#121217);pointer-events:none}
-.inbox-show-all{display:inline-flex;margin:-6px 0 18px;padding:3px 10px;border:1px solid var(--border-strong);border-radius:999px;background:transparent;color:#9ebded;font-size:12px;cursor:pointer}
+.inbox-column pre.inbox-folded::after{content:'';position:absolute;left:0;right:0;bottom:0;height:56px;background:linear-gradient(transparent,var(--page))}
+.inbox-show-all{display:inline-flex;margin:-6px 0 18px;padding:3px 10px;border:1px solid var(--border-strong);border-radius:999px;background:transparent;color:#9ccaff;font-size:12px;cursor:pointer}
 .inbox-show-all:hover{background:var(--accent-soft)}
-/* Links: an address on its own line, a small number inside a sentence, the addresses gathered at the end. */
-.inbox-body a.inbox-address{display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom;color:#c3c2b7!important;text-decoration:none}
+.inbox-body a.inbox-address{display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom;color:#8f96a2!important;text-decoration:none!important}
 .inbox-body a.inbox-address b{color:#a3c6e7;font-weight:500}
 .inbox-body a.inbox-address:hover b{text-decoration:underline}
-.inbox-body a.inbox-footnote{display:inline-grid;place-items:center;min-width:17px;height:17px;margin:0 1px;padding:0 4px;border-radius:5px;background:var(--accent-soft);color:#9ebded!important;font-size:10.5px;font-weight:600;text-decoration:none;vertical-align:2px}
+.inbox-body a.inbox-footnote{display:inline-grid;place-items:center;min-width:17px;height:17px;margin:0 1px;padding:0 4px;border-radius:5px;background:var(--accent-soft);color:#9ccaff!important;font-size:10.5px;line-height:1;text-decoration:none!important;vertical-align:2px}
 .inbox-body a.inbox-footnote:hover{background:#3987e533}
 .inbox-links{margin:40px 0 0;padding-top:18px;border-top:1px solid var(--border)}
 .inbox-links h4{margin:0 0 10px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#767c87}
@@ -191,13 +142,12 @@
 .inbox-links a{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#c3c2b7;text-decoration:none}
 .inbox-links a b{color:var(--ink-1);font-weight:500}
 .inbox-links a:hover b{text-decoration:underline}
-/* Replying from the report: it says where the reply goes before you send it. */
 .inbox-reply{margin:36px 0 0;padding:16px;border:1px solid var(--border-strong);border-radius:12px;background:var(--surface)}
 .inbox-reply label{display:block;font-size:13px;font-weight:600;color:var(--ink-1)}
 .inbox-reply-route{margin:3px 0 12px;font-size:12px;line-height:1.5;color:#8f96a2}
 .inbox-reply-route.waiting{color:#e1b976}
 .inbox-reply-quick{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
-.inbox-reply textarea{display:block;width:100%;min-height:76px;padding:10px 12px;border:1px solid var(--border-strong);border-radius:8px;background:var(--page);color:var(--ink-1);font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;resize:vertical}
+.inbox-reply textarea{display:block;width:100%;min-height:76px;padding:10px 12px;border:1px solid var(--border-strong);border-radius:8px;background:var(--page);color:var(--ink-1);font:13px/1.5 inherit;resize:vertical}
 .inbox-reply textarea:focus{outline:none;border-color:#4c8cdb;box-shadow:0 0 0 3px #4c8cdb2e}
 .inbox-reply-row{display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-top:10px}
 .inbox-reply-hint{font-size:11px;color:#767c87}
@@ -207,20 +157,8 @@
 .inbox-reply-who{font-size:11.5px;color:#8a919d}
 .inbox-reply-said{margin:3px 0 6px!important;font-size:13px;color:var(--ink-1);white-space:pre-wrap}
 .inbox-reply-status{font-size:11.5px;color:#7fc6a8}
-.inbox-quote-reply{display:inline-flex;align-items:center;margin-left:8px;padding:1px 8px;border:1px solid transparent;border-radius:999px;background:transparent;color:#9ebded;font-size:11.5px;cursor:pointer;opacity:0;transition:opacity .12s;vertical-align:1px}
+.inbox-quote-reply{display:inline-flex;align-items:center;margin-left:8px;padding:1px 8px;border:1px solid transparent;border-radius:999px;background:transparent;color:#9ccaff;font-size:11px;cursor:pointer;opacity:0;transition:opacity .12s}
 .inbox-body li:hover>.inbox-quote-reply,.inbox-quote-reply:focus-visible{opacity:1;border-color:#4c8cdb44}
-@media(max-width:1100px){.inbox-doc:has(.inbox-outline){grid-template-columns:minmax(0,1fr)}.inbox-outline{display:none}}
-/* Narrow: the list sits above the report, the page scrolls, and the header stays with the report. */
-@media(max-width:1000px){
- #inbox-page{overflow:auto}
- .inbox-bar{padding:10px 14px}
- .inbox-bar .inbox-search{width:100%;order:9}
- .inbox-layout{display:block;flex:none}
- .inbox-list-pane{border-right:0;border-bottom:1px solid var(--border)}
- #inbox-list{max-height:34vh}
- #inbox-detail{overflow:visible}
- .inbox-head{position:static;flex-direction:column;gap:10px;padding:14px 16px 12px}
- .inbox-head .inbox-head-actions{flex-wrap:wrap}
- .inbox-doc{padding:20px 16px 60px}
- .inbox-quote-reply{opacity:1}
-}
+@media(max-width:1180px){.inbox-doc:has(.inbox-outline){grid-template-columns:minmax(0,1fr)}.inbox-outline{display:none}#inbox-detail:has(.inbox-outline)>*{max-width:680px}}
+@media(max-width:1000px){#inbox-page{overflow:auto;padding:16px}.inbox-quote-reply{opacity:1}}
+

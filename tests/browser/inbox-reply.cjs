@@ -42,7 +42,7 @@ const note = message => {if (process.env.VERBOSE) console.log('  ok ' + message)
 
   await page.locator('#open-inbox').click();
   const row = page.locator('.inbox-row', {hasText: 'Triage digest'});await row.click();
-  assert.equal(await page.locator('.inbox-head h2').textContent(), 'Triage digest');
+  assert.equal(await page.locator('#inbox-detail > h2').textContent(), 'Triage digest');
   assert.match(await page.locator('.inbox-reply-route').textContent(), /session has ended\. Sending starts a follow-up pass/);
   assert.equal(await page.locator('.inbox-reply-send').textContent(), 'Start follow-up pass');
   const question = page.locator('.inbox-body li', {hasText: 'Should #ops count as in scope?'});
