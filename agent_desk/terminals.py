@@ -215,7 +215,7 @@ class TerminalSession:
         question = ('Claude channels are blocked by organization policy. Replies are saved in Inbox; ask this coordinator to read them manually.' if state=='policy-blocked'
                     else 'Grok needs your response. Open its terminal to use the native approval controls.' if state=='needs-input'
                     else 'Coordinator event delivery failed. Inspect the terminal and Inbox before retrying.' if state=='delivery-error' else None)
-        return dict(id=self.id, name=self.name, cwd=self.cwd, harness=Path(self.argv[0]).name,
+        return dict(id=self.id, name=self.name, cwd=self.cwd, harness=Path(self.argv[0]).name, native_session=self.native_session,
                     display_name=self.display_name, launch_profile=self.launch_profile,
                     status=status or ('unknown' if code is None else 'completed' if code == 0 else 'error'),
                     source='terminal', task='Interactive terminal', terminal_id=self.id, parent_id=self.parent_id,
