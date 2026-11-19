@@ -12,9 +12,11 @@ import os
 import re
 import secrets
 import shutil
+import sqlite3
 import subprocess
 import threading
 import time
+from contextlib import closing, contextmanager
 from pathlib import Path
 
 FIELDS = 'number,title,url,state,isDraft,reviewDecision,statusCheckRollup,latestReviews,headRefName'
@@ -158,14 +160,69 @@ class PullRequests:
         self.merges = {}
         self.stopping = threading.Event()
         self.woken = threading.Event()
+        self.load_lock = threading.Lock()
+        self._events = self._forgotten = None
+
+    # The database opens on first use, so building a store does not touch the data folder.
+    def load(self):
+        with self.load_lock:
+            if self._events is not None:
+                return
+            with self.db() as db:
+                self.import_legacy(db, self.path.with_suffix('.json'))
+                # Every Inbox item stays in the database; the newest EVENT_LIMIT are the ones the Inbox shows.
+                rows = db.execute('SELECT id, created, state, payload FROM (SELECT rowid AS seq, id, created, state, payload FROM events ORDER BY created DESC, rowid DESC LIMIT ?) ORDER BY created, seq', (EVENT_LIMIT,)).fetchall()
+                forgotten = {}
+                for terminal, url in db.execute('SELECT terminal, url FROM forgotten'):
+                    forgotten.setdefault(terminal, set()).add(url)
+            self._forgotten = forgotten
+            self._events = [dict(json.loads(payload), id=identity, created=created, state=state) for identity, created, state, payload in rows]
+
+    @property
+    def events(self):
+        self.load()
+        return self._events
+
+    @property
+    def forgotten(self):
+        self.load()
+        return self._forgotten
+
+    @contextmanager
+    def db(self):
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        os.close(os.open(self.path, os.O_CREAT | os.O_RDWR, 0o600))
+        self.path.chmod(0o600)
+        with closing(sqlite3.connect(self.path, timeout=10)) as connection:
+            connection.executescript('''
+            CREATE TABLE IF NOT EXISTS events (id TEXT PRIMARY KEY, created REAL NOT NULL, state TEXT NOT NULL, payload TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS forgotten (terminal TEXT NOT NULL, url TEXT NOT NULL, PRIMARY KEY (terminal, url));
+            ''')
+            with connection:
+                yield connection
+
+    @staticmethod
+    def store(db, event):
+        payload = {key: value for key, value in event.items() if key not in ('id', 'created', 'state')}
+        db.execute('INSERT OR IGNORE INTO events VALUES (?, ?, ?, ?)', (event['id'], event.get('created') or 0, event.get('state') or 'review', json.dumps(payload)))
+
+    def import_legacy(self, db, legacy):
+        """Bring an earlier pull-requests JSON file in once, and keep it beside the database as .imported."""
+        if not legacy.exists():
+            return
         try:
-            saved = json.loads(self.path.read_text())
+            saved = json.loads(legacy.read_text())
         except (OSError, ValueError):
             saved = []
-        # Earlier versions saved only the list of Inbox items.
+        # The first versions saved only the list of Inbox items.
         saved = {'events': saved} if isinstance(saved, list) else saved if isinstance(saved, dict) else {}
-        self.events = [e for e in saved.get('events') or [] if isinstance(e, dict)]
-        self.forgotten = {key: set(value) for key, value in (saved.get('forgotten') or {}).items() if isinstance(value, list)}
+        for event in saved.get('events') or []:
+            if isinstance(event, dict) and isinstance(event.get('id'), str):
+                self.store(db, event)
+        for terminal, urls in (saved.get('forgotten') or {}).items():
+            if isinstance(urls, list):
+                db.executemany('INSERT OR IGNORE INTO forgotten VALUES (?, ?)', [(terminal, url) for url in urls if isinstance(url, str)])
+        os.replace(legacy, legacy.with_name(legacy.name + '.imported'))
 
     def status(self, repo, terminal=None, now=None):
         """The terminal's main pull request with the others it printed under 'others', or None."""
@@ -199,7 +256,8 @@ class PullRequests:
             if not event:
                 raise ValueError('Pull request item not found')
             event['state'] = payload['state']
-            self.save()
+            with self.db() as db:
+                db.execute('UPDATE events SET state = ? WHERE id = ?', (event['state'], event['id']))
             return dict(event)
 
     def forget(self, terminal, url, repo=None):
@@ -212,14 +270,9 @@ class PullRequests:
                 raise ValueError('This terminal is not showing that pull request')
             self.forgotten.setdefault(terminal, set()).add(url)
             self.printed.get(terminal, {}).pop(url, None)
-            self.save()
+            with self.db() as db:
+                db.execute('INSERT OR IGNORE INTO forgotten VALUES (?, ?)', (terminal, url))
         return {'ok': True}
-
-    def save(self):
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        temp = self.path.with_suffix('.tmp')
-        temp.write_text(json.dumps({'events': self.events[-EVENT_LIMIT:], 'forgotten': {k: sorted(v) for k, v in self.forgotten.items() if v}}, indent=2) + '\n')
-        os.replace(temp, self.path)
 
     def scan(self, terminal, now):
         """Read the terminal's new output for pull request links. True when it shows a merge it hasn't shown before."""
@@ -395,8 +448,10 @@ class PullRequests:
             self.events.append(dict(item, id='pr-' + secrets.token_hex(8), terminal=terminal, repo=repo_name, branch=branch,
                                     number=pr['number'], url=pr['url'], state='review', created=now))
         if added:
+            with self.db() as db:
+                for event in self.events[-len(added):]:
+                    self.store(db, event)
             del self.events[:-EVENT_LIMIT]
-            self.save()
 
     def failure_log(self, cwd, repo, terminal, url=None, lines=60):
         """The failed log tail of the first failing GitHub Actions job on one of this terminal's pull requests."""

@@ -204,8 +204,8 @@ const check = (name, fn) => {fn();results.push(name);console.log('  PASS  ' + na
   await review.click();
   await detail.locator('button', {hasText: 'Mark reviewed'}).click();
   await until(async () => (await page.locator('.inbox-row', {hasText: 'fixture-reviewer approved #42'}).count()) === 0, 'Mark reviewed did not move the item out of Open');
-  const saved = JSON.parse(fs.readFileSync(path.join(state, 'data', `pull-requests-${port}.json`), 'utf8'));
-  check('Mark reviewed is saved on the server', () => assert.deepEqual(saved.events.map(e => [e.kind, e.state]), [['checks', 'review'], ['review', 'done']]));
+  const saved = JSON.parse(spawnSync(python, ['-c', "import json, sqlite3, sys; db = sqlite3.connect(sys.argv[1]); print(json.dumps([[json.loads(p)['kind'], s] for p, s in db.execute('SELECT payload, state FROM events ORDER BY created, rowid')]))", path.join(state, 'data', `pull-requests-${port}.sqlite3`)], {encoding: 'utf8'}).stdout);
+  check('Mark reviewed is saved on the server', () => assert.deepEqual(saved, [['checks', 'review'], ['review', 'done']]));
 
   await page.evaluate(id => selectPane(id), ids.pr);
   // Unresolved review comments on GitHub show as a count on the chip.
