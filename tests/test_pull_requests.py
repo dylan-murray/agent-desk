@@ -9,8 +9,10 @@ from unittest import mock
 
 import base64
 import sqlite3
+from contextlib import closing
 
-from agent_desk.pull_requests import EVENT_LIMIT, PullRequests, checks_of, links_in
+from agent_desk import pull_requests
+from agent_desk.pull_requests import MIGRATIONS, PullRequests, checks_of, links_in
 
 FAKE_GH = Path(__file__).with_name('fixtures') / 'fake_gh.py'
 PR_URL = 'https://github.com/example-org/example-repo/pull/42'
@@ -67,9 +69,9 @@ class GhFixture(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
         self.repo = self.repository('example-repo', 'https://github.com/example-org/example-repo.git')
-        self.store = self.folder / 'data' / 'pull-requests.sqlite3'
-        self.prs = PullRequests(self.store, interval=60)
         self.now = 1000.0
+        self.db = self.folder / 'data' / 'pull-requests.sqlite3'
+        self.prs = PullRequests(self.db, interval=60, now=self.now)
 
     def repository(self, name, remote):
         repo = self.folder / name
@@ -84,6 +86,10 @@ class GhFixture(unittest.TestCase):
     def poll(self, repo=None, advance=60):
         self.now += advance
         self.prs.poll([{'id': 'term-1', 'exit_code': None, 'repo': repo or self.repo}], self.now)
+
+    def rows(self, sql, *args):
+        with closing(sqlite3.connect(self.db)) as db:
+            return db.execute(sql, args).fetchall()
 
     def calls(self):
         log = self.fake / 'calls.log'
@@ -187,10 +193,9 @@ class PullRequestPollTests(GhFixture):
         self.assertEqual(len(events), 2)
         self.assertEqual(events[1]['title'], 'fixture-reviewer requested changes on #42 Fixture change')
         self.assertEqual(events[1]['category'], 'attention')
-        with sqlite3.connect(self.store) as db:
-            self.assertEqual([row[0] for row in db.execute('SELECT id FROM events ORDER BY created, rowid')], [e['id'] for e in events])
+        self.assertEqual([i for i, in self.rows('SELECT id FROM pull_request_events ORDER BY rowid')], [e['id'] for e in events])
         self.prs.review({'id': events[0]['id'], 'state': 'done'})
-        reopened = PullRequests(self.store)
+        reopened = PullRequests(self.db, now=self.now)
         self.assertEqual(reopened.snapshot()['events'][0]['state'], 'done')
         with self.assertRaisesRegex(ValueError, 'Invalid'):
             self.prs.review({'id': events[0]['id'], 'state': 'gone'})
@@ -276,8 +281,8 @@ class PrintedLinkTests(GhFixture):
         self.prints('https://github.com/example-org/example-repo/pull/28\r\n')
         self.poll()
         self.assertEqual([o['number'] for o in self.prs.status(self.repo, 'term-1', now=self.now)['others']], [29])
-        with sqlite3.connect(self.store) as db:
-            self.assertEqual(db.execute('SELECT terminal, url FROM forgotten').fetchall(), [('term-1', 'https://github.com/example-org/example-repo/pull/28')])
+        self.assertEqual(self.rows('SELECT terminal_id, url FROM pull_request_sightings WHERE hidden_at IS NOT NULL'),
+                         [('term-1', 'https://github.com/example-org/example-repo/pull/28')])
         self.assertEqual(self.prs.status(self.repo, 'term-1', now=self.now + 86401)['others'], [])
         with self.assertRaisesRegex(ValueError, 'not showing'):
             self.prs.forget('term-1', 'https://github.com/example-org/example-repo/pull/99')
@@ -339,7 +344,7 @@ class PrintedLinkTests(GhFixture):
         self.answer(pull_request([run('unit', 'COMPLETED', 'FAILURE')]))
         self.poll()
         self.assertEqual(self.prs.snapshot()['events'], [], 'a forgotten pull request failing is not news')
-        self.assertEqual(PullRequests(self.store).status(self.repo, 'term-1'), None)
+        self.assertEqual(PullRequests(self.db, now=self.now).status(self.repo, 'term-1'), None)
 
     def test_a_terminal_that_still_shows_a_forgotten_pull_request_gets_its_inbox_item(self):
         both = [{'id': 'term-1', 'exit_code': None, 'repo': self.repo}, {'id': 'term-2', 'exit_code': None, 'repo': self.repo}]
@@ -371,53 +376,111 @@ class PrintedLinkTests(GhFixture):
         self.assertEqual(len(self.calls()), before)
         self.assertIsNone(self.prs.status(self.repo, 'term-1'))
 
+class StoredPullRequestTests(PrintedLinkTests):
+    """Every pull request the desk sees is kept in SQLite with the terminals and harness sessions that showed it."""
+    def poll(self, repo=None, advance=60):
+        self.now += advance
+        self.prs.poll([{'id': 'term-1', 'exit_code': None, 'repo': repo or self.repo, 'cwd': self.repo,
+                        'native_session': 'session-1', 'harness': 'claude'}], self.now)
 
-class StoreTests(unittest.TestCase):
-    """Pull request Inbox items and forgotten pull requests live in SQLite; an earlier JSON file is brought in once."""
-    def setUp(self):
-        self.folder = Path(tempfile.mkdtemp())
-        self.addCleanup(subprocess.run, ['rm', '-rf', str(self.folder)])
-        self.store = self.folder / 'pull-requests.sqlite3'
-        self.legacy = self.folder / 'pull-requests.json'
+    def test_a_pull_request_leads_back_to_the_session_that_showed_it(self):
+        self.answer(pull_request([run('unit', 'COMPLETED', 'SUCCESS')]))
+        self.prints(self.link(28) + '\r\n')
+        self.poll()
+        self.poll()
+        found = {pr['number']: pr for pr in self.prs.history(session='session-1')['pull_requests']}
+        self.assertEqual(sorted(found), [28, 42])
+        branch, printed = found[42], found[28]
+        self.assertEqual((branch['repo'], branch['title'], branch['state'], branch['checks']), ('example-org/example-repo', 'Fixture change', 'open', 'passing'))
+        self.assertEqual((printed['title'], printed['branch']), ('Fixture 28', 'fixture-28'))
+        where = lambda pr: [(s['terminal_id'], s['native_session'], s['harness'], s['cwd'], s['source']) for s in pr['sightings']]
+        self.assertEqual(where(branch), [('term-1', 'session-1', 'claude', self.repo, 'branch')])
+        self.assertEqual(where(printed), [('term-1', 'session-1', 'claude', self.repo, 'printed')])
+        self.assertEqual([pr['number'] for pr in self.prs.history(url=PR_URL + '/')['pull_requests']], [42])
+        self.assertEqual(self.prs.history(session='another-session')['pull_requests'], [])
 
-    def event(self, number, state='review', created=1000.0):
-        return dict(id=f'pr-{number}', kind='checks', category='attention', title=f'Checks failing · #{number}', detail='1 of 3 checks failed.',
-                    terminal='term-1', repo='example-org/example-repo', branch='feature/fixture', number=number,
-                    url=f'https://github.com/example-org/example-repo/pull/{number}', state=state, created=created)
+    def test_a_merged_pull_request_keeps_when_it_closed(self):
+        self.prints(self.link(28) + '\r\n')
+        self.poll()
+        self.link(28, state='MERGED')
+        self.poll()
+        merged_at = self.now
+        self.poll()
+        pr = self.prs.history(url='https://github.com/example-org/example-repo/pull/28')['pull_requests'][0]
+        self.assertEqual((pr['state'], pr['closed_at']), ('merged', merged_at))
 
-    def test_building_a_store_does_not_touch_the_data_folder(self):
-        self.legacy.write_text(json.dumps({'events': [self.event(1)]}))
-        prs = PullRequests(self.store)
-        self.assertFalse(self.store.exists())
-        self.assertTrue(self.legacy.exists())
-        self.assertEqual([e['id'] for e in prs.snapshot()['events']], ['pr-1'])
-        self.assertEqual(self.store.stat().st_mode & 0o777, 0o600)
+    def test_a_hidden_pull_request_can_be_shown_again(self):
+        url = self.link(28)
+        self.answer(pull_request())
+        self.prints(url + '\r\n')
+        self.poll()
+        self.prs.forget('term-1', PR_URL, self.repo, now=self.now)
+        self.prs.forget('term-1', url, now=self.now)
+        self.assertIsNone(self.prs.status(self.repo, 'term-1'))
+        self.assertEqual({h['number'] for h in self.prs.hidden('term-1')['hidden']}, {28, 42})
+        self.assertEqual({h['number'] for h in PullRequests(self.db, now=self.now).hidden('term-1')['hidden']}, {28, 42})
+        self.prs.unhide('term-1', PR_URL, now=self.now)
+        self.assertEqual(self.prs.status(self.repo, 'term-1')['number'], 42)
+        self.prs.unhide('term-1', url, now=self.now)
+        self.poll()
+        self.assertEqual([o['number'] for o in self.prs.status(self.repo, 'term-1')['others']], [28])
+        self.assertEqual(self.rows('SELECT count(*) FROM pull_request_sightings WHERE hidden_at IS NOT NULL'), [(0,)])
+        with self.assertRaisesRegex(ValueError, 'not hiding'):
+            self.prs.unhide('term-1', PR_URL)
 
-    def test_an_earlier_json_file_is_imported_once_with_its_review_state_and_forgotten_links(self):
-        events = [self.event(1, 'done', 1000.0), self.event(2, 'review', 1001.0)]
-        self.legacy.write_text(json.dumps({'events': events, 'forgotten': {'term-1': ['https://github.com/example-org/example-repo/pull/9']}}))
-        self.assertEqual(PullRequests(self.store).snapshot()['events'], events)
-        self.assertFalse(self.legacy.exists())
-        self.assertTrue((self.folder / 'pull-requests.json.imported').exists())
-        reopened = PullRequests(self.store)
-        self.assertEqual(reopened.snapshot()['events'], events)
-        self.assertEqual(reopened.forgotten, {'term-1': {'https://github.com/example-org/example-repo/pull/9'}})
-        # A JSON file that shows up again later is merged, not duplicated.
-        self.legacy.write_text(json.dumps([self.event(2), self.event(3, created=1002.0)]))
-        self.assertEqual([e['id'] for e in PullRequests(self.store).snapshot()['events']], ['pr-1', 'pr-2', 'pr-3'])
+    def test_pull_requests_nobody_has_seen_for_a_year_are_dropped(self):
+        self.answer(pull_request())
+        self.poll()
+        self.prs.forget('term-1', PR_URL, self.repo, now=self.now)
+        year = 365 * 86400
+        self.assertEqual(len(PullRequests(self.db, now=self.now + year - 60).history()['pull_requests']), 1)
+        later = PullRequests(self.db, now=self.now + year + 60)
+        self.assertEqual(later.history()['pull_requests'], [])
+        self.assertEqual(later.hidden('term-1')['hidden'], [])
+        self.assertEqual(self.rows('SELECT count(*) FROM pull_request_sightings'), [(0,)])
 
-    def test_the_first_json_shape_a_bare_list_of_items_is_imported_too(self):
-        self.legacy.write_text(json.dumps([self.event(5)]))
-        self.assertEqual([e['number'] for e in PullRequests(self.store).snapshot()['events']], [5])
+    def test_the_json_file_earlier_versions_kept_is_read_once(self):
+        (self.folder / 'data').mkdir(exist_ok=True)
+        legacy = self.folder / 'data' / 'pull-requests.json'
+        event = {'id': 'pr-old', 'kind': 'checks', 'created': 900.0, 'state': 'review', 'title': 'Checks failing · #42 Fixture change'}
+        legacy.write_text(json.dumps({'events': [event], 'forgotten': {'term-1': [PR_URL]}}))
+        database = self.folder / 'data' / 'imported.sqlite3'
+        prs = PullRequests(database, legacy=legacy, now=self.now)
+        self.assertEqual(prs.snapshot()['events'], [event])
+        self.assertEqual([(h['url'], h['number']) for h in prs.hidden('term-1')['hidden']], [(PR_URL, 42)])
+        legacy.write_text(json.dumps({'events': [dict(event, id='pr-new')], 'forgotten': {}}))
+        self.assertEqual([e['id'] for e in PullRequests(database, legacy=legacy, now=self.now).snapshot()['events']], ['pr-old'])
+        # The first versions saved only the list of Inbox items.
+        listed = self.folder / 'data' / 'listed.json'
+        listed.write_text(json.dumps([event]))
+        self.assertEqual(PullRequests(self.folder / 'data' / 'listed.sqlite3', legacy=listed, now=self.now).snapshot()['events'], [event])
 
-    def test_every_item_is_kept_while_the_inbox_shows_the_newest(self):
-        self.legacy.write_text(json.dumps([self.event(n, created=1000.0 + n) for n in range(EVENT_LIMIT + 25)]))
-        shown = PullRequests(self.store).snapshot()['events']
-        self.assertEqual(len(shown), EVENT_LIMIT)
-        self.assertEqual((shown[0]['number'], shown[-1]['number']), (25, EVENT_LIMIT + 24))
-        with sqlite3.connect(self.store) as db:
-            self.assertEqual(db.execute('SELECT COUNT(*) FROM events').fetchone()[0], EVENT_LIMIT + 25)
+    def test_the_schema_moves_forward_one_step_at_a_time(self):
+        self.answer(pull_request())
+        self.poll()
+        self.assertEqual(self.rows('PRAGMA user_version'), [(len(MIGRATIONS),)])
+        added = MIGRATIONS + ('ALTER TABLE pull_requests ADD COLUMN fixture_note TEXT;',)
+        with mock.patch.object(pull_requests, 'MIGRATIONS', added):
+            self.assertEqual([pr['number'] for pr in PullRequests(self.db, now=self.now).history()['pull_requests']], [42])
+            # A second open finds nothing left to run, so the column isn't added twice.
+            self.assertEqual(PullRequests(self.db, now=self.now).history()['pull_requests'][0]['fixture_note'], None)
+        self.assertEqual(self.rows('PRAGMA user_version'), [(len(added),)])
+        # A database a newer desk migrated further is left alone, and still works.
+        self.assertEqual([pr['number'] for pr in PullRequests(self.db, now=self.now).history()['pull_requests']], [42])
+        self.assertEqual(self.rows('PRAGMA user_version'), [(len(added),)])
 
+    def test_a_step_that_fails_leaves_the_database_as_it_was(self):
+        self.answer(pull_request())
+        self.poll()
+        broken = MIGRATIONS + ('ALTER TABLE pull_requests ADD COLUMN half_done TEXT; ALTER TABLE missing ADD COLUMN x TEXT;',)
+        with mock.patch.object(pull_requests, 'MIGRATIONS', broken), self.assertRaises(sqlite3.OperationalError):
+            PullRequests(self.db, now=self.now).history()
+        self.assertEqual(self.rows('PRAGMA user_version'), [(len(MIGRATIONS),)])
+        self.assertNotIn('half_done', [column[1] for column in self.rows('PRAGMA table_info(pull_requests)')])
+
+    def test_building_one_touches_nothing_on_disk(self):
+        PullRequests(self.folder / 'elsewhere' / 'pull-requests.sqlite3', legacy=self.folder / 'elsewhere' / 'pull-requests.json')
+        self.assertFalse((self.folder / 'elsewhere').exists())
 
 if __name__ == '__main__':
     unittest.main()

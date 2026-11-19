@@ -1,4 +1,5 @@
 import json
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -9,7 +10,7 @@ from agent_desk.inbox_cleared import InboxCleared
 
 
 class InboxClearedTests(unittest.TestCase):
-    """Cleared Inbox History lives in SQLite; an earlier inbox-cleared.json is brought in once."""
+    """Cleared Inbox History lives in SQLite; an earlier inbox-cleared.json is read once into a new database."""
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.folder = Path(self.temp.name)
@@ -27,6 +28,8 @@ class InboxClearedTests(unittest.TestCase):
         self.assertEqual(cleared.clear(['run:b', 'pr:c']), ['report:a', 'run:b', 'pr:c'])
         self.assertEqual(InboxCleared(self.store).keys(), ['report:a', 'run:b', 'pr:c'])
         self.assertEqual(self.store.stat().st_mode & 0o777, 0o600)
+        with sqlite3.connect(self.store) as db:
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], len(inbox_cleared.MIGRATIONS))
 
     def test_only_short_text_keys_are_accepted(self):
         cleared = InboxCleared(self.store)
@@ -41,19 +44,20 @@ class InboxClearedTests(unittest.TestCase):
             cleared.clear(['a', 'b'])
             self.assertEqual(cleared.clear(['c', 'd']), ['b', 'c', 'd'])
 
-    def test_an_earlier_json_file_is_imported_once_and_kept_beside_it(self):
+    def test_an_earlier_json_file_is_read_once_into_a_new_database_and_left_as_it_was(self):
         self.legacy.write_text(json.dumps(['report:old', 'run:older', 7]))
         cleared = InboxCleared(self.store, legacy=self.legacy)
         self.assertEqual(cleared.keys(), ['report:old', 'run:older'])
-        self.assertFalse(self.legacy.exists())
-        self.assertEqual(json.loads((self.folder / 'inbox-cleared.json.imported').read_text()), ['report:old', 'run:older', 7])
+        self.assertEqual(json.loads(self.legacy.read_text()), ['report:old', 'run:older', 7])
         self.assertEqual(cleared.clear(['pr:new']), ['report:old', 'run:older', 'pr:new'])
+        # The file is not read again once the database exists, so nothing comes back twice or out of order.
+        self.legacy.write_text(json.dumps(['report:later']))
         self.assertEqual(InboxCleared(self.store, legacy=self.legacy).keys(), ['report:old', 'run:older', 'pr:new'])
 
-    def test_an_unreadable_json_file_imports_nothing_and_is_set_aside(self):
+    def test_an_unreadable_json_file_imports_nothing(self):
         self.legacy.write_text('{not json')
         self.assertEqual(InboxCleared(self.store, legacy=self.legacy).keys(), [])
-        self.assertTrue((self.folder / 'inbox-cleared.json.imported').exists())
+        self.assertEqual(self.legacy.read_text(), '{not json')
 
 
 if __name__ == '__main__':

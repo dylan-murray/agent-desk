@@ -123,7 +123,7 @@ atexit.register(TERMINALS.close)
 SESSIONS = {}
 DESKS = Desks(DATA_DIR / 'desks.json')
 PANE_EDITS = PaneEdits()
-PULL_REQUESTS = PullRequests(DATA_DIR / 'pull-requests.sqlite3')
+PULL_REQUESTS = PullRequests(DATA_DIR / 'pull-requests.sqlite3', legacy=DATA_DIR / 'pull-requests.json')
 # The terminal supervisor's restart records for this port, which saving a desk reads.
 SESSION_RECORDS = DATA_DIR / 'terminal-sessions-4310.json'
 # The other Agent Desk app's saved desks, which this one can import (read only).
@@ -1123,6 +1123,17 @@ class Handler(SimpleHTTPRequestHandler):
                 if self.path == '/api/pull-requests/forget':
                     cwd = TERMINALS.get(payload.get('id', '')).cwd
                     return self.send_json(PULL_REQUESTS.forget(payload['id'], payload.get('url'), folder_context(cwd)['repo']))
+                if self.path == '/api/pull-requests/unhide':
+                    TERMINALS.get(payload.get('id', ''))
+                    return self.send_json(PULL_REQUESTS.unhide(payload['id'], payload.get('url')))
+                if self.path == '/api/pull-requests/hidden':
+                    TERMINALS.get(payload.get('id', ''))
+                    return self.send_json(PULL_REQUESTS.hidden(payload['id']))
+                if self.path == '/api/pull-requests/history':
+                    fields = {key: payload.get(key) for key in ('url', 'session', 'terminal')}
+                    if any(value is not None and not isinstance(value, str) for value in fields.values()):
+                        raise ValueError('url, session and terminal must be strings')
+                    return self.send_json(PULL_REQUESTS.history(**fields, limit=payload.get('limit') or 50))
                 if self.path == '/api/inbox/clear-history':
                     return self.send_json({'keys': INBOX_CLEARED.clear(payload.get('keys'))})
                 if self.path == '/api/projects/create':
@@ -1422,7 +1433,9 @@ def main():
     coordinator_file = 'coordinators.sqlite3' if key == 4310 else f'coordinators-{key}.sqlite3'
     COORDINATORS = CoordinatorRuntime(DATA_DIR / coordinator_file, TERMINALS, MAILBOX)
     DESKS = Desks(DATA_DIR / ('desks.json' if key == 4310 else f'desks-{key}.json'))
-    PULL_REQUESTS = PullRequests(DATA_DIR / ('pull-requests.sqlite3' if key == 4310 else f'pull-requests-{key}.sqlite3'), output=lambda identity, cursor: TERMINALS.output(identity, cursor))
+    suffix = '' if key == 4310 else f'-{key}'
+    PULL_REQUESTS = PullRequests(DATA_DIR / f'pull-requests{suffix}.sqlite3', legacy=DATA_DIR / f'pull-requests{suffix}.json',
+                                 output=lambda identity, cursor: TERMINALS.output(identity, cursor))
     SESSION_RECORDS = DATA_DIR / f'terminal-sessions-{key}.json'
     PEER = saved_desks.Peer.of(key)
     if key == 4310:
