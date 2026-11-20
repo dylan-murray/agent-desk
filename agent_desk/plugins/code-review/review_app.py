@@ -1317,6 +1317,8 @@ tr.thread td{background:var(--bg)!important;padding:6px 12px 8px 46px;white-spac
 
 /* ---------- composer ---------- */
 #composer{position:fixed;z-index:60;width:520px;max-width:calc(100vw - 24px);border:1px solid var(--border-strong);border-radius:10px;background:var(--raised);box-shadow:0 14px 40px #000a;display:none}
+#composer.inline{position:static;width:auto;max-width:760px;box-shadow:none}
+tr.composer-row td{background:var(--bg)!important;padding:8px 12px 10px 46px;white-space:normal;word-break:normal;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
 #composer .hd{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--border);font-size:12px;color:var(--fg-muted)}
 #composer .hd b{color:var(--fg)}
 #composer .hd .sp{flex:1}
@@ -1551,7 +1553,7 @@ for(const b of document.querySelectorAll('#viewseg button'))b.onclick=async()=>{
 function fileAnchor(p){return 'f-'+p.replace(/[^a-zA-Z0-9]/g,'_');}
 function statusBadge(f){return {added:'A',deleted:'D',renamed:'R',modified:'M'}[f.status]||'M';}
 async function render(){
- const main=$('#main');
+ parkComposer();const main=$('#main');
  $('#meta').textContent=model.checked_out===false?`${model.branch} · not checked out here`:`${model.branch} · vs ${model.base==='HEAD'?'HEAD (working tree)':model.base.slice(0,10)}`;
  $('#meta').classList.toggle('away',model.checked_out===false);
  $('#stats').innerHTML=`<span class="stat-add">+${model.additions}</span> <span class="stat-del">−${model.deletions}</span>`;
@@ -1667,6 +1669,7 @@ function decorateThreads(){
   if(!last)continue;const tr=document.createElement('tr');tr.className='thread';
   tr.innerHTML=`<td colspan="${view==='split'?4:4}">${threadHtml(a)}</td>`;last.after(tr);
   const inp=tr.querySelector('input[data-reply]');if(drafts[a.id])inp.value=drafts[a.id];if(focused===String(a.id))inp.focus();}
+ if(composing){markSel();placeComposer();}
  decoratePins();}
 function decoratePins(){
  document.querySelectorAll('.pin').forEach(p=>p.remove());
@@ -1686,7 +1689,7 @@ function cellFor(row,side){const c=row.querySelector(`td.num.${side}`);return c&
 document.addEventListener('mousedown',e=>{
  const num=e.target.closest('td.num.click');if(!num||e.button!==0)return;
  e.preventDefault();const sec=num.closest('section.file');
- drag={file:sec.dataset.path,side:num.dataset.side,anchor:+num.dataset.n,start:+num.dataset.n,end:+num.dataset.n,el:num,moved:false};
+ drag={file:sec.dataset.path,side:num.dataset.side,anchor:+num.dataset.n,start:+num.dataset.n,end:+num.dataset.n,el:num,moved:false,shift:e.shiftKey};
  if(!(e.shiftKey&&sel&&sel.file===drag.file&&sel.side===drag.side)){sel={file:drag.file,side:drag.side,start:drag.start,end:drag.end};markSel();}});
 document.addEventListener('mousemove',e=>{
  if(!drag)return;const row=rowOf(e.target);if(!row||row.closest('section.file')?.dataset.path!==drag.file)return;
@@ -1695,7 +1698,7 @@ document.addEventListener('mousemove',e=>{
  sel={file:drag.file,side:drag.side,start:drag.start,end:drag.end};markSel();});
 document.addEventListener('mouseup',e=>{
  if(!drag)return;const d=drag;drag=null;
- if(d.moved){suppressClick=true;setTimeout(()=>suppressClick=false,0);openComposer('line',{file:d.file,side:d.side,start:d.start,end:d.end},d.el);}});
+ if(d.moved){suppressClick=true;setTimeout(()=>suppressClick=false,0);openComposer('line',{file:d.file,side:d.side,start:d.start,end:d.end},d.el,d.shift);}});
 document.addEventListener('click',e=>{
  if(suppressClick){suppressClick=false;return;}
  if(e.target.closest('#composer,#side,#top,#tabs,#bar,#bubble,.thread-box'))return;
@@ -1712,12 +1715,12 @@ document.addEventListener('click',e=>{
  if(num){const side=num.dataset.side,n=+num.dataset.n;const file=secEl.dataset.path;
   if(e.shiftKey&&sel&&sel.file===file&&sel.side===side){sel.start=Math.min(sel.start,n);sel.end=Math.max(sel.end,n);}
   else sel={file,side,start:n,end:n};
-  markSel();openComposer('line',sel,num);return;}
+  markSel();openComposer('line',sel,num,e.shiftKey);return;}
  const code=e.target.closest('td.code');
  if(code&&!window.getSelection().toString()){const r=rowOf(code);if(!r)return;const side=r.dataset.side,n=+r.dataset.n;const file=secEl.dataset.path;
   if(e.shiftKey&&sel&&sel.file===file&&sel.side===side){sel.start=Math.min(sel.start,n);sel.end=Math.max(sel.end,n);}
   else sel={file,side,start:n,end:n};
-  markSel();openComposer('line',sel,code);return;}
+  markSel();openComposer('line',sel,code,e.shiftKey);return;}
  const fb=e.target.closest('[data-filenote]');
  if(fb){openComposer('file',{file:fb.dataset.filenote},fb);return;}
 });
@@ -1746,7 +1749,16 @@ function quoteFor(s){const f=model.files.find(x=>x.path===s.file);if(!f)return '
  const raw=rawCache[s.side+':'+(s.side==='old'?(f.old_path||f.path):f.path)+':'+digest]||[];const out=[];
  for(let n=s.start;n<=s.end;n++){if(n in byN)out.push(byN[n]);else if(raw[n-1]!==undefined)out.push(raw[n-1]);}
  return out.join('\n');}
-function openComposer(kind,where,anchorEl){
+function parkComposer(){const c=$('#composer');if(c.parentElement!==document.body)document.body.appendChild(c);c.classList.remove('inline');document.querySelectorAll('tr.composer-row').forEach(r=>r.remove());}
+function placeComposer(){
+ const c=$('#composer');const sec=composing&&['line','chunk','selection'].includes(composing.kind)&&composing.start?document.getElementById(fileAnchor(composing.file)):null;
+ const last=sec&&[...sec.querySelectorAll('tr.sel')].pop();if(!last){parkComposer();return false;}
+ let at=last;while(at.nextElementSibling&&at.nextElementSibling.classList.contains('thread'))at=at.nextElementSibling;
+ let row=c.closest('tr.composer-row');if(!row){row=document.createElement('tr');row.className='composer-row';row.innerHTML='<td colspan="4"></td>';}
+ if(at.nextElementSibling!==row){const focused=c.contains(document.activeElement)?document.activeElement:null;row.firstElementChild.appendChild(c);at.after(row);if(focused)focused.focus({preventScroll:true});}
+ c.classList.add('inline');c.style.top=c.style.left='';return true;}
+function openComposer(kind,where,anchorEl,extending){
+ const draft=extending&&composing&&composing.file===where.file&&composing.side===where.side?$('#ctext').value:'';
  composing={kind,...where};if(['line','chunk','selection','pin'].includes(kind)&&where.start)composing.quote=quoteFor(where);
  const lines=where.start?`line${where.start!==where.end?'s '+where.start+'–'+where.end:' '+where.start}${where.side==='old'?' (old side)':''}`:'';
  const head=kind==='pr'?`<b>PR ${esc(where.part)}</b>${where.selection?` · “${esc(where.selection.length>60?where.selection.slice(0,60)+'…':where.selection)}”`:''}`
@@ -1755,15 +1767,16 @@ function openComposer(kind,where,anchorEl){
   :kind==='chunk'?`<b>${esc(where.file)}</b> · chunk · ${esc(where.label||'')} · ${lines}`
   :kind==='selection'?`<b>${esc(where.file)}</b> · selection “${esc(where.selection.length>60?where.selection.slice(0,60)+'…':where.selection)}” · ${lines}`
   :kind==='pin'?`<b>${esc(where.file)}</b> · pin${lines?' near '+lines:''}`
-  :`<b>${esc(where.file)}</b> · ${lines}<span style="margin-left:6px">shift-click another line to extend</span>`;
+  :`<b>${esc(where.file)}</b> · ${lines}<span style="margin-left:6px">shift-click or drag line numbers to extend</span>`;
  const c=$('#composer');$('#cwhere').innerHTML=head;
  $('#csug').style.display=['line','chunk','selection'].includes(kind)&&where.side==='new'?'':'none';
  $('#csugwrap').classList.remove('on');$('#csug').classList.remove('on');$('#csugtext').value=composing.quote||'';
- $('#ctext').value='';c.style.display='block';
+ $('#ctext').value=draft;c.style.display='block';
+ if(placeComposer()){$('#ctext').focus({preventScroll:true});c.scrollIntoView({block:'nearest'});return;}
  const r=anchorEl.getBoundingClientRect();let top=r.bottom+6,left=Math.min(r.left,innerWidth-540);
  if(top+260>innerHeight)top=Math.max(52,r.top-260);c.style.top=top+'px';c.style.left=Math.max(12,left)+'px';
  $('#ctext').focus();}
-function closeComposer(){$('#composer').style.display='none';composing=null;sel=null;markSel();$('#bubble').style.display='none';}
+function closeComposer(){$('#composer').style.display='none';parkComposer();composing=null;sel=null;markSel();$('#bubble').style.display='none';}
 $('#csug').onclick=()=>{$('#csugwrap').classList.toggle('on');$('#csug').classList.toggle('on');if($('#csugwrap').classList.contains('on'))$('#csugtext').focus();};
 $('#ccancel').onclick=closeComposer;
 $('#csave').onclick=saveComposer;

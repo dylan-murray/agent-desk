@@ -76,6 +76,18 @@ const note = message => {if (process.env.VERBOSE) console.log('  ok ' + message)
   assert.equal(await isOpen(), true);
   note('files open in place, Alt-click opens or closes them all, and Viewed closes and dims a file');
 
+  // Like GitHub, the comment box opens under the selected lines and leaves the next lines free to shift-click.
+  const gutter = n => fileRow.locator(`td.num.new.click[data-n="${n}"]`).first();
+  await gutter(2).click();await frame.locator('#ctext').fill('these lines together');
+  assert.equal(await gutter(5).evaluate(cell => {const r = cell.getBoundingClientRect();return document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)?.closest('td.num')?.dataset.n;}), '5', 'the comment box covered the next lines');
+  await gutter(5).click({modifiers: ['Shift']});
+  assert.match(await frame.locator('#cwhere').textContent(), /lines 2–5/);
+  assert.equal(await frame.locator('#ctext').inputValue(), 'these lines together', 'extending the range dropped the comment');
+  assert.equal(await frame.evaluate(() => [...document.querySelectorAll('tr.sel')].pop().nextElementSibling.className), 'composer-row', 'the comment box did not follow the range');
+  await frame.locator('#ctext').press('Escape');
+  assert.equal(await frame.locator('tr.composer-row').count(), 0);
+  note('shift-click extends a line comment to a range without losing what was typed');
+
   // A pane's own review asks for a second opinion from inside the review, from the agents this desk has.
   assert.equal(await pane.locator('.pane-dock-review').isVisible(), false, 'the title bar has no second opinion for a pane\'s own review');
   await frame.locator('#codex').click();
