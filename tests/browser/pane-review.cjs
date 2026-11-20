@@ -89,7 +89,7 @@ const note = message => {if (process.env.VERBOSE) console.log('  ok ' + message)
   note('Second opinion lists every coding agent the desk has, from inside the review');
 
   await frame.evaluate(() => fetch('annotate', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({kind: 'line', file: 'app.py', side: 'new', start: 5, end: 6, quote: 'def part(name):', comment: 'call this farewell instead'})}));
-  await frame.evaluate(() => location.reload());await frame.waitForSelector('text=call this farewell instead', {timeout: 10000});
+  await frame.evaluate(() => location.reload());await frame.waitForSelector('.ct:has-text("call this farewell instead")', {timeout: 10000});
   await pause(600);
   await page.screenshot({path: evidence('pane-review-02-comment.png')});
   await frame.locator('#send').click();
@@ -123,7 +123,7 @@ const note = message => {if (process.env.VERBOSE) console.log('  ok ' + message)
   git('update-ref', 'refs/remotes/origin/main', 'main');
   await frame.locator('#tab-changes').click();
   fs.writeFileSync(path.join(fakeBin, 'pr.json'), JSON.stringify({url: 'https://github.com/fixture/project/pull/7', state: 'OPEN', baseRefName: 'main'}));
-  await frame.waitForSelector('text=f-strings read better, thanks', {timeout: 30000});
+  await frame.waitForSelector('.ct:has-text("f-strings read better, thanks")', {timeout: 30000});
   // The PR row links the PR and says a comment came in that you haven't looked at yet.
   assert.equal(await frame.locator('#prstate a').getAttribute('href'), 'https://github.com/fixture/project/pull/7');
   await frame.waitForSelector('#prstate #newgh', {timeout: 10000});
@@ -133,6 +133,14 @@ const note = message => {if (process.env.VERBOSE) console.log('  ok ' + message)
   const ghComment = frame.locator('.thread-box', {hasText: 'f-strings read better'}).locator('.cm').first();
   assert.deepEqual(await ghComment.evaluate(c => ({name: c.querySelector('.an').textContent, avatar: c.querySelector('.av').textContent, link: c.querySelector('.gh').href, nameSize: getComputedStyle(c.querySelector('.an')).fontSize, bodySize: getComputedStyle(c.querySelector('.ct')).fontSize, bodyIsDim: getComputedStyle(c.querySelector('.ct')).color === getComputedStyle(c.querySelector('.at')).color})),
     {name: 'fixture-reviewer', avatar: 'F', link: 'https://github.com/fixture/project/pull/7#discussion_r501', nameSize: '13px', bodySize: '13px', bodyIsDim: false}, 'a comment shows who wrote it above a full-size body');
+  const ghThread = frame.locator('.thread-box', {hasText: 'f-strings read better'});
+  await ghThread.locator('.th').click();
+  assert.equal(await ghThread.locator('.cm').first().isVisible(), false, 'clicking the thread header did not collapse it');
+  assert.match(await ghThread.locator('.th .sum').textContent(), /fixture-reviewer f-strings read better/);
+  assert.equal(await frame.locator('#togglethreads').getAttribute('title'), 'Expand every comment');
+  await frame.locator('#togglethreads').click();
+  assert.equal(await ghThread.locator('.cm').first().isVisible(), true, 'Expand every comment did not open the thread');
+  note('a comment thread collapses to one line from its header, and the toolbar expands every comment');
   assert.match(await frame.locator('#meta').textContent(), /^feature · vs /);
   await frame.locator('.thread-box', {hasText: 'f-strings read better'}).scrollIntoViewIfNeeded();
   await page.screenshot({path: evidence('pane-review-06-github.png')});

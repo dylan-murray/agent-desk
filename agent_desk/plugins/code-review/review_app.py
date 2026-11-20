@@ -1290,7 +1290,21 @@ tr.pair td.empty{background:#ffffff04}
 tr.thread td{background:var(--bg)!important;padding:6px 12px 8px 46px;white-space:normal;word-break:normal;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
 .thread-box{max-width:860px;border:1px solid var(--border-strong);border-radius:10px;background:var(--surface);overflow:hidden;font-size:12.5px}
 .thread-box .th{display:flex;align-items:center;gap:8px;min-height:32px;padding:6px 12px;border-bottom:1px solid var(--border);background:#ffffff05;font-size:11.5px;color:var(--fg-muted)}
-.thread-box .th .loc{font:11.5px var(--mono);color:var(--fg-2)}
+.thread-box .th .loc{flex:0 1 auto;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font:11.5px var(--mono);color:var(--fg-2)}
+.thread-box .th{cursor:pointer;user-select:none}
+.thread-box .th:hover{background:#ffffff09}
+.thread-box .th .id{flex:none}
+.thread-box .th .tchev{flex:none;width:12px;height:12px;transform:rotate(90deg);transition:transform .12s}
+.thread-box .th .sum{display:none;flex:1 1 0;min-width:0;align-items:center;gap:7px;overflow:hidden}
+.thread-box .th .sum .av{width:18px;height:18px;font-size:9.5px}
+.thread-box .th .sum .st{flex:1 1 0;width:0;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;color:var(--fg-2);font-size:12px}
+.thread-box .th .sum .st b{color:var(--fg);font-weight:600}
+.thread-box .th .sum .nr{flex:none;color:var(--fg-muted)}
+.thread-box.folded .th{border-bottom:0}
+.thread-box.folded .th .tchev{transform:none}
+.thread-box.folded .th .sum{display:flex}
+.thread-box.folded>:not(.th){display:none}
+@media (max-width:560px){.thread-box.folded .th .loc{display:none}}
 .thread-box .th .id{color:var(--fg-muted);font:11px var(--mono)}
 .cm{display:flex;gap:10px;padding:11px 12px}
 .cm+.cm{border-top:1px solid #ffffff0b}
@@ -1440,6 +1454,7 @@ tr.thread td{background:var(--bg)!important;padding:6px 12px 8px 46px;white-spac
   <span class="sp"></span>
   <span class="tools">
     <span class="vseg changes-only" id="viewseg"><button data-view="unified" aria-pressed="true">Unified</button><button data-view="split" aria-pressed="false">Split</button></span>
+    <button class="ib changes-only" id="togglethreads" hidden></button>
     <button class="ib changes-only" id="toggleall" title="Expand every file · Alt-click a file does the same"></button>
     <button class="ib" id="general" title="Note on the whole change · G"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3h10c.6 0 1 .4 1 1v6c0 .6-.4 1-1 1H7.5L4.5 13.5V11H3c-.6 0-1-.4-1-1V4c0-.6.4-1 1-1Z"/></svg></button>
   </span>
@@ -1497,6 +1512,8 @@ const ICONS={
  check:'<svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 8.4 2.6 2.6L12 5.4"/></svg>',
  expand:'<svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="m5 6.5 3-3 3 3M5 9.5l3 3 3-3"/></svg>',
  collapse:'<svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="m5 3.5 3 3 3-3M5 12.5l3-3 3 3"/></svg>',
+ foldthreads:'<svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 2.5h10c.6 0 1 .4 1 1v6c0 .6-.4 1-1 1H7.5L4.5 13V10.5H3c-.6 0-1-.4-1-1v-6c0-.6.4-1 1-1Z"/><path d="m6 7.5 2-2 2 2"/></svg>',
+ unfoldthreads:'<svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 2.5h10c.6 0 1 .4 1 1v6c0 .6-.4 1-1 1H7.5L4.5 13V10.5H3c-.6 0-1-.4-1-1v-6c0-.6.4-1 1-1Z"/><path d="m6 5.5 2 2 2-2"/></svg>',
  pr:'<svg class="i" viewBox="0 0 16 16" aria-hidden="true"><circle cx="4.5" cy="4" r="1.5"/><circle cx="4.5" cy="12" r="1.5"/><circle cx="11.5" cy="12" r="1.5"/><path d="M4.5 5.5v5M11.5 10.5V7c0-1.1-.9-2-2-2H7.5M9 3.5 7.5 5 9 6.5"/></svg>'
 };
 // Like GitHub: up to five blocks, one per five lines changed, split between added and removed.
@@ -1550,6 +1567,7 @@ function applyOpen(){if(!model)return;
  t.innerHTML=all?ICONS.collapse:ICONS.expand;t.title=(all?'Collapse every file':'Expand every file')+' · Alt-click a file does the same';
  decoratePins();}
 function setAllOpen(open){openFiles=new Set(open?model.files.map(f=>f.path):[]);applyOpen();}
+$('#togglethreads').onclick=()=>{const boxes=[...document.querySelectorAll('#main .thread-box')];setFolded(boxes.map(b=>+b.dataset.id),!boxes.every(b=>b.classList.contains('folded')));};
 $('#toggleall').onclick=()=>setAllOpen(!(openFiles.size>=model.files.length));
 document.addEventListener('click',e=>{
  const v=e.target.closest('[data-viewed]');
@@ -1672,7 +1690,20 @@ function threadHtml(a){
   const oldL=(a.quote||'').split('\n'),newL=a.suggestion===''?[]:a.suggestion.split('\n');
   sug=`<div class="sug"><div class="sh">Suggested change</div><pre>${oldL.map(x=>`<div class="l d">${esc(x)||' '}</div>`).join('')}${newL.map(x=>`<div class="l a">${esc(x)||' '}</div>`).join('')}</pre></div>`;}
  const tag=a.kind==='pr'?`<span class="id">PR ${esc(a.part||'body')}${a.quote?` · “${esc(a.quote.length>60?a.quote.slice(0,60)+'…':a.quote)}”`:''}</span>`:a.kind==='chunk'?`<span class="id">chunk · ${esc(a.label||'')}</span>`:a.kind==='selection'?`<span class="id">“${esc(a.selection||'')}”</span>`:'';
- return `<div class="thread-box ${done?'done':''}" data-id="${a.id}"><div class="th">${a.file?`<span class="loc">${esc(a.file)}${a.start?(a.end&&a.end!==a.start?` · lines ${a.start}–${a.end}`:` · line ${a.start}`):''}</span>`:''}<span class="id">#${a.id}</span>${tag}</div>${commentHtml(a.author,a.created,esc(a.comment||'')||'<i>(no comment)</i>',sug,a.gh_url)}${repliesHtml(a)}${proofHtml(a)}<div class="replybox"><input data-reply="${a.id}" placeholder="Reply…"></div></div>`;}
+ return `<div class="thread-box ${done?'done':''}${isFolded(a)?' folded':''}" data-id="${a.id}"><div class="th" role="button" tabindex="0" aria-expanded="${!isFolded(a)}" title="Click to collapse or expand">${ICONS.chev.replace('class="i chev"','class="i tchev"')}${a.file?`<span class="loc">${esc(a.file)}${a.start?(a.end&&a.end!==a.start?` · lines ${a.start}–${a.end}`:` · line ${a.start}`):''}</span>`:''}<span class="id">#${a.id}</span>${tag}${foldSummary(a)}</div>${commentHtml(a.author,a.created,esc(a.comment||'')||'<i>(no comment)</i>',sug,a.gh_url)}${repliesHtml(a)}${proofHtml(a)}<div class="replybox"><input data-reply="${a.id}" placeholder="Reply…"></div></div>`;}
+function foldMap(){try{return JSON.parse(localStorage.getItem('ra-threads:'+(model?model.repo:''))||'{}');}catch(e){return {};}}
+function saveFolds(m){try{localStorage.setItem('ra-threads:'+(model?model.repo:''),JSON.stringify(m));}catch(e){}}
+function isFolded(a,m){m=m||foldMap();return a.id in m?!!m[a.id]:a.status==='addressed';}
+function setFolded(ids,on){const m=foldMap();for(const id of ids)m[id]=on;saveFolds(m);
+ for(const id of ids)document.querySelectorAll(`.thread-box[data-id="${id}"]`).forEach(b=>{b.classList.toggle('folded',on);b.querySelector('.th').setAttribute('aria-expanded',String(!on));});updateThreadToggle();}
+function updateThreadToggle(){const t=$('#togglethreads');if(!t)return;const boxes=[...document.querySelectorAll('#main .thread-box')];t.hidden=!boxes.length;
+ const all=boxes.length&&boxes.every(b=>b.classList.contains('folded'));t.innerHTML=all?ICONS.unfoldthreads:ICONS.foldthreads;t.title=all?'Expand every comment':'Collapse every comment';t.setAttribute('aria-label',t.title);}
+function foldSummary(a){const r=a.replies||[];const first=(a.comment||'').split('\n')[0];
+ return `<span class="sum">${avatarHtml(a.author||USER)}<span class="st"><b>${esc(a.author||USER)}</b> ${esc(first)}</span>${r.length?`<span class="nr">${r.length} repl${r.length>1?'ies':'y'}</span>`:''}</span>`;}
+document.addEventListener('click',e=>{const th=e.target.closest('.thread-box .th');if(!th||e.target.closest('a,button,input'))return;
+ const box=th.closest('.thread-box');setFolded([+box.dataset.id],!box.classList.contains('folded'));});
+document.addEventListener('keydown',e=>{if(e.key!=='Enter'&&e.key!==' ')return;const th=e.target.closest&&e.target.closest('.thread-box .th');if(!th||e.target!==th)return;
+ e.preventDefault();const box=th.closest('.thread-box');setFolded([+box.dataset.id],!box.classList.contains('folded'));});
 function decorateThreads(){
  const drafts={};document.querySelectorAll('tr.thread input[data-reply]').forEach(i=>{if(i.value)drafts[i.dataset.reply]=i.value;});
  const focused=document.activeElement&&document.activeElement.closest&&document.activeElement.closest('tr.thread input[data-reply]')?document.activeElement.dataset.reply:null;
@@ -1688,7 +1719,7 @@ function decorateThreads(){
   if(!last)continue;const tr=document.createElement('tr');tr.className='thread';
   tr.innerHTML=`<td colspan="${view==='split'?4:4}">${threadHtml(a)}</td>`;last.after(tr);
   const inp=tr.querySelector('input[data-reply]');if(drafts[a.id])inp.value=drafts[a.id];if(focused===String(a.id))inp.focus();}
- decoratePins();}
+ updateThreadToggle();decoratePins();}
 function decoratePins(){
  document.querySelectorAll('.pin').forEach(p=>p.remove());
  for(const a of notes){if(a.kind!=='pin')continue;const sec=document.getElementById(fileAnchor(a.file));if(!sec)continue;
@@ -1841,6 +1872,7 @@ $('#notes').addEventListener('click',async e=>{
   // A note opens its file and shows its thread, in Changes.
   if(a.file&&a.kind!=='pr'){openFiles.add(a.file);applyOpen();}setTab('changes');
   const sec=a.kind==='pr'?$('#prdraft'):a.file?document.getElementById(fileAnchor(a.file)):null;
+  if(document.querySelector(`.thread-box.folded[data-id="${a.id}"]`))setFolded([a.id],false);
   const t=sec?(sec.querySelector(`.thread-box[data-id="${a.id}"],.pin[data-jump="${a.id}"]`)||sec):$('#main');t.scrollIntoView({behavior:'smooth',block:'center'});}});
 document.addEventListener('click',e=>{const p=e.target.closest('.pin[data-jump]');if(p){const n=document.querySelector(`.note[data-id="${p.dataset.jump}"]`);if(n)n.scrollIntoView({behavior:'smooth',block:'center'});}});
 $('#cleardone').onclick=async()=>{await fetch('./clear',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({which:'done'})});await refresh(true);toast('archived done notes');};
