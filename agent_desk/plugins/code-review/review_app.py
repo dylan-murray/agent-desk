@@ -95,6 +95,10 @@ def diff_base(repo: Path, base: str | None) -> str:
     return git(repo, "merge-base", base, "HEAD").strip()
 
 
+def untracked_files(repo: Path) -> list[str]:
+    return [rel.strip() for rel in git(repo, "ls-files", "--others", "--exclude-standard").splitlines() if rel.strip()]
+
+
 def raw_diff(repo: Path, base: str, untracked: bool = True, head: str | None = None) -> str:
     """The working tree against base, or with head, a commit against base (another branch's pull request)."""
     if head:
@@ -104,10 +108,7 @@ def raw_diff(repo: Path, base: str, untracked: bool = True, head: str | None = N
         check=False,
     )
     if untracked:
-        for rel in git(repo, "ls-files", "--others", "--exclude-standard").splitlines():
-            rel = rel.strip()
-            if not rel:
-                continue
+        for rel in untracked_files(repo):
             piece = git(
                 repo, "diff", "--no-color", "--no-ext-diff", "-U3", "--no-index",
                 "--", "/dev/null", rel, check=False,
@@ -208,6 +209,11 @@ def diff_digest(repo: Path, base: str, text: str) -> str:
 def diff_model(repo: Path, base: str, untracked: bool, head: str | None = None, branch: str | None = None) -> dict:
     text = raw_diff(repo, base, untracked, head)
     files = parse_diff(text)
+    if untracked and not head:
+        loose = set(untracked_files(repo))
+        for f in files:
+            if f["status"] == "added" and f["path"] in loose:
+                f["untracked"] = True
     digest = diff_digest(repo, base, text)
     branch = branch or git(repo, "rev-parse", "--abbrev-ref", "HEAD", check=False).strip()
     return {
@@ -1240,7 +1246,9 @@ body.tab-notes #side{display:block;width:100%;max-width:860px;margin:0 auto}
 .file>header .sp{flex:1}
 .file>header .end{display:flex;align-items:center;gap:8px;flex-shrink:0}
 .file>header .lines{font:10.5px var(--mono)}
-.file>header .st{font:600 10px var(--mono);color:var(--mod)}.file>header .st.A{color:var(--add)}.file>header .st.D{color:var(--del)}
+.file>header .st{font:600 10px var(--mono);color:var(--mod)}.file>header .st.A{color:var(--add)}.file>header .st.D{color:var(--del)}.file>header .st.U{color:var(--fg-muted)}
+.untracked-head{display:flex;align-items:baseline;gap:8px;margin:18px 0 8px;padding:0 10px;color:var(--fg-muted);font-size:12px}.untracked-head b{color:var(--fg);font-weight:600}.untracked-head span{flex:1;min-width:0}
+.untracked-head button{flex:none;padding:2px 8px;border:1px solid var(--border);border-radius:5px;background:none;color:var(--fg-muted);font:inherit;cursor:pointer}.untracked-head button:hover{color:var(--fg)}
 .file>header .cnt{display:inline-flex;align-items:center;gap:3px;color:var(--amber);font-size:11px}.file>header .cnt svg.i{width:11px;height:11px}
 .bars{display:inline-flex;gap:1px}.bars i{width:4px;height:8px;border-radius:1px;background:#ffffff1c}.bars i.a{background:var(--add)}.bars i.d{background:var(--del)}
 .viewed{display:inline-flex;align-items:center;gap:4px;height:20px;padding:0 7px;border:1px solid var(--border);border-radius:6px;background:none;color:var(--fg-muted);font-size:10.5px;cursor:pointer}
@@ -1552,7 +1560,15 @@ function setTab(t){document.body.classList.toggle('tab-notes',t==='notes');$('#t
 $('#tab-changes').onclick=()=>setTab('changes');$('#tab-notes').onclick=()=>setTab('notes');
 for(const b of document.querySelectorAll('#viewseg button'))b.onclick=async()=>{if(view===b.dataset.view)return;view=b.dataset.view;localStorage.setItem('ra-view',view);await render();renderNotes();};
 function fileAnchor(p){return 'f-'+p.replace(/[^a-zA-Z0-9]/g,'_');}
-function statusBadge(f){return {added:'A',deleted:'D',renamed:'R',modified:'M'}[f.status]||'M';}
+function statusBadge(f){return f.untracked?'U':{added:'A',deleted:'D',renamed:'R',modified:'M'}[f.status]||'M';}
+/* Untracked files are new files git has not been told about: often the agent's new work, sometimes local setup that
+   was never meant for the branch. They sit last under their own heading and can be put away. */
+const untrackedKey=()=>'ra-untracked:'+model.repo;
+const untrackedHidden=()=>{try{return localStorage.getItem(untrackedKey())==='hide';}catch(e){return false;}};
+function untrackedHead(n,hidden){return `<div class="untracked-head"><b>${n} untracked file${n===1?'':'s'}${hidden?' hidden':''}</b><span>New files git is not tracking, so not on the branch or in its pull request.</span><button type="button" id="untracked-toggle">${hidden?'Show':'Hide'}</button></div>`;}
+document.addEventListener('click',async e=>{if(!e.target.closest('#untracked-toggle'))return;
+ try{untrackedHidden()?localStorage.removeItem(untrackedKey()):localStorage.setItem(untrackedKey(),'hide');}catch(err){}
+ await render();renderNotes();});
 async function render(){
  parkComposer();const main=$('#main');
  $('#meta').textContent=model.checked_out===false?`${model.branch} · not checked out here`:`${model.branch} · vs ${model.base==='HEAD'?'HEAD (working tree)':model.base.slice(0,10)}`;
@@ -1563,14 +1579,17 @@ async function render(){
  if(!openFiles)openFiles=initialOpen();
  if(!model.files.length){main.innerHTML='<section id="prdraft" hidden></section><div class="empty">No changes against '+esc(model.base)+'. Edit something and this page reloads on its own.</div>';renderPrDraft();applyOpen();return;}
  const parts=[];const only=PARAMS.get('file');
+ const loose=model.files.filter(f=>f.untracked).length,hideLoose=loose>0&&untrackedHidden();let headed=false;
  for(const f of model.files){if(only&&!f.path.includes(only))continue;
+  if(f.untracked&&!headed){headed=true;parts.push(untrackedHead(loose,hideLoose));}
+  if(f.untracked&&hideLoose)continue;
   const hlNew=f.binary||f.status==='deleted'?[]:await highlightedLines(f.path,'new');
   const hlOld=f.binary||f.status==='added'?[]:await highlightedLines(f.old_path||f.path,'old');
   const dir=f.path.includes('/')?f.path.slice(0,f.path.lastIndexOf('/')+1):'';const base=f.path.slice(dir.length);
   let body='';
   if(f.binary)body='<div class="binary">Binary file not shown</div>';
   else body=view==='split'?renderSplit(f,hlOld,hlNew):renderUnified(f,hlOld,hlNew);
-  parts.push(`<section class="file" id="${fileAnchor(f.path)}" data-path="${esc(f.path)}"><header title="${esc(f.path)} · click to open or close · Alt-click for every file">${ICONS.chev}${ICONS.file}<span class="path">${esc(base)}<span class="dir">${esc(dir.replace(/\/$/,''))}</span></span><span class="sp"></span><span class="end"><span class="cntslot"></span><span class="lines"><span class="stat-add">+${f.additions}</span> <span class="stat-del">−${f.deletions}</span></span>${bars(f.additions,f.deletions)}<span class="st ${statusBadge(f)}" title="${f.status}${f.status==='renamed'?' from '+esc(f.old_path):''}">${statusBadge(f)}</span>${f.kind==='file'?'':`<button class="ib" data-filenote="${esc(f.path)}" title="Note on this file">${ICONS.note}</button>`}<button class="viewed" data-viewed="${esc(f.path)}">${ICONS.check}<span>Viewed</span></button></span></header><div class="body">${body}</div></section>`);
+  parts.push(`<section class="file" id="${fileAnchor(f.path)}" data-path="${esc(f.path)}"><header title="${esc(f.path)} · click to open or close · Alt-click for every file">${ICONS.chev}${ICONS.file}<span class="path">${esc(base)}<span class="dir">${esc(dir.replace(/\/$/,''))}</span></span><span class="sp"></span><span class="end"><span class="cntslot"></span><span class="lines"><span class="stat-add">+${f.additions}</span> <span class="stat-del">−${f.deletions}</span></span>${bars(f.additions,f.deletions)}<span class="st ${statusBadge(f)}" title="${f.untracked?'untracked: a new file git is not tracking yet':f.status}${f.status==='renamed'?' from '+esc(f.old_path):''}">${statusBadge(f)}</span>${f.kind==='file'?'':`<button class="ib" data-filenote="${esc(f.path)}" title="Note on this file">${ICONS.note}</button>`}<button class="viewed" data-viewed="${esc(f.path)}">${ICONS.check}<span>Viewed</span></button></span></header><div class="body">${body}</div></section>`);
  }
  main.innerHTML='<section id="prdraft" hidden></section>'+parts.join('');
  renderPrDraft();

@@ -1,4 +1,4 @@
-// Supervisor loss (as in a reboot) restores the pane in place. Real PTY, fictional shell.
+// Supervisor loss (as in a reboot) restores an agent's pane in place and leaves a plain shell closed. Real PTY, fictional agent named claude.
 require('./check-isolated-url.cjs');
 const {chromium}=require('playwright');
 const {paneText}=require('./terminal-text.cjs');
@@ -27,20 +27,26 @@ async function until(fn,timeout=20000){const end=Date.now()+timeout;while(Date.n
  const alive=pid=>{try{process.kill(pid,0);return true;}catch{return false;}};
  try{
   await boot();
-  const session=await api('api/terminals/launch',{cwd:state,argv:['/bin/sh'],name:'Restored shell'});
-  await api('api/terminals/rename',{id:session.id,name:'Build shell'});
-  await api('api/terminals/input',{id:session.id,data:Buffer.from("echo $$ > shell.pid; printf 'before-%s\\n' reboot\n").toString('base64')});
+  const agent=path.join(state,'bin','claude');
+  fs.mkdirSync(path.dirname(agent));
+  fs.writeFileSync(agent,`#!${python}\nimport os, sys\nopen('agent.pid', 'w').write(str(os.getpid()))\nprint('agent ready', flush=True)\nfor line in sys.stdin:\n    print('heard ' + line.strip(), flush=True)\n`,{mode:0o755});
+  const session=await api('api/terminals/launch',{cwd:state,argv:[agent],name:'Restored agent'});
+  const scratch=await api('api/terminals/launch',{cwd:state,argv:['/bin/sh'],name:'Scratch shell'});
+  await api('api/terminals/rename',{id:session.id,name:'Build agent'});
+  await until(async()=>fs.existsSync(path.join(state,'agent.pid')));
+  await api('api/terminals/input',{id:session.id,data:Buffer.from('before-reboot\n').toString('base64')});
   browser=await chromium.launch({executablePath:process.env.CHROME_PATH,headless:true});
   const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];
   page.on('pageerror',error=>errors.push(error.message));
-  await page.addInitScript(id=>sessionStorage.setItem('agent-desk-panes-live',JSON.stringify([id])),session.id);
+  await page.addInitScript(ids=>sessionStorage.setItem('agent-desk-panes-live',JSON.stringify(ids)),[session.id,scratch.id]);
   await page.goto(base);
   const pane=page.locator(`[data-pane-id="${session.id}"]`),status=pane.locator('.pane-connection');
   await pane.waitFor();
-  await until(async()=>/before-reboot/.test(await paneText(pane)));
+  await until(async()=>/heard before-reboot/.test(await paneText(pane)));
+  await page.locator(`[data-pane-id="${scratch.id}"]`).waitFor();
   await page.waitForFunction(id=>{const v=paneViews.get(id);return v&&!v.restoring&&!v.exited;},session.id);
   await pane.evaluate(node=>node.dataset.restoreIdentity='same-pane');
-  const shell=Number(fs.readFileSync(path.join(state,'shell.pid'),'utf8'));
+  const shell=Number(fs.readFileSync(path.join(state,'agent.pid'),'utf8'));
   // Lose the supervisor with the backend; its terminal processes end with it.
   const owner=JSON.parse(fs.readFileSync(path.join(state,`.terminal-owner-${port}.json`),'utf8')).pid;
   process.kill(owner,'SIGKILL');
@@ -48,7 +54,7 @@ async function until(fn,timeout=20000){const end=Date.now()+timeout;while(Date.n
   await until(async()=>!alive(owner)&&!alive(shell));
   await until(async()=>/reconnecting/.test(await status.textContent()));
   await boot();
-  await until(async()=>/Agent Desk restored this terminal after a restart: started a new shell in the same folder/.test(await paneText(pane)));
+  await until(async()=>/Agent Desk restored this terminal after a restart: no Claude conversation had started, so this is a new session/.test(await paneText(pane)));
   await page.waitForFunction(id=>!paneViews.get(id).restoring&&!paneViews.get(id).exited,session.id);
   assert.equal(await pane.getAttribute('data-restore-identity'),'same-pane');
   // The old process's screen is reset, not mixed into the new one.
@@ -56,23 +62,27 @@ async function until(fn,timeout=20000){const end=Date.now()+timeout;while(Date.n
   assert.equal(await status.textContent(),'');
   const restored=(await api('api/agents')).agents.find(a=>a.id===session.id);
   assert.equal(restored.exit_code,null);
-  assert.equal(restored.display_name,'Build shell');
-  assert.equal(restored.restored.detail,'started a new shell in the same folder');
+  assert.equal(restored.display_name,'Build agent');
+  assert.equal(restored.restored.detail,'no Claude conversation had started, so this is a new session');
+  // The plain shell is left closed: not a session, and its pane is gone.
+  assert.equal((await api('api/agents')).agents.some(a=>a.id===scratch.id),false);
+  await until(async()=>await page.locator(`[data-pane-id="${scratch.id}"]`).count()===0);
   await pane.locator('.xterm-helper-textarea').focus();
-  await page.keyboard.type("echo $$ > shell.pid; printf 'after-%s\\n' reboot");
+  await page.keyboard.type('after-reboot');
   await page.keyboard.press('Enter');
-  await until(async()=>/after-reboot/.test(await paneText(pane)));
-  assert.notEqual(Number(fs.readFileSync(path.join(state,'shell.pid'),'utf8')),shell);
+  await until(async()=>/heard after-reboot/.test(await paneText(pane)));
+  assert.notEqual(Number(fs.readFileSync(path.join(state,'agent.pid'),'utf8')),shell);
   const evidence=process.env.AGENT_DESK_EVIDENCE_DIR||os.tmpdir();
   await pane.screenshot({path:path.join(evidence,'terminal-restore.png')});
   await page.reload();
-  await until(async()=>/after-reboot/.test(await paneText(pane)));
+  await until(async()=>/heard after-reboot/.test(await paneText(pane)));
   assert.doesNotMatch(await paneText(pane),/before-reboot/);
+  assert.equal(await page.locator(`[data-pane-id="${scratch.id}"]`).count(),0);
   assert.deepEqual(errors,[]);
   await api('api/terminals/stop',{id:session.id});
   await until(async()=>/Session ended/.test(await status.textContent()));
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(state,`terminal-sessions-${port}.json`),'utf8')).sessions,[]);
-  console.log('PASS: supervisor and backend SIGKILL, same pane restored in place with a reset screen and explanation, renamed title kept, keyboard input reaches a new shell, reload, explicit Stop clears the restore record.');
+  console.log('PASS: supervisor and backend SIGKILL, agent pane restored in place with a reset screen and explanation, renamed title kept, plain shell left closed and its pane gone, keyboard input reaches the new agent, reload, explicit Stop clears the restore record.');
  }finally{
   if(browser)await browser.close();
   if(server&&server.exitCode===null&&server.signalCode===null){const exited=once(server,'exit');server.kill('SIGINT');await exited;}

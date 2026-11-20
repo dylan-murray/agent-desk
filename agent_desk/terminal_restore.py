@@ -1,12 +1,13 @@
 """Restore managed terminals after their supervisor ends (reboot, crash or stop).
 
 The supervisor records every running, restorable terminal. A replacement
-supervisor relaunches those records under their original IDs: coding agents
-resume the exact native conversation observed in their process tree, plain
-shells start again in the same folder, and other commands are never re-run,
-unless an agent was seen running inside them with a conversation: then
-that same command runs again with the agent's resume arguments added, so a
-wrapper like `ollama launch claude` comes back on its conversation.
+supervisor relaunches the coding agents among those records under their
+original IDs, resuming the exact native conversation observed in their process
+tree. A command an agent was seen running inside with a conversation runs again
+with the agent's resume arguments added, so a wrapper like `ollama launch claude`
+comes back on its conversation. Everything else stays closed: an agent that had
+exited, a plain shell, any other command, which is never re-run, and an agent
+whose folder or executable is gone.
 Coordinator terminals and coordinator workers are excluded; the coordinator
 runtime owns their recovery and must never see a worker relaunched behind it.
 """
@@ -63,7 +64,8 @@ def record(session):
     return dict(id=session.id, name=session.name, display_name=session.display_name, cwd=session.cwd,
                 argv=session.argv, launch_profile=session.launch_profile, parent_id=session.parent_id,
                 created=session.created, origin=session.origin, native_session=session.native_session,
-                native_harness=session.native_harness, agent_exited=session.agent_exited)
+                native_harness=session.native_harness, agent_exited=session.agent_exited,
+                title=session.title, conversation_title=session.conversation_title)
 
 
 class SessionStore:
@@ -182,6 +184,20 @@ def plan(item):
     return payload, False, 'started a shell instead of re-running ' + shlex.join([Path(argv[0]).name, *argv[1:]])[:160]
 
 
+def left_closed(item):
+    """Why a recorded terminal is not worth bringing back after a restart, or None when it is.
+
+    Only agents come back. An agent you had exited, a plain shell, or a command that would
+    only come back as a shell would just be an empty pane on the desk."""
+    name = harness(item['argv'], item['launch_profile'])
+    if name:
+        return f'{NAMES[name]} had exited' if item.get('agent_exited') else None
+    wrapped = item.get('native_harness')
+    if wrapped in RESUME and valid_id(wrapped, item.get('native_session')):
+        return None
+    return 'it was a plain shell' if plain_shell(item['argv']) else 'no agent conversation was seen in ' + command_word(item['argv'])
+
+
 def banner(detail):
     return f'\x1b[2m[Agent Desk restored this terminal after a restart: {detail}]\x1b[0m\r\n'.encode()
 
@@ -192,6 +208,10 @@ def restore(manager, store):
     restored = []
     for item in items:
         try:
+            reason = left_closed(item)
+            if reason:
+                print(f'Left terminal {item["id"]} closed: {reason}', file=sys.stderr, flush=True)
+                continue
             payload, resumed, detail = plan(item)
             if item.get('parent_id') in {r['id'] for r in restored}:
                 payload['parent_id'] = item['parent_id']
@@ -199,15 +219,17 @@ def restore(manager, store):
             try:
                 session = manager.launch(payload, identity=item['id'], origin=origin, banner=banner(detail), persist=False)
             except ValueError as error:
-                # Keep the pane and say why, rather than silently losing it.
-                folder = item['cwd'] if Path(item['cwd']).is_dir() else str(Path.home())
-                resumed, detail = False, f'could not relaunch ({error}); started a shell in {folder}'
-                session = manager.launch(dict(cwd=folder, name=item['name'], launch_profile=None,
-                                              argv=[os.environ.get('SHELL', '/bin/zsh'), '-l']),
-                                         identity=item['id'], origin=origin, banner=banner(detail), persist=False)
+                # Its folder or executable is gone. A shell somewhere else is not the agent, so it stays closed too.
+                print(f'Left terminal {item["id"]} closed: could not relaunch ({error})', file=sys.stderr, flush=True)
+                continue
             if item.get('display_name'):
                 session.rename(item['display_name'])
             session.restored = dict(detail=detail, native_session=item['native_session'] if resumed else None)
+            session.title = session.saved_title = item.get('title')
+            session.conversation_title = item.get('conversation_title')
+            # Known now, so the record saved below keeps the conversation before the next sample.
+            if resumed:
+                session.native_session, session.native_harness = item['native_session'], item.get('native_harness')
             restored.append(dict(id=session.id, detail=detail))
             print(f'Restored terminal {session.id}: {detail}', file=sys.stderr, flush=True)
         except (OSError, ValueError, KeyError, TypeError) as error:

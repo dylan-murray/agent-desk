@@ -83,10 +83,13 @@ class SavedDeskRecordTests(unittest.TestCase):
     def test_the_save_dialog_says_what_each_terminal_comes_back_as(self):
         resumes = saved_desks.outcome(record('terminal-a', ['/usr/bin/codex'], native_session=CODEX_ID))
         self.assertEqual(resumes, dict(id='terminal-a', resumes=True, detail=f'On reopen: resumes Codex conversation {CODEX_ID}'))
+        # What a restart leaves closed is not kept with the desk either.
         shell = saved_desks.outcome(record('terminal-b', ['/bin/zsh', '-l'], launch_profile=None))
-        self.assertEqual((shell['resumes'], shell['detail']), (False, 'On reopen: starts a new shell in the same folder'))
+        self.assertEqual(shell, dict(id='terminal-b', resumes=False, closes=True, detail='Not reopened: it was a plain shell'))
         command = saved_desks.outcome(record('terminal-c', ['/usr/bin/make', 'watch'], launch_profile=None))
-        self.assertEqual(command['detail'], 'On reopen: starts a shell instead of re-running make watch')
+        self.assertEqual(command['detail'], 'Not reopened: no agent conversation was seen in make')
+        exited = saved_desks.outcome(record('terminal-d', ['/usr/bin/codex'], agent_exited=True))
+        self.assertEqual(exited['detail'], 'Not reopened: Codex had exited')
 
 
 class SavedDeskRouteTests(unittest.TestCase):
@@ -125,14 +128,15 @@ class SavedDeskRouteTests(unittest.TestCase):
     def test_save_keeps_records_read_before_stopping_and_reopen_resumes_them(self):
         work = self.post('/api/desks/create', {'name': 'Work'})['id']
         agent = record('terminal-a', ['/usr/bin/codex', '--model', 'x'], native_session=CODEX_ID, display_name='Reviewer')
-        child = record('terminal-b', ['/bin/zsh', '-l'], launch_profile=None, parent_id='terminal-a', created=2)
-        self.records.write_text(json.dumps(dict(version=1, sessions=[agent, child])))
-        stopped = dict(stopped=['terminal-a', 'terminal-b', 'terminal-remote'], closed=['coordinator-1', 'coordinator-remote'], skipped=[], failed=[])
+        child = record('terminal-b', ['/usr/bin/codex'], parent_id='terminal-a', created=2)
+        shell = record('terminal-s', ['/bin/zsh', '-l'], launch_profile=None, created=3)
+        self.records.write_text(json.dumps(dict(version=1, sessions=[agent, child, shell])))
+        stopped = dict(stopped=['terminal-a', 'terminal-b', 'terminal-s', 'terminal-remote'], closed=['coordinator-1', 'coordinator-remote'], skipped=[], failed=[])
         coordinators = Mock(agents=Mock(return_value=[dict(id='coordinator-1')]))
         with patch.object(server, 'shutdown_desk', return_value=stopped) as shutdown, patch.object(server, 'COORDINATORS', coordinators):
             saved = self.post('/api/desks/save', {'id': work, 'ids': ['terminal-a'], 'layout': LAYOUT})
         self.assertEqual(shutdown.call_args.args[0]['ids'], ['terminal-a'])
-        self.assertEqual(saved['saved'], ['terminal-a', 'terminal-b', 'coordinator-1'])
+        self.assertEqual(saved['saved'], ['terminal-a', 'terminal-b', 'coordinator-1'], 'the plain shell stops and is not kept')
         self.assertTrue(next(d for d in saved['desks'] if d['id'] == work)['saved_at'])
         self.assertIn('already saved', self.error('/api/desks/save', {'id': work, 'ids': [], 'layout': LAYOUT}))
 
@@ -155,9 +159,9 @@ class SavedDeskRouteTests(unittest.TestCase):
     def test_sessions_left_out_stop_but_are_not_kept_and_take_their_workers(self):
         work = self.post('/api/desks/create', {'name': 'Work'})['id']
         parent = record('terminal-a', ['/usr/bin/codex'], native_session=CODEX_ID)
-        worker = record('terminal-b', ['/bin/zsh', '-l'], launch_profile=None, parent_id='terminal-a', created=2)
-        shell = record('terminal-c', ['/bin/zsh', '-l'], launch_profile=None, created=3)
-        self.records.write_text(json.dumps(dict(version=1, sessions=[parent, worker, shell])))
+        worker = record('terminal-b', ['/usr/bin/codex'], parent_id='terminal-a', created=2)
+        other = record('terminal-c', ['/usr/bin/codex'], created=3)
+        self.records.write_text(json.dumps(dict(version=1, sessions=[parent, worker, other])))
         stopped = dict(stopped=['terminal-a', 'terminal-b', 'terminal-c'], closed=['coordinator-1'], skipped=[], failed=[])
         coordinators = Mock(agents=Mock(return_value=[dict(id='coordinator-1')]))
         with patch.object(server, 'shutdown_desk', return_value=stopped) as shutdown, patch.object(server, 'COORDINATORS', coordinators):
@@ -170,8 +174,10 @@ class SavedDeskRouteTests(unittest.TestCase):
 
     def test_a_terminal_that_cannot_start_is_reported_and_the_rest_reopen(self):
         work = self.post('/api/desks/create', {'name': 'Work'})['id']
-        server.DESKS.keep(work, dict(terminals=[record('terminal-a', ['/bin/zsh', '-l'], launch_profile=None, cwd='/gone'),
-                                                 record('terminal-b', ['/bin/zsh', '-l'], launch_profile=None, created=2)], coordinators=[], layout=LAYOUT))
+        # A shell kept by a desk saved before shells stopped being kept stays closed, unreported.
+        server.DESKS.keep(work, dict(terminals=[record('terminal-a', ['/usr/bin/codex'], cwd='/gone'),
+                                                 record('terminal-b', ['/usr/bin/codex'], created=2),
+                                                 record('terminal-s', ['/bin/zsh', '-l'], launch_profile=None, created=3)], coordinators=[], layout=LAYOUT))
         def launch(payload, coordinator=None, desk=None):
             if payload['cwd'] == '/gone':
                 raise ValueError('Choose an existing absolute working directory')
