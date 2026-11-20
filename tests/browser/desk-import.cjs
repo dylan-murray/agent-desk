@@ -99,9 +99,9 @@ const rows=page=>page.$$eval('#shutdown-desk-dialog .desk-shutdown-list li',node
   const listed=await rows(page);
   check('reopening an imported desk opens the dialog first',()=>{assert.equal(dialog.title,`Reopen “${RESEARCH}” here`);assert.match(dialog.lede,/Imported from the desktop app.*Nothing has started yet/);});
   check('...with what each session comes back as',()=>{
-    assert.deepEqual(listed.map(r=>[r.name,r.tag]),[['Reviewer','Resumes'],['Claude work',null],['Build','Starts fresh']]);
+    assert.deepEqual(listed.map(r=>[r.name,r.tag]),[['Reviewer','Resumes'],['Claude work',null],['Build','Not reopened']]);
     assert.equal(listed[0].detail,`On reopen: resumes Claude conversation ${reviewer}`);
-    assert.equal(listed[2].detail,'On reopen: starts a new shell in the same folder');
+    assert.equal(listed[2].detail,'Not reopened: it was a plain shell');
   });
   check('...an account missing here asks for one and holds the reopen',()=>{assert.match(listed[1].note,/No “claude-work” account here/);assert.equal(listed[1].select,'');assert.equal(dialog.disabled,true);});
   const agentsAtDialog=(await page.evaluate(async()=>(await fetch('/api/agents')).json())).agents.length;
@@ -113,25 +113,22 @@ const rows=page=>page.$$eval('#shutdown-desk-dialog .desk-shutdown-list li',node
   await page.screenshot({path:path.join(OUT,'desk-import-05-picked.png')});
   await page.click('#confirm-shutdown-desk');
   await page.waitForFunction(()=>!document.getElementById('shutdown-desk-dialog').open,null,{timeout:20000});
-  await page.waitForFunction(()=>document.querySelectorAll('#terminal .terminal-pane').length===4,null,{timeout:20000});
+  await page.waitForFunction(()=>document.querySelectorAll('#terminal .terminal-pane').length===3,null,{timeout:20000});
   const reopened=await page.evaluate(()=>({desk:activeDesk().name,layout:paneLayoutId,panes:[...openPaneIds],toast:document.getElementById('toast').textContent,
     titles:Object.fromEntries(openPaneIds.map(id=>[id,document.querySelector(`[data-pane-id="${CSS.escape(id)}"] .pane-title, [data-pane-id="${CSS.escape(id)}"] .terminal-title`)?.textContent||''])),
     agents:agents.filter(a=>openPaneIds.includes(a.id)).map(a=>({id:a.id,name:a.name}))}));
   const byName=Object.fromEntries(reopened.agents.map(a=>[a.name,a.id]));
-  check('it reopens on its desk with its panes, layout and web page',()=>{assert.equal(reopened.desk,RESEARCH);assert.equal(reopened.layout,'columns');assert.equal(reopened.panes.length,4);assert.ok(reopened.panes.includes('web-1'));});
-  check('...and says how many resumed',()=>assert.match(reopened.toast,/Reopened .* · 2 resumed, 1 started fresh/));
+  check('it reopens on its desk with its panes, layout and web page',()=>{assert.equal(reopened.desk,RESEARCH);assert.equal(reopened.layout,'columns');assert.equal(reopened.panes.length,3);assert.ok(reopened.panes.includes('web-1'));});
+  check('...and says how many resumed',()=>assert.match(reopened.toast,/Reopened .* · 2 resumed$/));
   await bufferHas(page,byName.Reviewer,`fake-claude args: --resume ${reviewer}`);
   await bufferHas(page,byName['Claude work'],`fake-claude args: --resume ${work}`);
   const texts=await Promise.all(Object.values(byName).map(id=>bufferText(page,id)));
   check('Claude resumes each conversation through this app\'s account, with none of the other app\'s flags',()=>{
     for(const text of texts)for(const flag of ['dangerously','mcp-config','elsewhere'])assert.ok(!text.includes(flag),flag);
   });
-  await page.click(`[data-pane-id="${byName.Build}"] .xterm-screen`);await page.keyboard.type("printf 'shell-%s\\n' ready");await page.keyboard.press('Enter');
-  await bufferHas(page,byName.Build,'shell-ready');
-  check('a shell comes back as a working shell',()=>{});
-  check('...and the build command never ran',()=>assert.ok(!texts[2].includes('deploy')));
+  check('the build command, which would only come back as a shell, is left closed and never ran',()=>{assert.equal(byName.Build,undefined);assert.ok(!texts.some(text=>text.includes('deploy')));});
   const launched=(await page.evaluate(async()=>(await fetch('/api/agents')).json())).agents.filter(a=>Object.values(byName).includes(a.id));
-  check('...each in the folder it came from',()=>assert.deepEqual(Object.fromEntries(launched.map(a=>[a.name,a.cwd])),{Reviewer:alpha,'Claude work':beta,Build:beta}));
+  check('...each in the folder it came from',()=>assert.deepEqual(Object.fromEntries(launched.map(a=>[a.name,a.cwd])),{Reviewer:alpha,'Claude work':beta}));
   check('the desktop app\'s file is still unchanged after reopening',()=>assert.equal(peerBytes(),peerHash));
   await page.waitForTimeout(400);await page.screenshot({path:path.join(OUT,'desk-import-06-reopened.png')});
   check('no page errors',()=>assert.deepEqual(errors,[]));

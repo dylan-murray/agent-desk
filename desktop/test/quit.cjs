@@ -49,12 +49,16 @@ async function menuQuit(){await electron.evaluate(({Menu})=>Menu.getApplicationM
     await window.waitForFunction(()=>document.querySelector('#sync-status')?.textContent.includes('Connected'));
     manager.record=null;manager.loadRecord();return window;
   }
+  // Only agents come back, so the kept session is a stand-in named claude that answers each line.
+  const agent=path.join(base,'bin','claude');fs.mkdirSync(path.dirname(agent));
+  fs.writeFileSync(agent,'#!/bin/sh\necho agent ready\nwhile read line; do echo "heard $line"; done\n',{mode:0o755});
   let window=await open();
-  const shell=await window.evaluate(cwd=>terminalRequest('/api/terminals/launch',{cwd,argv:['/bin/sh'],name:'Fictional saved shell'}),base);
-  const closed=await window.evaluate(cwd=>terminalRequest('/api/terminals/launch',{cwd,argv:['/bin/sh'],name:'Fictional closed shell'}),base);
+  const shell=await window.evaluate(([cwd,agent])=>terminalRequest('/api/terminals/launch',{cwd,argv:[agent],name:'Fictional saved agent'}),[base,agent]);
+  const closed=await window.evaluate(([cwd,agent])=>terminalRequest('/api/terminals/launch',{cwd,argv:[agent],name:'Fictional closed agent'}),[base,agent]);
+  const plain=await window.evaluate(cwd=>terminalRequest('/api/terminals/launch',{cwd,argv:['/bin/sh'],name:'Fictional plain shell'}),base);
   await window.evaluate(async({kept,closed})=>{
     await terminalRequest('/api/terminals/stop',{id:closed});
-    await terminalRequest('/api/terminals/rename',{id:kept,name:'Saved build shell'});
+    await terminalRequest('/api/terminals/rename',{id:kept,name:'Saved build agent'});
     await refresh();selectPane(kept);
   },{kept:shell.id,closed:closed.id});
   const evidence=process.env.AGENT_DESK_EVIDENCE_DIR||require('node:os').tmpdir();fs.mkdirSync(evidence,{recursive:true});
@@ -73,20 +77,20 @@ async function menuQuit(){await electron.evaluate(({Menu})=>Menu.getApplicationM
     const error=await electron.evaluate(()=>global.fixtureShutdownError);
     assert.equal(error.title,'Previous shutdown is incomplete');assert.match(error.detail,/save terminal sessions/);
     assert.equal(electron.process().exitCode,null);
-    const paused=await manager.status();assert.equal(paused.paused,true);assert.deepEqual(paused.sessions.map(item=>item.id),[shell.id]);
+    const paused=await manager.status();assert.equal(paused.paused,true);assert.deepEqual(paused.sessions.map(item=>item.id).sort(),[shell.id,plain.id].sort());
     assert.equal(await electron.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].isVisible()),true);
   }finally{fs.rmdirSync(blocked);}
   const stopped=new Promise(resolve=>electron.process().once('exit',resolve));await menuQuit();await stopped;
   assert.equal(fs.existsSync(manager.recordPath),false,'Quit confirms backend exit');
   const saved=JSON.parse(fs.readFileSync(sessionFile,'utf8'));
-  assert.deepEqual(saved.sessions.map(item=>item.id),[shell.id]);
+  assert.deepEqual(saved.sessions.map(item=>item.id).sort(),[shell.id,plain.id].sort());
   window=await open();
   const pane=window.locator(`[data-pane-id="${shell.id}"]`);
   await pane.locator('.xterm').waitFor();
-  await pane.locator('.pane-title').getByText('Saved build shell',{exact:false}).waitFor();
+  await pane.locator('.pane-title').getByText('Saved build agent',{exact:false}).waitFor();
   assert.ok(await window.evaluate(id=>openPaneIds.includes(id),shell.id));
   const liveSessions=(await manager.status()).sessions;
-  assert.deepEqual(liveSessions.map(item=>item.id),[shell.id]);
+  assert.deepEqual(liveSessions.map(item=>item.id),[shell.id],'the plain shell is left closed');
   assert.equal(liveSessions[0].cwd,base);
   const savedCoordinators=await window.evaluate(()=>terminalRequest('/api/coordinators'));
   assert.equal(savedCoordinators.coordinators.find(item=>item.id===c.id)?.name,'Fictional coordinator','SQLite coordinator session also survives stop/start');
@@ -97,8 +101,8 @@ async function menuQuit(){await electron.evaluate(({Menu})=>Menu.getApplicationM
     assert.equal(await window.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
     await window.screenshot({path:path.join(evidence,`agent-desk-session-restored-${width}.png`)});
   }
-  await window.evaluate(id=>terminalRequest('/api/terminals/input',{id,data:btoa("printf 'reopened-%s\\n' desktop\n")}),shell.id);
-  await (async()=>{for(let i=0;i<100;i++){if((await paneText(pane)).includes('reopened-desktop'))return;await new Promise(resolve=>setTimeout(resolve,50));}throw Error('Restored terminal did not accept input');})();
+  await window.evaluate(id=>terminalRequest('/api/terminals/input',{id,data:btoa('reopened-desktop\n')}),shell.id);
+  await (async()=>{for(let i=0;i<100;i++){if((await paneText(pane)).includes('heard reopened-desktop'))return;await new Promise(resolve=>setTimeout(resolve,50));}throw Error('Restored terminal did not accept input');})();
   assert.match(await paneText(pane),/Agent Desk restored this terminal after a restart/);
   await window.evaluate(id=>terminalRequest('/api/terminals/stop',{id}),shell.id);
   await electron.evaluate(({dialog})=>{dialog.showMessageBox=async()=>{throw Error('Stopped terminals prompted for quit');};});
@@ -106,7 +110,7 @@ async function menuQuit(){await electron.evaluate(({Menu})=>Menu.getApplicationM
   window=await open();
   assert.deepEqual((await manager.status()).sessions,[],'Explicitly stopped terminals stay closed after reopening');
   const emptyExit=new Promise(resolve=>electron.process().once('exit',resolve));await menuQuit();await emptyExit;
-  console.log('PASS: native quit choices, idle coordinator quit, failed checkpoint keeping app/PTY alive, successful retry and quit/reopen preserving session ID/title/folder/pane and working PTY at desktop/narrow widths, and explicit Stop staying closed.');
+  console.log('PASS: native quit choices, idle coordinator quit, failed checkpoint keeping app/PTY alive, successful retry and quit/reopen preserving the agent session ID/title/folder/pane and working PTY at desktop/narrow widths while a plain shell stays closed, and explicit Stop staying closed.');
 })().catch(error=>{console.error(error);process.exitCode=1;}).finally(async()=>{
   if(manager)try{await manager.shutdown();}catch{}
   if(electron)try{await electron.evaluate(({app})=>app.exit(0));}catch{}

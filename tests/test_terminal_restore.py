@@ -37,7 +37,9 @@ os.makedirs(folder, exist_ok=True)
 with open(os.path.join(folder, f'{os.getpid()}.json'), 'w') as f:
     json.dump(dict(pid=os.getpid(), sessionId=sid, startedAt=int(time.time() * 1000), kind='interactive'), f)
 print('ARGV ' + json.dumps(args), flush=True)
-sys.stdin.read()
+for line in sys.stdin:
+    if line.startswith('title '):
+        print('\\x1b]0;' + line[6:].strip() + '\\x07', end='', flush=True)
 '''
 FAKE_CODEX = '''import json, os, sys
 args = sys.argv[1:]
@@ -132,7 +134,7 @@ class RestoreTests(unittest.TestCase):
             path.write_text(f'#!{sys.executable}\n' + source)
             path.chmod(0o755)
         self.env = patch.dict(os.environ, PATH=f'{self.bin}{os.pathsep}{os.environ["PATH"]}', SHELL='/bin/sh',
-                              CLAUDE_CONFIG_DIR=str(self.root / 'claude-config'), FAKE_CODEX_HOME=str(self.root / 'codex-home'),
+                              FAKE_SESSION=CLAUDE_ID, CLAUDE_CONFIG_DIR=str(self.root / 'claude-config'), FAKE_CODEX_HOME=str(self.root / 'codex-home'),
                               FAKE_SUBAGENT=SUBAGENT_ID, GROK_HOME=str(self.root / 'grok-home'),
                               SNOWFLAKE_HOME=str(self.root / 'snowflake'), FAKE_OPENCODE_DATA=str(self.root / 'opencode-data'))
         self.env.start()
@@ -180,23 +182,24 @@ class RestoreTests(unittest.TestCase):
 
     def test_restore_reuses_ids_resets_readers_and_never_reruns_commands(self):
         manager = self.manager()
-        parent = self.launch(manager, ['/bin/sh'])
-        child = self.launch(manager, ['/bin/sh'], parent_id=parent.id)
+        parent = self.launch(manager, ['claude'])
+        child = self.launch(manager, ['claude'], parent_id=parent.id)
         marker = self.root / 'ran'
-        command = self.launch(manager, [sys.executable, '-c', f'open({str(marker)!r}, "a").write("x"); import time; time.sleep(60)'])
+        self.launch(manager, [sys.executable, '-c', f'open({str(marker)!r}, "a").write("x"); import time; time.sleep(60)'])
         child.rename('Renamed child')
         manager.persist()
         wait(marker.exists)
-        send(parent, "printf 'before-%s\\n' restart\n")
+        wait(lambda: 'ARGV' in text(parent))
+        send(parent, 'before-restart\n')
         wait(lambda: 'before-restart' in text(parent))
         old_cursor = parent.output(0)['cursor']
         manager.close()
 
         replacement = self.manager()
         restored = {r['id']: r['detail'] for r in restore(replacement, self.store)}
-        self.assertEqual(set(restored), {parent.id, child.id, command.id})
-        self.assertEqual(restored[parent.id], 'started a new shell in the same folder')
-        self.assertTrue(restored[command.id].startswith('started a shell instead of re-running '), restored[command.id])
+        # The command is left closed, never re-run.
+        self.assertEqual(set(restored), {parent.id, child.id})
+        self.assertEqual(restored[parent.id], 'no Claude conversation had started, so this is a new session')
         self.assertEqual(marker.read_text(), 'x')
         again = replacement.get(child.id)
         self.assertEqual(again.info()['display_name'], 'Renamed child')
@@ -209,14 +212,38 @@ class RestoreTests(unittest.TestCase):
         self.assertTrue(gap['truncated'])
         self.assertEqual(shell.origin, RESTORE_GAP)
         self.assertIn('Agent Desk restored this terminal after a restart', text(shell, RESTORE_GAP))
-        send(shell, "printf 'after-%s\\n' restart\n")
+        send(shell, 'after-restart\n')
         wait(lambda: 'after-restart' in text(shell, RESTORE_GAP))
-        self.assertEqual(set(self.records()), {parent.id, child.id, command.id})
+        self.assertEqual(set(self.records()), {parent.id, child.id})
         # A second restore moves past the first restored process too.
         replacement.close()
         third = self.manager()
         restore(third, self.store)
         self.assertEqual(third.get(parent.id).origin, 2 * RESTORE_GAP)
+
+    def test_terminal_title_survives_a_restart_and_generic_titles_do_not_replace_it(self):
+        manager = self.manager()
+        shell = self.launch(manager, ['claude'])
+        wait(lambda: 'ARGV' in text(shell))
+        send(shell, 'title ✳ Fix the login page\n')
+        wait(lambda: shell.info()['terminal_title'] == 'Fix the login page')
+        manager.capture_conversations()
+        self.assertEqual(self.records()[shell.id]['title'], 'Fix the login page')
+        send(shell, 'title ✳ Claude Code\n')
+        send(shell, 'marker-done\n')
+        wait(lambda: 'marker-done' in text(shell))
+        self.assertEqual(shell.info()['terminal_title'], 'Fix the login page')
+        manager.close()
+
+        replacement = self.manager()
+        restore(replacement, self.store)
+        again = replacement.get(shell.id)
+        self.assertEqual(again.info()['terminal_title'], 'Fix the login page')
+        wait(lambda: 'ARGV' in text(again, RESTORE_GAP))
+        send(again, 'title Ship the settings columns\n')
+        wait(lambda: again.info()['terminal_title'] == 'Ship the settings columns')
+        replacement.capture_conversations()
+        self.assertEqual(self.records()[shell.id]['title'], 'Ship the settings columns')
 
     def test_desktop_stop_checkpoints_exact_conversations_before_process_exit(self):
         from agent_desk.terminal_supervisor import SupervisorClient
@@ -366,9 +393,8 @@ class RestoreTests(unittest.TestCase):
         records = self.records()
         self.assertEqual({records[shell.id]['native_harness'], records[server.id]['native_harness']}, {None})
         manager.close()
-        details = {r['id']: r['detail'] for r in restore(self.manager(), self.store)}
-        self.assertEqual(details[shell.id], 'started a new shell in the same folder')
-        self.assertTrue(details[server.id].startswith('started a shell instead of re-running'))
+        self.assertEqual(restore(self.manager(), self.store), [])
+        self.assertEqual(self.records(), {})
 
     def test_a_wrapped_record_resumes_only_a_real_conversation_id(self):
         item = dict(id='terminal-0000000000000004', name='Fixture', display_name=None, cwd=str(self.root), launch_profile=None,
@@ -385,7 +411,7 @@ class RestoreTests(unittest.TestCase):
         payload, _, _ = plan(dict(item, argv=['ollama', 'launch', 'claude', '--', '--continue']))
         self.assertEqual(payload['argv'], ['ollama', 'launch', 'claude', '--', '--resume', CLAUDE_ID])
 
-    def test_agent_that_exited_to_its_shell_is_restored_as_a_shell(self):
+    def test_agent_that_exited_to_its_shell_is_left_closed(self):
         from agent_desk.standalone_agent import launch_payload
         manager = self.manager()
         # The claude profile drops CLAUDE_CONFIG_DIR, so the agent uses HOME/.claude.
@@ -397,8 +423,8 @@ class RestoreTests(unittest.TestCase):
             send(agent, '\x04')
             wait(lambda: 'Shell ready' in text(agent) and self.records()[agent.id]['agent_exited'])
             manager.close()
-            [result] = restore(self.manager(), self.store)
-        self.assertEqual(result['detail'], 'Claude had exited, so this is a new shell in the same folder')
+            self.assertEqual(restore(self.manager(), self.store), [])
+        self.assertEqual(self.records(), {})
 
     def test_pi_relaunches_as_a_new_session_and_others_without_a_conversation_start_new(self):
         item = dict(id='terminal-0000000000000003', name='Pi', display_name=None, cwd=str(self.root),
@@ -448,19 +474,18 @@ class RestoreTests(unittest.TestCase):
                         + json.dumps(dict(ts=datetime.fromtimestamp(now, timezone.utc).isoformat(), pid=101, session_id=CORTEX_ID, msg='turn')) + '\n')
         self.assertEqual(cortex_sessions({101: (1, now)}, [coco]), {(1, CORTEX_ID)})
 
-    def test_agent_without_a_conversation_starts_new_and_unrecorded_folder_falls_back(self):
+    def test_agent_without_a_conversation_starts_new_and_one_whose_folder_is_gone_stays_closed(self):
         item = dict(id='terminal-0000000000000001', name='Codex', display_name=None, cwd=str(self.root),
                     argv=[str(self.bin / 'codex')], launch_profile=None, parent_id=None, created=1, origin=0, native_session=None)
         payload, resumed, detail = plan(item)
         self.assertFalse(resumed)
         self.assertEqual(payload['argv'], item['argv'])
         self.assertEqual(detail, 'no Codex conversation had started, so this is a new session')
-        gone = dict(item, id='terminal-0000000000000002', cwd=str(self.root / 'deleted'), argv=['/bin/sh'])
+        # An agent whose folder is gone is not brought back as a shell somewhere else: it stays closed.
+        gone = dict(item, id='terminal-0000000000000002', cwd=str(self.root / 'deleted'))
         self.store.save([gone])
-        manager = self.manager()
-        [result] = restore(manager, self.store)
-        self.assertIn('could not relaunch (Choose an existing absolute working directory); started a shell in ' + str(Path.home()), result['detail'])
-        self.assertEqual(manager.get(gone['id']).cwd, str(Path.home()))
+        self.assertEqual(restore(self.manager(), self.store), [])
+        self.assertEqual(self.records(), {})
 
     def test_unreadable_record_is_kept_aside_not_discarded(self):
         self.store.path.write_text('{not json')
@@ -547,6 +572,13 @@ class BackendRestoreTests(unittest.TestCase):
                 wait(lambda: 'ARGV' in output(claude['id']))
                 # The supervisor samples conversations every few seconds.
                 wait(lambda: any(r.get('native_session') == CLAUDE_ID for r in json.loads(records.read_text())['sessions']), 20)
+                # Shutting down a Mac signals the agent too, and it can die before the supervisor does.
+                # Killed is not exited: the wrapper drops to a shell but the conversation still resumes.
+                [session_file] = (root / '.claude' / 'sessions').glob('*.json')
+                os.kill(int(session_file.stem), signal.SIGTERM)
+                wait(lambda: 'Shell ready' in output(claude['id']))
+                time.sleep(1)
+                self.assertFalse(next(r for r in json.loads(records.read_text())['sessions'] if r['id'] == claude['id'])['agent_exited'])
                 owner = SupervisorClient(root, port, start=False).call('hello')['pid']
                 client = SupervisorClient(root, port, start=False)
                 old = {s['id']: client.get(s['id']).process.pid for s in client.list()}
@@ -566,14 +598,16 @@ class BackendRestoreTests(unittest.TestCase):
                 self.assertIsNone(restored['exit_code'])
                 self.assertEqual(restored['display_name'], 'Reviewer')
                 self.assertEqual(restored['restored'], dict(detail=f'resumed Claude conversation {CLAUDE_ID}', native_session=CLAUDE_ID))
-                self.assertIsNone(agent(shell['id'])['exit_code'])
+                # The record saved by the restore already has the conversation, before any new sample.
+                self.assertEqual(next(r for r in json.loads(records.read_text())['sessions'] if r['id'] == claude['id'])['native_session'], CLAUDE_ID)
+                # A plain shell is left closed.
+                self.assertNotIn(shell['id'], {a['id'] for a in api('/api/agents')['agents']})
                 wait(lambda: 'ARGV' in output(claude['id'], RESTORE_GAP))
                 screen = output(claude['id'], RESTORE_GAP)
                 self.assertIn(f'resumed Claude conversation {CLAUDE_ID}', screen)
                 self.assertIn(json.dumps(['--resume', CLAUDE_ID]), screen)
-                api('/api/terminals/input', dict(id=shell['id'], data=base64.b64encode(b"printf 'alive-%s\\n' again\n").decode()))
-                wait(lambda: 'alive-again' in output(shell['id'], RESTORE_GAP))
-                self.assertNotEqual(SupervisorClient(root, port, start=False).get(shell['id']).process.pid, old[shell['id']])
+                self.assertNotEqual(SupervisorClient(root, port, start=False).get(claude['id']).process.pid, old[claude['id']])
+                self.assertEqual({r['id'] for r in json.loads(records.read_text())['sessions']}, {claude['id']})
             finally:
                 if process is not None and process.poll() is None:
                     process.send_signal(signal.SIGINT)

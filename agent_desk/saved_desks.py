@@ -3,9 +3,10 @@
 Saving keeps, for each terminal on the desk, the record the terminal supervisor already writes
 for restarts (terminal_restore.record): its folder, command, account and the native Claude or
 Codex conversation it is in. Reopening launches each through terminal_restore.plan, exactly as
-a restart would, so an agent resumes that conversation, a shell starts again in its folder and
-another command is not re-run. Coordinators are closed and reopened by their own runtime, and
-the page's pane layout and web pages are kept so the desk looks the same when it comes back.
+a restart would, so an agent resumes that conversation. What a restart leaves closed (a plain
+shell, an agent that had exited, another command) is neither kept nor reopened. Coordinators are
+closed and reopened by their own runtime, and the page's pane layout and web pages are kept so
+the desk looks the same when it comes back.
 
 A desk saved in the other Agent Desk app (the browser desk or the desktop app) can be imported.
 Only names come over: each terminal's folder, account name, pane name and native conversation,
@@ -81,7 +82,10 @@ def layout(value):
 
 def outcome(item):
     """What reopening will do with a saved terminal, in the words the save dialog uses."""
-    from agent_desk.terminal_restore import plan
+    from agent_desk.terminal_restore import left_closed, plan
+    reason = left_closed(item)
+    if reason:
+        return dict(id=item['id'], resumes=False, closes=True, detail=f'Not reopened: {reason}')
     _, resumed, detail = plan(item)
     # plan() says what a restart did; this says what reopening will do.
     detail = re.sub(r'^(resum|start)ed ', lambda m: m.group(1) + ('es ' if m.group(1) == 'resum' else 's '), detail)

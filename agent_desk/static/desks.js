@@ -242,9 +242,9 @@ async function openShutdownDesk(save=false){
   const summary=shutdownSummary(plan);
   dialog.querySelector('.desk-save-name').hidden=!save;dialog.querySelector('#save-desk-name').value=desk.name;dialog.querySelector('.desk-save-mark').innerHTML=deskMark(desk);
   dialog.querySelector('.desk-shutdown-lede').textContent=save?'Everything on it stops. Reopen it from the desk menu to bring back its panes and resume each Claude and Codex conversation.':summary[0].toUpperCase()+summary.slice(1)+' on this desk only.';
-  const savable=agent=>save&&(preview[agent.id]||plan.close.includes(agent)&&!agent.remote_node);
+  const savable=agent=>save&&(preview[agent.id]&&!preview[agent.id].closes||plan.close.includes(agent)&&!agent.remote_node);
   const outcome=agent=>save&&shutdownState.drop.has(agent.id)?['Stops · not reopened','Left out: it stops and does not come back with the desk']
-    :save&&preview[agent.id]?[preview[agent.id].resumes?'Saves · resumes':'Saves · starts fresh',preview[agent.id].detail]
+    :save&&preview[agent.id]?[preview[agent.id].closes?'Stops · not reopened':preview[agent.id].resumes?'Saves · resumes':'Saves · starts fresh',preview[agent.id].detail]
     :save&&plan.close.includes(agent)&&!agent.remote_node?['Saves · reopens','Closed and saved; it reopens with the desk']
     // A coordinator's worker is not the desk's to keep: the coordinator saves it and resumes it itself.
     :save&&plan.stop.includes(agent)&&coordinators.has(agent.parent_id)?(lead=>['Saves · with coordinator',`${lead} keeps this conversation and can resume it once the desk reopens. Leave out ${lead} to leave this out too.`])(sessionTitle(plan.close.find(a=>a.id===agent.parent_id)))
@@ -371,7 +371,7 @@ async function openImportedReopen(desk){
   dialog.querySelector('.desk-shutdown-lede').textContent=`Imported from the ${desk.imported}. Each session starts with this app's own accounts and resumes its conversation where it can. Nothing has started yet.`;
   const row=r=>{
     const avatar=`<span class="session-avatar" style="--agent-color:${agentColor(r.id)}">${avatarMarks[r.harness]||'AI'}</span>`,folder=escapeHTML(shortPath(r.cwd));
-    if(!r.needs_account)return `<li class="saved">${avatar}<span class="desk-shutdown-name"><strong>${escapeHTML(r.name)}</strong><small>${folder}</small></span><span class="desk-shutdown-outcome" title="${escapeHTML(r.detail)}">${r.resumes?'Resumes':'Starts fresh'}</span></li>`;
+    if(!r.needs_account)return `<li class="saved">${avatar}<span class="desk-shutdown-name"><strong>${escapeHTML(r.name)}</strong><small>${folder}</small></span><span class="desk-shutdown-outcome" title="${escapeHTML(r.detail)}">${r.closes?'Not reopened':r.resumes?'Resumes':'Starts fresh'}</span></li>`;
     const picked=choices.get(r.id),options=reopenAccountOptions(r.harness).map(([id,label])=>`<option value="${escapeHTML(id)}"${picked===id?' selected':''}>${escapeHTML(label)}</option>`).join('');
     return `<li class="needs-account${picked===''?' dropped':''}">${avatar}<span class="desk-shutdown-name"><strong>${escapeHTML(r.name)}</strong><small title="${escapeHTML(r.detail)}">No “${escapeHTML(r.profile)}” account here · ${folder}</small></span>`+
       `<select class="desk-reopen-account" required data-reopen-account="${escapeHTML(r.id)}" aria-label="Account for ${escapeHTML(r.name)}"><option value="" disabled${picked===undefined?' selected':''}>Pick an account</option>${options}<option value="-"${picked===''?' selected':''}>Leave it out</option></select></li>`;

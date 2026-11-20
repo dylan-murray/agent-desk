@@ -258,21 +258,20 @@ class ImportRouteTests(unittest.TestCase):
         self.assertEqual([(r['id'], r['resumes'], r['detail']) for r in preview], [
             ('terminal-a', True, f'On reopen: resumes Claude conversation {CLAUDE_ID}'),
             ('terminal-b', True, f'On reopen: resumes Codex conversation {CODEX_ID}'),
-            ('terminal-c', False, 'On reopen: starts a new shell in the same folder'),
+            ('terminal-c', False, 'Not reopened: it was a plain shell'),
             ('terminal-d', False, 'On reopen: no Grok conversation had started, so this is a new session')])
         with patch.object(server, 'TERMINALS', Mock(launch=self.launch)):
             reopened = self.post('/api/desks/reopen', {'id': desk['id']})
-        shell = os.environ.get('SHELL', '/bin/zsh')
         self.assertEqual([p['argv'] for p in self.launched], [
             ['/bin/zsh', '-lic', 'claude "$@"', 'agent-desk', '--resume', CLAUDE_ID, SHELL_MARKER],
             ['/bin/zsh', '-lic', 'codex-team "$@"', 'agent-desk', 'resume', CODEX_ID, SHELL_MARKER],
-            [shell, '-l'], ['grok', SHELL_MARKER]])
+            ['grok', SHELL_MARKER]])
         launched = json.dumps(self.launched)
         for flag in ('--dangerously-skip-permissions', '--mcp-config', '/elsewhere', 'make', 'deploy', '--yolo'):
             self.assertNotIn(flag, launched)
         self.assertEqual([(p['cwd'], p['launch_profile']) for p in self.launched],
-                         [(project, 'claude'), (project, 'codex-team'), (project, None), (project, None)])
-        self.assertEqual([r['new_id'] for r in reopened['results']], [f'terminal-new-{i}' for i in range(1, 5)])
+                         [(project, 'claude'), (project, 'codex-team'), (project, None)])
+        self.assertEqual([r['new_id'] for r in reopened['results']], [f'terminal-new-{i}' for i in range(1, 4)])
         self.assertNotIn('saved_at', next(d for d in reopened['desks'] if d['id'] == desk['id']))
 
     def test_an_account_missing_here_is_never_launched_until_one_is_picked(self):
@@ -295,12 +294,12 @@ class ImportRouteTests(unittest.TestCase):
 
     def test_an_account_can_be_left_out_instead(self):
         self.apps.save_in_desktop([terminal('terminal-a', str(self.apps.project), launch_profile='claude-work'),
-                                   terminal('terminal-b', str(self.apps.project), launch_profile=None, name='Shell')])
+                                   terminal('terminal-b', str(self.apps.project), launch_profile='codex-team', name='Codex')])
         desk = self.import_research()['desk']
         with patch.object(server, 'TERMINALS', Mock(launch=self.launch)):
             results = self.post('/api/desks/reopen', {'id': desk['id'], 'accounts': {'terminal-a': ''}})['results']
         self.assertEqual([r['id'] for r in results], ['terminal-b'])
-        self.assertEqual(self.launched[0]['launch_profile'], None)
+        self.assertEqual(self.launched[0]['launch_profile'], 'codex-team')
 
     def test_a_taken_name_is_refused_and_a_new_one_used(self):
         self.apps.save_in_desktop([terminal('terminal-a', str(self.apps.project))])

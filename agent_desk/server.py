@@ -1312,6 +1312,7 @@ def import_desk(payload):
 def save_desk(payload, refusal=lambda identity: None):
     """Shut a desk down as shutdown_desk does, keeping what reopening it needs: each stopped
     terminal's restart record, the coordinators it closed, and the page's pane layout."""
+    from agent_desk.terminal_restore import left_closed
     desk, layout, desks = DESKS.desk_for(payload.get('id')), saved_desks.layout(payload.get('layout')), DESKS.snapshot()
     # Checked before anything stops, as keep() would only refuse after.
     if any(d['id'] == desk and d.get('saved_at') for d in desks):
@@ -1328,7 +1329,8 @@ def save_desk(payload, refusal=lambda identity: None):
     while extra := {i for i, item in records.items() if item.get('parent_id') in drop} - drop:
         drop |= extra
     result = shutdown_desk(payload, refusal)
-    terminals = [records[i] for i in result['stopped'] if i in records and i not in drop]
+    # Kept only what reopening brings back: no shells, no agents that had exited.
+    terminals = [records[i] for i in result['stopped'] if i in records and i not in drop and not left_closed(records[i])]
     closed = [i for i in result['closed'] if i in local and i not in drop]
     DESKS.keep(desk, dict(terminals=terminals, coordinators=closed, layout=layout))
     return result | {'saved': [t['id'] for t in terminals] + closed, 'desks': DESKS.snapshot()}
@@ -1337,7 +1339,7 @@ def save_desk(payload, refusal=lambda identity: None):
 def reopen_desk(payload):
     """Start a saved desk's terminals as a restart would and reopen its coordinators. Each
     terminal gets a new ID, so the result maps the saved IDs to the new ones for the page."""
-    from agent_desk.terminal_restore import plan
+    from agent_desk.terminal_restore import left_closed, plan
     desk = DESKS.desk_for(payload.get('id'))
     record = DESKS.saved_record(desk)
     # An imported desk's terminals carry names only; their commands are built from this app's
@@ -1346,6 +1348,9 @@ def reopen_desk(payload):
     started, results = {}, []
     for item in sorted(terminals, key=lambda item: item.get('created') or 0):
         name = item.get('display_name') or item.get('name') or 'Terminal'
+        # A desk saved before shells stopped being kept still has them; they stay closed.
+        if left_closed(item):
+            continue
         try:
             launch, resumed, detail = plan(item)
             parent = started.get(item.get('parent_id'))
