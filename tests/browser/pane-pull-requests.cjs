@@ -214,6 +214,10 @@ const check = (name, fn) => {fn();results.push(name);console.log('  PASS  ' + na
   await until(async () => (await header()).text === '#42 Open Failing Changes requested 2', 'Changes requested and 2 unresolved comments were not shown');
   check('unresolved review comments show as a count on the chip', async () => {});
   assert.match(await chip.locator('.pane-pr-link').getAttribute('title'), /2 unresolved review comments/);
+  // Hovering brings × in beside the log button; the chip is wide enough that neither cuts the review state or the count.
+  await page.setViewportSize({width: 1920, height: 958});await chip.locator('.pane-pr-link').hover();await pause();
+  const fit = await chip.evaluate(node => {const link = node.querySelector('.pane-pr-link');return {cut: link.scrollWidth > link.clientWidth, hide: getComputedStyle(node.querySelector('.pane-pr-hide')).display, log: !node.querySelector('.pane-pr-log').hidden};});
+  check('hovering shows × without cutting the review state or comment count short', () => assert.deepEqual(fit, {cut: false, hide: 'grid', log: true}));
   for (const [width, height] of [[1440, 900], [390, 844]]) {
     await page.setViewportSize({width, height});await pause();
     seen = await header();

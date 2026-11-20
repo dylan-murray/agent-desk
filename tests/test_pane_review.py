@@ -243,6 +243,20 @@ class ReviewAppTests(unittest.TestCase):
                 self.assertNotEqual(refused.returncode, 0)
                 self.assertIn('--reviewers', refused.stderr)
 
+    def test_files_git_is_not_tracking_are_marked_apart_from_new_files_on_the_branch(self):
+        (self.repo / 'app.py').write_text('two\n')
+        (self.repo / 'staged.py').write_text('new\n')
+        self.git('add', 'staged.py')
+        (self.repo / 'local_only.rb').write_text('LOCAL = true\n')
+        sys.path.insert(0, str(BUNDLED / 'code-review'))
+        try:
+            import review_app
+        finally:
+            sys.path.remove(str(BUNDLED / 'code-review'))
+        seen = {f['path']: (f['status'], f.get('untracked', False)) for f in review_app.diff_model(self.repo, 'HEAD', True)['files']}
+        self.assertEqual(seen, {'app.py': ('modified', False), 'staged.py': ('added', False), 'local_only.rb': ('added', True)})
+        self.assertEqual([f['path'] for f in review_app.diff_model(self.repo, 'HEAD', False)['files']], ['app.py', 'staged.py'])
+
     def test_a_branch_with_a_pull_request_is_reviewed_from_where_it_left_its_base(self):
         start = self.git('rev-parse', 'HEAD')
         self.git('update-ref', 'refs/remotes/origin/main', start)
