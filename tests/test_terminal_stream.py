@@ -14,7 +14,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from agent_desk import server, websocket
+from agent_desk import pane_guard, server, websocket
 from agent_desk.terminal_owners import TerminalOwners
 from agent_desk.terminal_supervisor import SupervisorClient
 from agent_desk.terminals import TerminalManager
@@ -251,6 +251,28 @@ class StreamTests(unittest.TestCase):
             time.sleep(.05)
         seen = client.until(lambda m, s: any(x.get('truncated') for x in s) and m['type'] == 'output' and not m['data'], timeout=20)
         self.assertTrue(text(seen).endswith('FLOOD_END'))
+
+    def test_local_helpers_stream_but_never_reach_protected_panes(self):
+        shared, protected = self.launch(), self.launch()
+        with patch.object(server, 'PROTECTED_PANES', pane_guard.ProtectedPanes(Path(self.temp.name) / 'protected.json')):
+            server.PROTECTED_PANES.set(protected.id, True)
+            # A helper such as `agent-desk attach` authenticates with the token from its owner-only file.
+            helper = self.connect(False)
+            helper.send(type='auth', token=server.HELPER_TOKEN)
+            helper.send(type='subscribe', sub='1', id=shared.id, cursor=0)
+            helper.until(lambda m, _: m['type'] == 'output' and not m['data'])
+            helper.send(type='input', id=shared.id, data=encode("printf 'helper-%s\\n' ok\n"))
+            helper.until(lambda _, s: 'helper-ok' in text(s))
+            refused = 'This session is protected: only the user, at the desk, can read or type into it'
+            helper.send(type='subscribe', sub='2', id=protected.id, cursor=0)
+            self.assertEqual(helper.until(lambda m, _: m['type'] == 'error')[-1], dict(type='error', sub='2', id=protected.id, message=refused))
+            for kind, fields in (('input', dict(data=encode('echo typed\n'))), ('resize', dict(cols=50, rows=10))):
+                helper.send(type=kind, id=protected.id, **fields)
+                self.assertEqual(helper.until(lambda m, _: m['type'] == 'error')[-1]['message'], refused)
+            # The desk page still reaches every pane.
+            page = self.connect()
+            page.send(type='subscribe', sub='3', id=protected.id, cursor=0)
+            page.until(lambda m, _: m['type'] == 'output' and not m['data'])
 
     def test_unknown_terminals_and_unsubscribed_panes(self):
         client = self.connect()

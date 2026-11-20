@@ -1,0 +1,114 @@
+name: AgentDesk
+options:
+  deploymentTarget:
+    iOS: "18.0"
+  createIntermediateGroups: true
+  developmentLanguage: en
+configFiles:
+  Debug: Config/Base.xcconfig
+  Release: Config/Base.xcconfig
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    SWIFT_EMIT_LOC_STRINGS: NO
+packages:
+  AgentDeskKit:
+    path: AgentDeskKit
+  SwiftTerm:
+    url: https://github.com/migueldeicaza/SwiftTerm.git
+    minorVersion: 1.20.0
+  WhisperKit:
+    url: https://github.com/argmaxinc/WhisperKit.git
+    minorVersion: 1.1.1
+targets:
+  AgentDesk:
+    type: application
+    platform: iOS
+    sources:
+      - App
+      - Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(AGENT_DESK_BUNDLE_ID)
+        PRODUCT_NAME: Agent Desk
+        TARGETED_DEVICE_FAMILY: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        INFOPLIST_KEY_CFBundleDisplayName: Agent Desk
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: Agent Desk
+        CFBundleURLTypes:
+          - CFBundleURLName: dev.agentdesk.link
+            CFBundleURLSchemes: [agentdesk]
+        NSSupportsLiveActivities: true
+        NSFaceIDUsageDescription: Face ID unlocks this iPhone's SSH key when it signs in to your desks.
+        NSMicrophoneUsageDescription: Dictation turns what you say into prompts, on this iPhone.
+        NSLocalNetworkUsageDescription: Agent Desk connects to desks on your local network over SSH and Mosh.
+        UILaunchScreen:
+          UIColorName: LaunchBackground
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+        UIUserInterfaceStyle: Dark
+        ITSAppUsesNonExemptEncryption: false
+    dependencies:
+      - package: AgentDeskKit
+        products: [MoshKit, AgentDeskKit]
+      - package: SwiftTerm
+      - package: WhisperKit
+        products: [WhisperKit]
+      - target: AgentDeskWidgets
+  AgentDeskWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - Widgets
+      - Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(AGENT_DESK_BUNDLE_ID).widgets
+        TARGETED_DEVICE_FAMILY: "1"
+    info:
+      path: Widgets/Info.plist
+      properties:
+        CFBundleDisplayName: Agent Desk
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+  AgentDeskTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests
+    dependencies:
+      - target: AgentDesk
+      - package: WhisperKit
+        products: [WhisperKit]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(AGENT_DESK_BUNDLE_ID).tests
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/Agent Desk.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Agent Desk
+        BUNDLE_LOADER: $(TEST_HOST)
+        GENERATE_INFOPLIST_FILE: YES
+  AgentDeskUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: UITests
+    dependencies:
+      - target: AgentDesk
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(AGENT_DESK_BUNDLE_ID).uitests
+        TEST_TARGET_NAME: AgentDesk
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  AgentDesk:
+    build:
+      targets:
+        AgentDesk: all
+    test:
+      targets:
+        - AgentDeskTests
+        - AgentDeskUITests
