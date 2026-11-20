@@ -70,7 +70,7 @@ Download the macOS desktop app from [Releases](https://github.com/dylan-murray/a
 
 ## 📚 Docs
 
-[Guide](docs/guide.md) · [Contributing](CONTRIBUTING.md) · [All docs](INDEX.md)
+[Guide](docs/guide.md) · [iPhone app](ios/README.md) · [Contributing](CONTRIBUTING.md) · [All docs](INDEX.md)
 
 ## 📄 License
 

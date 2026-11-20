@@ -179,3 +179,4 @@ function renderAttention(all){
     banner.append(dismiss);
   }
 }
+if(typeof module!=='undefined')module.exports={terminalApprovalPrompt};

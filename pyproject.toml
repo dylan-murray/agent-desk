@@ -24,7 +24,7 @@ classifiers = [
 dependencies = []
 
 [project.scripts]
-agent-desk = "agent_desk.server:main"
+agent-desk = "agent_desk.__main__:main"
 
 [project.urls]
 Homepage = "https://github.com/dylan-murray/agent-desk"
