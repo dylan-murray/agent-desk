@@ -76,6 +76,29 @@ const note = message => {if (process.env.VERBOSE) console.log('  ok ' + message)
   assert.equal(await isOpen(), true);
   note('files open in place, Alt-click opens or closes them all, and Viewed closes and dims a file');
 
+  // Like GitHub, the comment box opens under the selected lines and leaves the next lines free to shift-click.
+  const gutter = n => fileRow.locator(`td.num.new.click[data-n="${n}"]`).first();
+  await gutter(2).click();await frame.locator('#ctext').fill('these lines together');
+  assert.equal(await gutter(5).evaluate(cell => {const r = cell.getBoundingClientRect();return document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)?.closest('td.num')?.dataset.n;}), '5', 'the comment box covered the next lines');
+  await gutter(5).click({modifiers: ['Shift']});
+  assert.match(await frame.locator('#cwhere').textContent(), /lines 2–5/);
+  assert.equal(await frame.locator('#ctext').inputValue(), 'these lines together', 'extending the range dropped the comment');
+  assert.equal(await frame.evaluate(() => [...document.querySelectorAll('tr.sel')].pop().nextElementSibling.className), 'composer-row', 'the comment box did not follow the range');
+  await frame.locator('#ctext').press('Escape');
+  assert.equal(await frame.locator('tr.composer-row').count(), 0);
+  note('shift-click extends a line comment to a range without losing what was typed');
+
+  // The + overhangs the code; pressing anywhere on it and dragging selects lines, never the code's text.
+  await gutter(2).hover();
+  const cell = await gutter(2).boundingBox(), plus = await gutter(2).locator('.plus').boundingBox(), lastRow = await gutter(5).boundingBox();
+  const overhang = cell.x + cell.width + 1;assert.ok(overhang < plus.x + plus.width, 'the + no longer overhangs the code');
+  await page.mouse.move(overhang, plus.y + plus.height / 2);await page.mouse.down();
+  await page.mouse.move(overhang, lastRow.y + lastRow.height / 2, {steps: 6});await page.mouse.up();
+  assert.equal(await frame.evaluate(() => getSelection().toString()), '', 'dragging from the + selected the code text');
+  assert.match(await frame.locator('#cwhere').textContent(), /lines 2–5/);
+  await frame.locator('#ctext').press('Escape');
+  note('dragging from any part of the + selects lines, not text');
+
   // A pane's own review asks for a second opinion from inside the review, from the agents this desk has.
   assert.equal(await pane.locator('.pane-dock-review').isVisible(), false, 'the title bar has no second opinion for a pane\'s own review');
   await frame.locator('#codex').click();
@@ -89,7 +112,7 @@ const note = message => {if (process.env.VERBOSE) console.log('  ok ' + message)
   note('Second opinion lists every coding agent the desk has, from inside the review');
 
   await frame.evaluate(() => fetch('annotate', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({kind: 'line', file: 'app.py', side: 'new', start: 5, end: 6, quote: 'def part(name):', comment: 'call this farewell instead'})}));
-  await frame.evaluate(() => location.reload());await frame.waitForSelector('text=call this farewell instead', {timeout: 10000});
+  await frame.evaluate(() => location.reload());await frame.waitForSelector('.ct:has-text("call this farewell instead")', {timeout: 10000});
   await pause(600);
   await page.screenshot({path: evidence('pane-review-02-comment.png')});
   await frame.locator('#send').click();
@@ -123,13 +146,24 @@ const note = message => {if (process.env.VERBOSE) console.log('  ok ' + message)
   git('update-ref', 'refs/remotes/origin/main', 'main');
   await frame.locator('#tab-changes').click();
   fs.writeFileSync(path.join(fakeBin, 'pr.json'), JSON.stringify({url: 'https://github.com/fixture/project/pull/7', state: 'OPEN', baseRefName: 'main'}));
-  await frame.waitForSelector('text=f-strings read better, thanks', {timeout: 30000});
+  await frame.waitForSelector('.ct:has-text("f-strings read better, thanks")', {timeout: 30000});
   // The PR row links the PR and says a comment came in that you haven't looked at yet.
   assert.equal(await frame.locator('#prstate a').getAttribute('href'), 'https://github.com/fixture/project/pull/7');
   await frame.waitForSelector('#prstate #newgh', {timeout: 10000});
   assert.equal((await frame.locator('#prstate #newgh').textContent()).trim(), '1 new');
   assert.match(await frame.locator('#prstate').textContent(), /1 GitHub comment/);
   assert.equal(await frame.locator('.thread-box', {hasText: 'f-strings read better'}).count(), 1, 'the GitHub comment should sit on its line in the diff');
+  const ghComment = frame.locator('.thread-box', {hasText: 'f-strings read better'}).locator('.cm').first();
+  assert.deepEqual(await ghComment.evaluate(c => ({name: c.querySelector('.an').textContent, avatar: c.querySelector('.av').textContent, link: c.querySelector('.gh').href, nameSize: getComputedStyle(c.querySelector('.an')).fontSize, bodySize: getComputedStyle(c.querySelector('.ct')).fontSize, bodyIsDim: getComputedStyle(c.querySelector('.ct')).color === getComputedStyle(c.querySelector('.at')).color})),
+    {name: 'fixture-reviewer', avatar: 'F', link: 'https://github.com/fixture/project/pull/7#discussion_r501', nameSize: '13px', bodySize: '13px', bodyIsDim: false}, 'a comment shows who wrote it above a full-size body');
+  const ghThread = frame.locator('.thread-box', {hasText: 'f-strings read better'});
+  await ghThread.locator('.th').click();
+  assert.equal(await ghThread.locator('.cm').first().isVisible(), false, 'clicking the thread header did not collapse it');
+  assert.match(await ghThread.locator('.th .sum').textContent(), /fixture-reviewer f-strings read better/);
+  assert.equal(await frame.locator('#togglethreads').getAttribute('title'), 'Expand every comment');
+  await frame.locator('#togglethreads').click();
+  assert.equal(await ghThread.locator('.cm').first().isVisible(), true, 'Expand every comment did not open the thread');
+  note('a comment thread collapses to one line from its header, and the toolbar expands every comment');
   assert.match(await frame.locator('#meta').textContent(), /^feature · vs /);
   await frame.locator('.thread-box', {hasText: 'f-strings read better'}).scrollIntoViewIfNeeded();
   await page.screenshot({path: evidence('pane-review-06-github.png')});

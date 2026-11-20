@@ -1264,7 +1264,7 @@ body.tab-notes #side{display:block;width:100%;max-width:860px;margin:0 auto}
 /* ---------- the diff ---------- */
 table.diff{width:100%;border-collapse:collapse;font:12px/20px var(--mono);tab-size:4}
 table.diff td{padding:0;vertical-align:top;white-space:pre-wrap;word-break:break-all;font-family:inherit}
-table.diff .num{width:1%;min-width:40px;padding:0 6px;text-align:right;color:#55555c;user-select:none;cursor:pointer;position:relative}
+table.diff .num{width:1%;min-width:40px;padding:0 6px;text-align:right;color:#55555c;user-select:none;cursor:pointer;position:relative;z-index:1}
 table.diff .num:hover{color:var(--accent)}
 table.diff .code{padding:0 8px 0 4px;position:relative;cursor:pointer}
 table.diff td.chunk{width:18px;min-width:18px;padding:0;text-align:center;user-select:none;position:relative}
@@ -1285,8 +1285,9 @@ tr.del td{background:var(--del-bg)} tr.del .num{background:var(--del-num);color:
 tr.hunk td{background:var(--hunk-bg);color:var(--hunk-fg);padding:3px 8px 3px 12px;font-size:11px}
 tr.sel td{background:var(--sel)!important}
 tr.commented .num.new::before,tr.commented.del .num.old::before{content:"";position:absolute;left:0;top:0;bottom:0;width:2px;background:var(--amber)}
-.plus{position:absolute;right:-8px;top:2px;z-index:2;width:16px;height:16px;border-radius:4px;background:var(--accent);color:#fff;font:600 12px/16px sans-serif;text-align:center;display:none;pointer-events:none}
+.plus{position:absolute;right:-8px;top:2px;z-index:2;width:16px;height:16px;border-radius:4px;background:var(--accent);color:#fff;font:600 12px/16px sans-serif;text-align:center;display:none;cursor:pointer}
 tr:hover .num.click .plus{display:block}
+body.line-drag,body.line-drag *{user-select:none!important;cursor:pointer}
 .split td.code{width:50%}
 .split td.num{min-width:36px}
 .split tr.pair td.l{border-right:1px solid var(--border)}
@@ -1297,9 +1298,38 @@ tr.pair td.empty{background:#ffffff04}
 /* ---------- a note's thread, in the diff ---------- */
 tr.thread td{background:var(--bg)!important;padding:6px 12px 8px 46px;white-space:normal;word-break:normal;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
 .thread-box{max-width:860px;border:1px solid var(--border-strong);border-radius:10px;background:var(--surface);overflow:hidden;font-size:12.5px}
-.thread-box .th{display:flex;align-items:center;gap:8px;padding:9px 12px 0;font-size:12px}
+.thread-box .th{display:flex;align-items:center;gap:8px;min-height:32px;padding:6px 12px;border-bottom:1px solid var(--border);background:#ffffff05;font-size:11.5px;color:var(--fg-muted)}
+.thread-box .th .loc{flex:0 1 auto;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font:11.5px var(--mono);color:var(--fg-2)}
+.thread-box .th{cursor:pointer;user-select:none}
+.thread-box .th:hover{background:#ffffff09}
+.thread-box .th .id{flex:none}
+.thread-box .th .tchev{flex:none;width:12px;height:12px;transform:rotate(90deg);transition:transform .12s}
+.thread-box .th .sum{display:none;flex:1 1 0;min-width:0;align-items:center;gap:7px;overflow:hidden}
+.thread-box .th .sum .av{width:18px;height:18px;font-size:9.5px}
+.thread-box .th .sum .st{flex:1 1 0;width:0;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;color:var(--fg-2);font-size:12px}
+.thread-box .th .sum .st b{color:var(--fg);font-weight:600}
+.thread-box .th .sum .nr{flex:none;color:var(--fg-muted)}
+.thread-box.folded .th{border-bottom:0}
+.thread-box.folded .th .tchev{transform:none}
+.thread-box.folded .th .sum{display:flex}
+.thread-box.folded>:not(.th){display:none}
+@media (max-width:560px){.thread-box.folded .th .loc{display:none}}
 .thread-box .th .id{color:var(--fg-muted);font:11px var(--mono)}
-.thread-box .body{padding:3px 12px 10px;color:var(--fg-2);white-space:pre-wrap;line-height:1.5}
+.cm{display:flex;gap:10px;padding:11px 12px}
+.cm+.cm{border-top:1px solid #ffffff0b}
+.av{flex:none;display:grid;place-items:center;width:24px;height:24px;border-radius:50%;background:hsl(var(--h,210) 38% 34%);color:#fff;font-size:11.5px;font-weight:600}
+.av.claude{background:#c96442}.av.codex{background:#e6e6e6;color:#111}.av.grok{background:#7a5ce0}.av.opencode{background:#2a8a7d}.av.pi{background:#b37a26}
+.cb{flex:1;min-width:0}
+.ch{display:flex;align-items:baseline;flex-wrap:wrap;gap:2px 7px;line-height:20px}
+.ch .an{color:var(--fg);font-size:13px;font-weight:600}
+.ch .bot{align-self:center;padding:0 6px;border:1px solid var(--border-strong);border-radius:9px;color:var(--fg-muted);font-size:10px;line-height:15px}
+.ch .at,.ch .gh{color:var(--fg-muted);font-size:11.5px}
+.ch .gh:hover{color:var(--fg-2)}
+.ct{margin-top:3px;color:var(--fg);font-size:13px;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere}
+.ct i{color:var(--fg-muted)}
+.cb .sug{margin:9px 0 2px}
+.thread-box>.proof{margin:0 12px 11px 46px}
+.thread-box .replybox{padding:8px 12px 8px 46px}
 .thread-box.done{border-color:#199e7055}
 .thread-box.done .th::after{content:"Addressed";margin-left:auto;padding:1px 7px;border-radius:9px;background:#199e7024;color:#5fc9a0;font-size:10.5px;font-weight:500}
 .proof{margin:2px 12px 10px;padding:7px 10px;border:1px solid #199e7040;border-left:2px solid var(--good);border-radius:7px;background:#199e700d;font-size:11.5px;color:var(--fg-2)}
@@ -1325,6 +1355,8 @@ tr.thread td{background:var(--bg)!important;padding:6px 12px 8px 46px;white-spac
 
 /* ---------- composer ---------- */
 #composer{position:fixed;z-index:60;width:520px;max-width:calc(100vw - 24px);border:1px solid var(--border-strong);border-radius:10px;background:var(--raised);box-shadow:0 14px 40px #000a;display:none}
+#composer.inline{position:static;width:auto;max-width:760px;box-shadow:none}
+tr.composer-row td{background:var(--bg)!important;padding:8px 12px 10px 46px;white-space:normal;word-break:normal;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
 #composer .hd{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--border);font-size:12px;color:var(--fg-muted)}
 #composer .hd b{color:var(--fg)}
 #composer .hd .sp{flex:1}
@@ -1433,6 +1465,7 @@ tr.thread td{background:var(--bg)!important;padding:6px 12px 8px 46px;white-spac
   <span class="sp"></span>
   <span class="tools">
     <span class="vseg changes-only" id="viewseg"><button data-view="unified" aria-pressed="true">Unified</button><button data-view="split" aria-pressed="false">Split</button></span>
+    <button class="ib changes-only" id="togglethreads" hidden></button>
     <button class="ib changes-only" id="toggleall" title="Expand every file · Alt-click a file does the same"></button>
     <button class="ib" id="general" title="Note on the whole change · G"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3h10c.6 0 1 .4 1 1v6c0 .6-.4 1-1 1H7.5L4.5 13.5V11H3c-.6 0-1-.4-1-1V4c0-.6.4-1 1-1Z"/></svg></button>
   </span>
@@ -1490,6 +1523,8 @@ const ICONS={
  check:'<svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 8.4 2.6 2.6L12 5.4"/></svg>',
  expand:'<svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="m5 6.5 3-3 3 3M5 9.5l3 3 3-3"/></svg>',
  collapse:'<svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="m5 3.5 3 3 3-3M5 12.5l3-3 3 3"/></svg>',
+ foldthreads:'<svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 2.5h10c.6 0 1 .4 1 1v6c0 .6-.4 1-1 1H7.5L4.5 13V10.5H3c-.6 0-1-.4-1-1v-6c0-.6.4-1 1-1Z"/><path d="m6 7.5 2-2 2 2"/></svg>',
+ unfoldthreads:'<svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 2.5h10c.6 0 1 .4 1 1v6c0 .6-.4 1-1 1H7.5L4.5 13V10.5H3c-.6 0-1-.4-1-1v-6c0-.6.4-1 1-1Z"/><path d="m6 5.5 2 2 2-2"/></svg>',
  pr:'<svg class="i" viewBox="0 0 16 16" aria-hidden="true"><circle cx="4.5" cy="4" r="1.5"/><circle cx="4.5" cy="12" r="1.5"/><circle cx="11.5" cy="12" r="1.5"/><path d="M4.5 5.5v5M11.5 10.5V7c0-1.1-.9-2-2-2H7.5M9 3.5 7.5 5 9 6.5"/></svg>'
 };
 // Like GitHub: up to five blocks, one per five lines changed, split between added and removed.
@@ -1543,6 +1578,7 @@ function applyOpen(){if(!model)return;
  t.innerHTML=all?ICONS.collapse:ICONS.expand;t.title=(all?'Collapse every file':'Expand every file')+' · Alt-click a file does the same';
  decoratePins();}
 function setAllOpen(open){openFiles=new Set(open?model.files.map(f=>f.path):[]);applyOpen();}
+$('#togglethreads').onclick=()=>{const boxes=[...document.querySelectorAll('#main .thread-box')];setFolded(boxes.map(b=>+b.dataset.id),!boxes.every(b=>b.classList.contains('folded')));};
 $('#toggleall').onclick=()=>setAllOpen(!(openFiles.size>=model.files.length));
 document.addEventListener('click',e=>{
  const v=e.target.closest('[data-viewed]');
@@ -1567,7 +1603,7 @@ document.addEventListener('click',async e=>{if(!e.target.closest('#untracked-tog
  try{untrackedHidden()?localStorage.removeItem(untrackedKey()):localStorage.setItem(untrackedKey(),'hide');}catch(err){}
  await render();renderNotes();});
 async function render(){
- const main=$('#main');
+ parkComposer();const main=$('#main');
  $('#meta').textContent=model.checked_out===false?`${model.branch} · not checked out here`:`${model.branch} · vs ${model.base==='HEAD'?'HEAD (working tree)':model.base.slice(0,10)}`;
  $('#meta').classList.toggle('away',model.checked_out===false);
  $('#stats').innerHTML=`<span class="stat-add">+${model.additions}</span> <span class="stat-del">−${model.deletions}</span>`;
@@ -1663,14 +1699,33 @@ function pairRow(o,n,hlOld,hlNew){
 /* ---------- threads (inline comments) ---------- */
 function proofHtml(a){const p=a.status==='addressed'&&a.proof;if(!p)return '';
  return `<div class="proof"><div class="ph">Checked by ${esc(p.author||'Agent')} <span class="at">${esc((p.at||'').slice(5,16))}</span></div><pre>${esc(p.text||'')}</pre>${p.file?`<a href="./proof/${encodeURIComponent(p.file)}" target="_blank" rel="noopener"><img src="./proof/${encodeURIComponent(p.file)}" alt="Screenshot ${esc(p.author||'Agent')} attached as proof"></a>`:''}</div>`;}
-function repliesHtml(a){return (a.replies||[]).map(r=>`<div class="reply"><span class="who ${r.author==='Claude'?'claude':r.author==='Codex'?'codex':''}">${esc(r.author)}</span><span class="txt">${esc(r.text)}</span><span class="at">${esc((r.at||'').slice(5,16))}</span></div>`).join('');}
+const AGENTS=['Codex','Claude','Grok','OpenCode','Pi'];
+function when(at){if(!at)return '';const d=new Date(String(at).replace(' ','T'));return isNaN(d)?String(at):d.toLocaleString([],{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});}
+function avatarHtml(name){const n=String(name||'?'),agent=AGENTS.includes(n),hue=[...n].reduce((h,c)=>(h*31+c.charCodeAt(0))%360,7);
+ return `<span class="av${agent?' '+n.toLowerCase():''}"${agent?'':` style="--h:${hue}"`} aria-hidden="true">${esc((n.trim()[0]||'?').toUpperCase())}</span>`;}
+function commentHtml(author,at,body,extra,url){const name=author||USER;
+ return `<div class="cm">${avatarHtml(name)}<div class="cb"><div class="ch"><span class="an">${esc(name)}</span>${AGENTS.includes(name)?'<span class="bot">agent</span>':''}${at?`<span class="at">${esc(when(at))}</span>`:''}${url?`<a class="gh" href="${esc(url)}" target="_blank" rel="noopener">on GitHub</a>`:''}</div><div class="ct">${body}</div>${extra||''}</div></div>`;}
+function repliesHtml(a){return (a.replies||[]).map(r=>commentHtml(r.author,r.at,esc(r.text))).join('');}
 function threadHtml(a){
  const done=a.status==='addressed';let sug='';
  if(a.suggestion!==null&&a.suggestion!==undefined){
   const oldL=(a.quote||'').split('\n'),newL=a.suggestion===''?[]:a.suggestion.split('\n');
   sug=`<div class="sug"><div class="sh">Suggested change</div><pre>${oldL.map(x=>`<div class="l d">${esc(x)||' '}</div>`).join('')}${newL.map(x=>`<div class="l a">${esc(x)||' '}</div>`).join('')}</pre></div>`;}
  const tag=a.kind==='pr'?`<span class="id">PR ${esc(a.part||'body')}${a.quote?` · “${esc(a.quote.length>60?a.quote.slice(0,60)+'…':a.quote)}”`:''}</span>`:a.kind==='chunk'?`<span class="id">chunk · ${esc(a.label||'')}</span>`:a.kind==='selection'?`<span class="id">“${esc(a.selection||'')}”</span>`:'';
- return `<div class="thread-box ${done?'done':''}" data-id="${a.id}"><div class="th"><b class="${['Codex','Claude','Grok','OpenCode','Pi'].includes(a.author||USER)?'who '+(a.author||USER).toLowerCase():''}" style="padding:0 5px;border-radius:8px">${esc(a.author||USER)}</b><span class="id">#${a.id}</span><span class="id">${a.file?esc(a.file)+(a.start?':'+a.start+(a.end&&a.end!==a.start?'-'+a.end:''):''):''}</span>${tag}</div><div class="body">${esc(a.comment||'')||'<i style="color:var(--fg-muted)">(no comment)</i>'}</div>${sug}${repliesHtml(a)}${proofHtml(a)}<div class="replybox"><input data-reply="${a.id}" placeholder="reply…"></div></div>`;}
+ return `<div class="thread-box ${done?'done':''}${isFolded(a)?' folded':''}" data-id="${a.id}"><div class="th" role="button" tabindex="0" aria-expanded="${!isFolded(a)}" title="Click to collapse or expand">${ICONS.chev.replace('class="i chev"','class="i tchev"')}${a.file?`<span class="loc">${esc(a.file)}${a.start?(a.end&&a.end!==a.start?` · lines ${a.start}–${a.end}`:` · line ${a.start}`):''}</span>`:''}<span class="id">#${a.id}</span>${tag}${foldSummary(a)}</div>${commentHtml(a.author,a.created,esc(a.comment||'')||'<i>(no comment)</i>',sug,a.gh_url)}${repliesHtml(a)}${proofHtml(a)}<div class="replybox"><input data-reply="${a.id}" placeholder="Reply…"></div></div>`;}
+function foldMap(){try{return JSON.parse(localStorage.getItem('ra-threads:'+(model?model.repo:''))||'{}');}catch(e){return {};}}
+function saveFolds(m){try{localStorage.setItem('ra-threads:'+(model?model.repo:''),JSON.stringify(m));}catch(e){}}
+function isFolded(a,m){m=m||foldMap();return a.id in m?!!m[a.id]:a.status==='addressed';}
+function setFolded(ids,on){const m=foldMap();for(const id of ids)m[id]=on;saveFolds(m);
+ for(const id of ids)document.querySelectorAll(`.thread-box[data-id="${id}"]`).forEach(b=>{b.classList.toggle('folded',on);b.querySelector('.th').setAttribute('aria-expanded',String(!on));});updateThreadToggle();}
+function updateThreadToggle(){const t=$('#togglethreads');if(!t)return;const boxes=[...document.querySelectorAll('#main .thread-box')];t.hidden=!boxes.length;
+ const all=boxes.length&&boxes.every(b=>b.classList.contains('folded'));t.innerHTML=all?ICONS.unfoldthreads:ICONS.foldthreads;t.title=all?'Expand every comment':'Collapse every comment';t.setAttribute('aria-label',t.title);}
+function foldSummary(a){const r=a.replies||[];const first=(a.comment||'').split('\n')[0];
+ return `<span class="sum">${avatarHtml(a.author||USER)}<span class="st"><b>${esc(a.author||USER)}</b> ${esc(first)}</span>${r.length?`<span class="nr">${r.length} repl${r.length>1?'ies':'y'}</span>`:''}</span>`;}
+document.addEventListener('click',e=>{const th=e.target.closest('.thread-box .th');if(!th||e.target.closest('a,button,input'))return;
+ const box=th.closest('.thread-box');setFolded([+box.dataset.id],!box.classList.contains('folded'));});
+document.addEventListener('keydown',e=>{if(e.key!=='Enter'&&e.key!==' ')return;const th=e.target.closest&&e.target.closest('.thread-box .th');if(!th||e.target!==th)return;
+ e.preventDefault();const box=th.closest('.thread-box');setFolded([+box.dataset.id],!box.classList.contains('folded'));});
 function decorateThreads(){
  const drafts={};document.querySelectorAll('tr.thread input[data-reply]').forEach(i=>{if(i.value)drafts[i.dataset.reply]=i.value;});
  const focused=document.activeElement&&document.activeElement.closest&&document.activeElement.closest('tr.thread input[data-reply]')?document.activeElement.dataset.reply:null;
@@ -1686,7 +1741,8 @@ function decorateThreads(){
   if(!last)continue;const tr=document.createElement('tr');tr.className='thread';
   tr.innerHTML=`<td colspan="${view==='split'?4:4}">${threadHtml(a)}</td>`;last.after(tr);
   const inp=tr.querySelector('input[data-reply]');if(drafts[a.id])inp.value=drafts[a.id];if(focused===String(a.id))inp.focus();}
- decoratePins();}
+ if(composing){markSel();placeComposer();}
+ updateThreadToggle();decoratePins();}
 function decoratePins(){
  document.querySelectorAll('.pin').forEach(p=>p.remove());
  for(const a of notes){if(a.kind!=='pin')continue;const sec=document.getElementById(fileAnchor(a.file));if(!sec)continue;
@@ -1704,8 +1760,8 @@ let drag=null, suppressClick=false;
 function cellFor(row,side){const c=row.querySelector(`td.num.${side}`);return c&&c.dataset.n?c:null;}
 document.addEventListener('mousedown',e=>{
  const num=e.target.closest('td.num.click');if(!num||e.button!==0)return;
- e.preventDefault();const sec=num.closest('section.file');
- drag={file:sec.dataset.path,side:num.dataset.side,anchor:+num.dataset.n,start:+num.dataset.n,end:+num.dataset.n,el:num,moved:false};
+ e.preventDefault();getSelection().removeAllRanges();document.body.classList.add('line-drag');const sec=num.closest('section.file');
+ drag={file:sec.dataset.path,side:num.dataset.side,anchor:+num.dataset.n,start:+num.dataset.n,end:+num.dataset.n,el:num,moved:false,shift:e.shiftKey};
  if(!(e.shiftKey&&sel&&sel.file===drag.file&&sel.side===drag.side)){sel={file:drag.file,side:drag.side,start:drag.start,end:drag.end};markSel();}});
 document.addEventListener('mousemove',e=>{
  if(!drag)return;const row=rowOf(e.target);if(!row||row.closest('section.file')?.dataset.path!==drag.file)return;
@@ -1713,8 +1769,8 @@ document.addEventListener('mousemove',e=>{
  drag.moved=true;drag.start=Math.min(drag.anchor,n);drag.end=Math.max(drag.anchor,n);drag.el=c;
  sel={file:drag.file,side:drag.side,start:drag.start,end:drag.end};markSel();});
 document.addEventListener('mouseup',e=>{
- if(!drag)return;const d=drag;drag=null;
- if(d.moved){suppressClick=true;setTimeout(()=>suppressClick=false,0);openComposer('line',{file:d.file,side:d.side,start:d.start,end:d.end},d.el);}});
+ if(!drag)return;const d=drag;drag=null;document.body.classList.remove('line-drag');getSelection().removeAllRanges();
+ if(d.moved){suppressClick=true;setTimeout(()=>suppressClick=false,0);openComposer('line',{file:d.file,side:d.side,start:d.start,end:d.end},d.el,d.shift);}});
 document.addEventListener('click',e=>{
  if(suppressClick){suppressClick=false;return;}
  if(e.target.closest('#composer,#side,#top,#tabs,#bar,#bubble,.thread-box'))return;
@@ -1731,12 +1787,12 @@ document.addEventListener('click',e=>{
  if(num){const side=num.dataset.side,n=+num.dataset.n;const file=secEl.dataset.path;
   if(e.shiftKey&&sel&&sel.file===file&&sel.side===side){sel.start=Math.min(sel.start,n);sel.end=Math.max(sel.end,n);}
   else sel={file,side,start:n,end:n};
-  markSel();openComposer('line',sel,num);return;}
+  markSel();openComposer('line',sel,num,e.shiftKey);return;}
  const code=e.target.closest('td.code');
  if(code&&!window.getSelection().toString()){const r=rowOf(code);if(!r)return;const side=r.dataset.side,n=+r.dataset.n;const file=secEl.dataset.path;
   if(e.shiftKey&&sel&&sel.file===file&&sel.side===side){sel.start=Math.min(sel.start,n);sel.end=Math.max(sel.end,n);}
   else sel={file,side,start:n,end:n};
-  markSel();openComposer('line',sel,code);return;}
+  markSel();openComposer('line',sel,code,e.shiftKey);return;}
  const fb=e.target.closest('[data-filenote]');
  if(fb){openComposer('file',{file:fb.dataset.filenote},fb);return;}
 });
@@ -1765,7 +1821,16 @@ function quoteFor(s){const f=model.files.find(x=>x.path===s.file);if(!f)return '
  const raw=rawCache[s.side+':'+(s.side==='old'?(f.old_path||f.path):f.path)+':'+digest]||[];const out=[];
  for(let n=s.start;n<=s.end;n++){if(n in byN)out.push(byN[n]);else if(raw[n-1]!==undefined)out.push(raw[n-1]);}
  return out.join('\n');}
-function openComposer(kind,where,anchorEl){
+function parkComposer(){const c=$('#composer');if(c.parentElement!==document.body)document.body.appendChild(c);c.classList.remove('inline');document.querySelectorAll('tr.composer-row').forEach(r=>r.remove());}
+function placeComposer(){
+ const c=$('#composer');const sec=composing&&['line','chunk','selection'].includes(composing.kind)&&composing.start?document.getElementById(fileAnchor(composing.file)):null;
+ const last=sec&&[...sec.querySelectorAll('tr.sel')].pop();if(!last){parkComposer();return false;}
+ let at=last;while(at.nextElementSibling&&at.nextElementSibling.classList.contains('thread'))at=at.nextElementSibling;
+ let row=c.closest('tr.composer-row');if(!row){row=document.createElement('tr');row.className='composer-row';row.innerHTML='<td colspan="4"></td>';}
+ if(at.nextElementSibling!==row){const focused=c.contains(document.activeElement)?document.activeElement:null;row.firstElementChild.appendChild(c);at.after(row);if(focused)focused.focus({preventScroll:true});}
+ c.classList.add('inline');c.style.top=c.style.left='';return true;}
+function openComposer(kind,where,anchorEl,extending){
+ const draft=extending&&composing&&composing.file===where.file&&composing.side===where.side?$('#ctext').value:'';
  composing={kind,...where};if(['line','chunk','selection','pin'].includes(kind)&&where.start)composing.quote=quoteFor(where);
  const lines=where.start?`line${where.start!==where.end?'s '+where.start+'–'+where.end:' '+where.start}${where.side==='old'?' (old side)':''}`:'';
  const head=kind==='pr'?`<b>PR ${esc(where.part)}</b>${where.selection?` · “${esc(where.selection.length>60?where.selection.slice(0,60)+'…':where.selection)}”`:''}`
@@ -1774,15 +1839,16 @@ function openComposer(kind,where,anchorEl){
   :kind==='chunk'?`<b>${esc(where.file)}</b> · chunk · ${esc(where.label||'')} · ${lines}`
   :kind==='selection'?`<b>${esc(where.file)}</b> · selection “${esc(where.selection.length>60?where.selection.slice(0,60)+'…':where.selection)}” · ${lines}`
   :kind==='pin'?`<b>${esc(where.file)}</b> · pin${lines?' near '+lines:''}`
-  :`<b>${esc(where.file)}</b> · ${lines}<span style="margin-left:6px">shift-click another line to extend</span>`;
+  :`<b>${esc(where.file)}</b> · ${lines}<span style="margin-left:6px">shift-click or drag line numbers to extend</span>`;
  const c=$('#composer');$('#cwhere').innerHTML=head;
  $('#csug').style.display=['line','chunk','selection'].includes(kind)&&where.side==='new'?'':'none';
  $('#csugwrap').classList.remove('on');$('#csug').classList.remove('on');$('#csugtext').value=composing.quote||'';
- $('#ctext').value='';c.style.display='block';
+ $('#ctext').value=draft;c.style.display='block';
+ if(placeComposer()){$('#ctext').focus({preventScroll:true});c.scrollIntoView({block:'nearest'});return;}
  const r=anchorEl.getBoundingClientRect();let top=r.bottom+6,left=Math.min(r.left,innerWidth-540);
  if(top+260>innerHeight)top=Math.max(52,r.top-260);c.style.top=top+'px';c.style.left=Math.max(12,left)+'px';
  $('#ctext').focus();}
-function closeComposer(){$('#composer').style.display='none';composing=null;sel=null;markSel();$('#bubble').style.display='none';}
+function closeComposer(){$('#composer').style.display='none';parkComposer();composing=null;sel=null;markSel();$('#bubble').style.display='none';}
 $('#csug').onclick=()=>{$('#csugwrap').classList.toggle('on');$('#csug').classList.toggle('on');if($('#csugwrap').classList.contains('on'))$('#csugtext').focus();};
 $('#ccancel').onclick=closeComposer;
 $('#csave').onclick=saveComposer;
@@ -1839,6 +1905,7 @@ $('#notes').addEventListener('click',async e=>{
   // A note opens its file and shows its thread, in Changes.
   if(a.file&&a.kind!=='pr'){openFiles.add(a.file);applyOpen();}setTab('changes');
   const sec=a.kind==='pr'?$('#prdraft'):a.file?document.getElementById(fileAnchor(a.file)):null;
+  if(document.querySelector(`.thread-box.folded[data-id="${a.id}"]`))setFolded([a.id],false);
   const t=sec?(sec.querySelector(`.thread-box[data-id="${a.id}"],.pin[data-jump="${a.id}"]`)||sec):$('#main');t.scrollIntoView({behavior:'smooth',block:'center'});}});
 document.addEventListener('click',e=>{const p=e.target.closest('.pin[data-jump]');if(p){const n=document.querySelector(`.note[data-id="${p.dataset.jump}"]`);if(n)n.scrollIntoView({behavior:'smooth',block:'center'});}});
 $('#cleardone').onclick=async()=>{await fetch('./clear',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({which:'done'})});await refresh(true);toast('archived done notes');};
