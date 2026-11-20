@@ -24,6 +24,15 @@ from agent_desk.local_transport import (UnixHTTPConnection, desk_url, desktop_id
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def fake_agent(root):
+    """A stand-in named claude: it idles at a prompt and answers each line typed into it."""
+    path = Path(root) / 'fake-bin' / 'claude'
+    path.parent.mkdir(exist_ok=True)
+    path.write_text(f'#!{sys.executable}\nimport sys\nprint("ready", flush=True)\nfor line in sys.stdin:\n    print("heard " + line.strip(), flush=True)\n')
+    path.chmod(0o755)
+    return str(path)
+
+
 class IdentityTests(unittest.TestCase):
     def test_browser_and_desktop_identities_are_distinct(self):
         identity = secrets.token_hex(16)
@@ -173,37 +182,40 @@ class DesktopIntegrationTests(unittest.TestCase):
         code, result = self.request('/api/terminals/launch', {'cwd': str(self.root), 'argv': ['/bin/sh']})
         self.assertEqual(code, 200, result)
 
-    def test_quit_reopen_restores_terminals_but_not_explicit_stops(self):
-        def launch(name):
-            code, item = self.request('/api/terminals/launch', {'cwd': str(self.root), 'argv': ['/bin/sh'], 'name': name})
+    def test_quit_reopen_restores_agents_but_not_shells_or_explicit_stops(self):
+        agent = fake_agent(self.root)
+        def launch(name, argv):
+            code, item = self.request('/api/terminals/launch', {'cwd': str(self.root), 'argv': argv, 'name': name})
             self.assertEqual(code, 200, item)
             return item['id']
 
-        kept = launch('Fictional saved shell')
-        closed = launch('Fictional closed shell')
-        self.assertEqual(self.request('/api/terminals/rename', {'id': kept, 'name': 'Renamed saved shell'})[0], 200)
+        kept = launch('Fictional saved agent', [agent])
+        closed = launch('Fictional closed agent', [agent])
+        shell = launch('Fictional shell', ['/bin/sh'])
+        self.assertEqual(self.request('/api/terminals/rename', {'id': kept, 'name': 'Renamed saved agent'})[0], 200)
         self.assertEqual(self.request('/api/terminals/stop', {'id': closed})[0], 200)
-        for _ in range(2):
+        for recorded in ({kept, shell}, {kept}):
             code, result = self.request('/api/desktop/shutdown', {})
             self.assertEqual(code, 200, result)
             self.processes[-1].wait(timeout=15)
             records = json.loads((self.data / f'terminal-sessions-{self.workspace}.json').read_text())['sessions']
-            self.assertEqual([row['id'] for row in records], [kept])
+            self.assertEqual({row['id'] for row in records}, recorded)
             self.start()
+            # The shell is left closed: only agents come back.
             rows = self.request('/api/desktop/status')[1]['sessions']
             self.assertEqual([row['id'] for row in rows], [kept])
-            self.assertEqual(rows[0]['display_name'], 'Renamed saved shell')
+            self.assertEqual(rows[0]['display_name'], 'Renamed saved agent')
             self.assertEqual(rows[0]['cwd'], str(self.root))
-            self.assertEqual(rows[0]['restored']['detail'], 'started a new shell in the same folder')
-            data = base64.b64encode(b"printf 'reopened-%s\\n' shell\n").decode()
+            self.assertEqual(rows[0]['restored']['detail'], 'no Claude conversation had started, so this is a new session')
+            data = base64.b64encode(b"reopened-agent\n").decode()
             self.assertEqual(self.request('/api/terminals/input', {'id': kept, 'data': data})[0], 200)
-            self.until(lambda: 'reopened-shell' in base64.b64decode(self.request('/api/terminals/output?id='+kept+'&cursor=0')[1]['data']).decode(errors='replace'))
+            self.until(lambda: 'heard reopened-agent' in base64.b64decode(self.request('/api/terminals/output?id='+kept+'&cursor=0')[1]['data']).decode(errors='replace'))
         self.assertEqual(self.request('/api/terminals/stop', {'id': kept})[0], 200)
         self.assertEqual(json.loads((self.data / f'terminal-sessions-{self.workspace}.json').read_text())['sessions'], [])
 
     def test_checkpoint_storage_failure_leaves_shutdown_incomplete_and_retryable(self):
         from agent_desk.terminal_supervisor import SupervisorClient
-        code,shell=self.request('/api/terminals/launch',{'cwd':str(self.root),'argv':['/bin/sh'],'name':'Fictional checkpoint survivor'})
+        code,shell=self.request('/api/terminals/launch',{'cwd':str(self.root),'argv':[fake_agent(self.root)],'name':'Fictional checkpoint survivor'})
         self.assertEqual(code,200,shell)
         with patch.dict(os.environ,self.env):owner=SupervisorClient(self.data,self.workspace,start=False)
         supervisor_pid=owner.call('hello')['pid'];terminal_pid=owner.get(shell['id']).process.pid

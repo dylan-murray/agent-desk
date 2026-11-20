@@ -44,6 +44,8 @@ function markTerminalConnection(id,connected){const activity=terminalActivity.ge
 function noteTerminalExit(id,code){const agent=agents.find(a=>a.id===id);if(agent){agent.exit_code=code;agent.status=code===0?'completed':'error';}}
 let dismissedTerminals=new Set();
 try{dismissedTerminals=new Set(JSON.parse(localStorage.getItem('agent-desk-closed-terminals')||'[]'));}catch{}
+const genericTerminalTitles=new Set(['claude','claude code','codex','cortex','cortex code','grok','opencode','pi','terminal','sh','bash','zsh','fish','dash','ksh','tcsh','csh','login']);
+function meaningfulTerminalTitle(title){const text=String(title||'').replace(/^[◐◑◒◓✳✶✻✽✢⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]\s*/u,'').trim();return text&&!genericTerminalTitles.has(text.toLowerCase())?text:'';}
 function withTerminalActivity(agent){
   agent={...agent,...(sessionLaunchProfiles[agent.id]||{})};
   agent.controller=!!agent.controller||!!agent.name?.startsWith('Controller · ');
@@ -51,7 +53,7 @@ function withTerminalActivity(agent){
   const activity=terminalActivity.get(agent.id);
   if(!activity)return {...agent,activity_description:'Interactive terminal · checking output activity'};
   const status=activity.connected?(activity.approval?'needs_input':Date.now()-activity.lastOutput<4000?'output':'quiet'):'unknown';
-  return {...agent,status,question:activity.approval||agent.question,terminal_title:activity.title||'',activity_description:status==='needs_input'?'Approval requested · '+activity.approval:status==='output'?'Receiving terminal output; task progress is not confirmed':status==='quiet'?'No recent terminal output; the agent may be thinking or waiting':'Activity connection unavailable'};
+  return {...agent,status,question:activity.approval||agent.question,terminal_title:meaningfulTerminalTitle(activity.title)||agent.terminal_title||'',activity_description:status==='needs_input'?'Approval requested · '+activity.approval:status==='output'?'Receiving terminal output; task progress is not confirmed':status==='quiet'?'No recent terminal output; the agent may be thinking or waiting':'Activity connection unavailable'};
 }
 function dismissTerminal(id){
   dismissedTerminals.add(id);

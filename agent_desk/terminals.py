@@ -17,6 +17,7 @@ import time
 from agent_desk.accounts import harness_of, HARNESSES, SINGLE
 from agent_desk.worker_screen import WorkerScreen, WorkerNotReady
 from agent_desk import readouts
+from agent_desk import session_titles
 
 PANE_BIN = Path(__file__).with_name('bin')
 
@@ -135,6 +136,8 @@ class TerminalSession:
         self.redraw_until = 0
         self.native_session = self.native_harness = self.restored = None
         self.agent_exited = False
+        self.title = self.conversation_title = self.saved_title = None
+        self.title_carry = b''
         self.on_exit = on_exit
         # Cursors are byte offsets since `origin`; a restored process starts past its predecessor.
         self.origin = self.start = origin
@@ -176,6 +179,9 @@ class TerminalSession:
                         self.last_output = now
                     exited = not self.agent_exited and AGENT_EXITED in bytes(self.buffer[-len(AGENT_EXITED):]) + data
                     self.buffer.extend(data)
+                    found, self.title_carry = session_titles.scan(self.title_carry, data)
+                    if found is not None and (title := session_titles.clean(found)):
+                        self.title = title
                     if self.screen:self.screen.observe('output',data=base64.b64encode(data).decode())
                     overflow = max(0, len(self.buffer) - 2 * 1024 * 1024)
                     if overflow:
@@ -217,6 +223,7 @@ class TerminalSession:
                     else 'Coordinator event delivery failed. Inspect the terminal and Inbox before retrying.' if state=='delivery-error' else None)
         return dict(id=self.id, name=self.name, cwd=self.cwd, harness=Path(self.argv[0]).name, native_session=self.native_session,
                     display_name=self.display_name, launch_profile=self.launch_profile,
+                    terminal_title=self.title, conversation_title=self.conversation_title,
                     status=status or ('unknown' if code is None else 'completed' if code == 0 else 'error'),
                     source='terminal', task='Interactive terminal', terminal_id=self.id, parent_id=self.parent_id,
                     updated=self.updated, last_output=self.last_output, active_since=self.active_since,
@@ -361,6 +368,7 @@ class TerminalManager:
         self.usage_cache = None
         # Optional terminal_restore.SessionStore; only the supervisor records sessions.
         self.store, self.store_lock, self.closing = store, threading.Lock(), False
+        self.titles = session_titles.ConversationTitles()
 
     def launch(self, payload, coordinator=None, identity=None, origin=0, banner=b'', persist=True):
         from agent_desk.accounts import account
@@ -406,10 +414,13 @@ class TerminalManager:
             return
         from agent_desk.terminal_restore import record, restorable
         with self.lock:
-            records = [record(s) for s in self.sessions.values() if restorable(s, self.external_parents)]
+            kept = [s for s in self.sessions.values() if restorable(s, self.external_parents)]
+            records = [record(s) for s in kept]
         with self.store_lock:
             if not self.closing:
                 self.store.save(records)
+                for session, item in zip(kept, records):
+                    session.saved_title = item['title']
 
     def capture_conversations(self, config_dirs=None):
         """Record each agent terminal's current native conversation ID."""
@@ -423,6 +434,11 @@ class TerminalManager:
             wrapped = name if harness(session.argv, session.launch_profile) is None else None
             if native and (session.native_session, session.native_harness) != (native, wrapped):
                 session.native_session, session.native_harness, changed = native, wrapped, True
+            title = self.titles.title(session.native_session)
+            if title and title != session.conversation_title:
+                session.conversation_title, changed = title, True
+            if session.title != session.saved_title:
+                changed = True
         if changed:
             self.persist()
         return {identity: native for identity, (_, native) in observed.items()}
