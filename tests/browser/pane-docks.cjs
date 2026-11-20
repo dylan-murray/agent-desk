@@ -80,6 +80,9 @@ const T=(id,title,o={})=>({id,title,skill:'diagram-doc-creator',url:'http://127.
   uis=[...uis,T('tool-a2','Query workspace',{agent_id:'pane-a'})];
   await page.waitForFunction(()=>document.querySelector('[data-pane-id="pane-a"] .pane-dock-tab[data-entry="tool-a2"]'),null,{timeout:10000});
   await page.locator('[data-pane-id="pane-a"] .pane-dock-tab[data-entry="tool-a"]').click();
+  const rail=await page.evaluate(()=>{const tabs=document.querySelector('[data-pane-id="pane-a"] .pane-dock-tabs'),tab=tabs.querySelector('[aria-selected="true"]'),a=tabs.getBoundingClientRect(),b=tab.getBoundingClientRect(),bar=getComputedStyle(tab,'::before');
+   return {entry:tab.dataset.entry,left:Math.round(b.left-a.left),gap:Math.round(a.right-b.right),radius:getComputedStyle(tab).borderRadius,bar:[bar.left,bar.width,Math.round(parseFloat(bar.height))===Math.round(b.height)]};});
+  check('the shown tab fills the rail edge to edge, marked down its whole left side',()=>{assert.equal(rail.entry,'tool-a');assert.equal(rail.left,0);assert.ok(rail.gap<=1,JSON.stringify(rail));assert.equal(rail.radius,'0px');assert.deepEqual(rail.bar,['0px','3px',true]);});
   const two=await state();
   check('an agent with two tools switches between them with the dock\'s tabs',()=>{assert.match(two.chip,/\+1$/);assert.equal(two.frame,'http://127.0.0.1:49401/tool-a');});
 

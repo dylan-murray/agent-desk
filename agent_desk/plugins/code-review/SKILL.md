@@ -66,6 +66,8 @@ action; submitting review feedback alone does not grant it.
    `--base main` (merge-base, working tree included). Add `--no-browser` if
    they already have a tab open, `--port N` if 8767 is taken. Tell them the URL
    in one line.
+   Untracked files sit last under their own heading, marked U, and the
+   reviewer can hide them; `--no-untracked` leaves them out altogether.
 
 2. **Configure the originating session.** Use the shared submission setup
    above. The **Submit to <agent-name>** button saves the exact notes and queues
