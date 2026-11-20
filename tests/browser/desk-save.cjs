@@ -3,7 +3,8 @@
 // agent resuming its conversation. Runs against a real isolated backend with real terminals. No agent
 // runs: a stand-in `codex` prints its arguments and holds a fixture rollout file open, which is how
 // restart recovery recognizes a Codex conversation, so reopening must start it with `resume <id>`.
-// A shell, a command that is not re-run, a coordinator (its quota is mocked) and a web page come too.
+// A Codex with no conversation yet, a coordinator (its quota is mocked) and a web page come too. A plain
+// shell and a command that would only come back as a shell are stopped and not kept.
 const {chromium}=require('playwright');const assert=require('node:assert/strict');const crypto=require('node:crypto');const fs=require('node:fs');const os=require('node:os');const path=require('node:path');
 const APP=process.env.AGENT_DESK_TEST_URL||'http://127.0.0.1:4310/';
 const OUT=process.env.AGENT_DESK_EVIDENCE_DIR||os.tmpdir();
@@ -15,6 +16,9 @@ const conversation=crypto.randomUUID(),rollout=path.join(root,'codex-home','sess
 fs.mkdirSync(path.dirname(rollout),{recursive:true});fs.writeFileSync(rollout,'{"payload":{}}\n');
 const fakeCodex=path.join(root,'bin','codex');fs.mkdirSync(path.dirname(fakeCodex));
 fs.writeFileSync(fakeCodex,`#!/bin/sh\nprintf 'fake-codex args: %s\\n' "$*"\nexec 3<'${rollout}'\nexec /bin/sh\n`,{mode:0o755});
+// The same stand-in with no rollout open: a Codex whose conversation has not started.
+const freshCodex=path.join(root,'bin-fresh','codex');fs.mkdirSync(path.dirname(freshCodex));
+fs.writeFileSync(freshCodex,`#!/bin/sh\nprintf 'fake-codex args: %s\\n' "$*"\nexec /bin/sh\n`,{mode:0o755});
 const panes=page=>page.$$eval('#terminal .terminal-pane',nodes=>nodes.map(n=>n.dataset.paneId));
 const deskName=page=>page.textContent('#desk-button .desk-name');
 const agentsNow=page=>page.evaluate(async()=>(await fetch('/api/agents')).json());
@@ -36,21 +40,24 @@ const outcomes=page=>page.$$eval('#shutdown-desk-dialog .desk-shutdown-list li',
 
   await page.click('#desk-button');await page.click('[data-desk-new]');await page.keyboard.type(DESK);await page.keyboard.press('Enter');
   await page.waitForFunction(name=>document.querySelector('#desk-button .desk-name')?.textContent===name,DESK);
-  const ids=await page.evaluate(async([alpha,beta,gamma,codex])=>{
+  const ids=await page.evaluate(async([alpha,beta,gamma,codex,fresh])=>{
     const launch=async body=>{const s=await terminalRequest('/api/terminals/launch',{desk:activeDesk().id,...body});return s.id;};
-    const shell=await launch({cwd:alpha,name:'Shell'}),agent=await launch({cwd:beta,argv:[codex],name:'Codex'}),cat=await launch({cwd:gamma,argv:['/bin/cat'],name:'Cat'});
+    const shell=await launch({cwd:alpha,name:'Shell'}),agent=await launch({cwd:beta,argv:[codex],name:'Codex'}),cat=await launch({cwd:alpha,argv:['/bin/cat'],name:'Cat'});
+    const newcomer=await launch({cwd:gamma,argv:[fresh],name:'Codex'});
     await terminalRequest('/api/terminals/rename',{id:agent,name:'Codex fixture'});
+    await terminalRequest('/api/terminals/rename',{id:newcomer,name:'Codex newcomer'});
     const coordinator=(await terminalRequest('/api/coordinators/create',{desk:activeDesk().id,name:'Planner',cwd:alpha,profile:'claude',model:'fixture-model'})).id;
-    await refresh();for(const id of [shell,agent,cat,coordinator])selectPane(id,true);
+    await refresh();for(const id of [shell,agent,newcomer,cat,coordinator])selectPane(id,true);
     openWebPage('http://127.0.0.1:9/fixture-docs','Fixture docs',{quiet:true});
-    return {shell,agent,cat,coordinator};
-  },[alpha,beta,gamma,fakeCodex]);
-  launched.push(ids.shell,ids.agent,ids.cat);coordinators.push(ids.coordinator);
-  await page.waitForFunction(()=>document.querySelectorAll('#terminal .terminal-pane').length===5);
+    return {shell,agent,newcomer,cat,coordinator};
+  },[alpha,beta,gamma,fakeCodex,freshCodex]);
+  launched.push(ids.shell,ids.agent,ids.newcomer,ids.cat);coordinators.push(ids.coordinator);
+  await page.waitForFunction(()=>document.querySelectorAll('#terminal .terminal-pane').length===6);
   await page.click('#pane-layout-button');await page.click('[data-layout="grid-3"]');
-  await page.focus(`.pane-edges[data-edges-for="${ids.shell}"] .pane-resize[data-edge=se]`);await page.keyboard.press('ArrowRight');await page.waitForTimeout(300);
+  await page.focus(`.pane-edges[data-edges-for="${ids.agent}"] .pane-resize[data-edge=se]`);await page.keyboard.press('ArrowRight');await page.waitForTimeout(300);
   const before=await page.evaluate(()=>({ids:[...openPaneIds],rects:JSON.parse(JSON.stringify(resolvePaneRects(openPaneIds))),page:openPaneIds.find(id=>webPages.has(id))}));
   await bufferHas(page,ids.agent,'fake-codex args: --no-daemon');
+  await bufferHas(page,ids.newcomer,'fake-codex args: --no-daemon');
   check('the stand-in codex started as a standalone Codex session',()=>{});
   // Restart recovery samples conversations every few seconds; wait until it has this one.
   for(let tries=0;!(await page.evaluate(async id=>(await terminalRequest('/api/desks/save-preview',{ids:[id]})).sessions[0]?.resumes,ids.agent));tries++){
@@ -69,10 +76,13 @@ const outcomes=page=>page.$$eval('#shutdown-desk-dialog .desk-shutdown-list li',
   check('...offers to rename it, starting from its name',()=>assert.equal(field,DESK));
   check('...and says what each session comes back as',()=>{
     assert.deepEqual(rows[ids.agent],['Saves · resumes',`On reopen: resumes Codex conversation ${conversation}`]);
-    assert.deepEqual(rows[ids.shell],['Saves · starts fresh','On reopen: starts a new shell in the same folder']);
-    assert.deepEqual(rows[ids.cat],['Saves · starts fresh','On reopen: starts a shell instead of re-running cat']);
+    assert.deepEqual(rows[ids.newcomer],['Saves · starts fresh','On reopen: no Codex conversation had started, so this is a new session']);
+    assert.deepEqual(rows[ids.shell],['Stops · not reopened','Not reopened: it was a plain shell']);
+    assert.deepEqual(rows[ids.cat],['Stops · not reopened','Not reopened: no agent conversation was seen in cat']);
     assert.equal(rows[ids.coordinator][0],'Saves · reopens');
   });
+  const closable=await page.$$eval('#shutdown-desk-dialog [data-shutdown-drop]',nodes=>nodes.map(n=>n.dataset.shutdownDrop));
+  check('...with no × on what is not kept anyway',()=>assert.deepEqual(closable.filter(id=>id===ids.shell||id===ids.cat),[]));
   await page.screenshot({path:path.join(OUT,'desk-save-03-dialog.png')});
   await page.click('#confirm-shutdown-desk');
   await page.waitForFunction(()=>!document.getElementById('shutdown-desk-dialog').open,null,{timeout:20000});
@@ -81,7 +91,7 @@ const outcomes=page=>page.$$eval('#shutdown-desk-dialog .desk-shutdown-list li',
   check('saving moves this tab to an open desk',()=>assert.equal(after,home));
   check('...and the server keeps the desk, marked saved',()=>assert.equal(typeof saved?.saved_at,'number'));
   check('...with its terminals stopped and its coordinator closed',()=>{
-    for(const id of [ids.shell,ids.agent,ids.cat]){const a=data.agents.find(x=>x.id===id);assert.ok(!a||a.exit_code!==null,id);}
+    for(const id of [ids.shell,ids.agent,ids.newcomer,ids.cat]){const a=data.agents.find(x=>x.id===id);assert.ok(!a||a.exit_code!==null,id);}
     assert.equal(data.agents.some(a=>a.id===ids.coordinator),false);
   });
   await page.click('#desk-button');
@@ -92,27 +102,29 @@ const outcomes=page=>page.$$eval('#shutdown-desk-dialog .desk-shutdown-list li',
 
   // Reopen it.
   await page.click(`#desk-menu [data-desk-reopen="${saved.id}"]`);
-  await page.waitForFunction(name=>document.querySelector('#desk-button .desk-name')?.textContent===name&&document.querySelectorAll('#terminal .terminal-pane').length===5&&document.getElementById('toast').textContent.startsWith('Reopened'),DESK,{timeout:20000});
-  const reopened=await page.evaluate(()=>({ids:[...openPaneIds],rects:JSON.parse(JSON.stringify(paneRects||{})),layout:paneLayoutId,toast:document.getElementById('toast').textContent,pageUrl:webPages.get(openPaneIds.at(-1))?.url}));
+  await page.waitForFunction(name=>document.querySelector('#desk-button .desk-name')?.textContent===name&&document.querySelectorAll('#terminal .terminal-pane').length===4&&document.getElementById('toast').textContent.startsWith('Reopened'),DESK,{timeout:20000});
+  const reopened=await page.evaluate(()=>({ids:[...openPaneIds],rects:JSON.parse(JSON.stringify(paneRects||{})),layout:paneLayoutId,toast:document.getElementById('toast').textContent,pageUrl:[...webPages.values()].find(p=>openPaneIds.includes(p.id))?.url}));
   for(const id of reopened.ids)if(id.startsWith('terminal-'))launched.push(id);
-  check('reopening switches to the desk with all five panes back',()=>assert.equal(reopened.ids.length,5));
-  check('...in the same layout and sizes',()=>{assert.equal(reopened.layout,'grid-3');assert.deepEqual(reopened.ids.map(id=>reopened.rects[id]),before.ids.map(id=>before.rects[id]));});
-  check('...and says how many resumed',()=>assert.equal(reopened.toast,`Reopened “${DESK}” · 2 resumed, 2 started fresh`));
-  const [newShell,newAgent,newCat,coordinator,webPage]=reopened.ids;
+  check('reopening switches to the desk with the agents, coordinator and page back, not the shell or cat',()=>assert.equal(reopened.ids.length,4));
+  check('...and says how many resumed',()=>assert.equal(reopened.toast,`Reopened “${DESK}” · 2 resumed, 1 started fresh`));
   data=await agentsNow(page);
   const byId=Object.fromEntries(data.agents.map(a=>[a.id,a]));
+  // The panes close up the gaps the shell and cat left, so match them by what they are, not where.
+  const newAgent=reopened.ids.find(id=>byId[id]?.cwd===beta),newcomer=reopened.ids.find(id=>byId[id]?.cwd===gamma);
+  const coordinator=reopened.ids.find(id=>id===ids.coordinator),webPage=reopened.ids.find(id=>id===before.page);
+  const size=rect=>rect&&{w:rect.w,h:rect.h};
+  check('...in the same layout, the resized pane at its size',()=>{assert.equal(reopened.layout,'grid-3');assert.deepEqual(size(reopened.rects[newAgent]),size(before.rects[ids.agent]));});
   check('the terminals are new sessions in their folders, on the desk',()=>{
-    assert.deepEqual([newShell,newAgent,newCat].map(id=>[id!==ids.shell&&id!==ids.agent&&id!==ids.cat,byId[id].cwd,byId[id].desk,byId[id].exit_code]),[[true,alpha,saved.id,null],[true,beta,saved.id,null],[true,gamma,saved.id,null]]);
+    assert.deepEqual([newAgent,newcomer].map(id=>[id!==ids.agent&&id!==ids.newcomer,byId[id].cwd,byId[id].desk,byId[id].exit_code]),[[true,beta,saved.id,null],[true,gamma,saved.id,null]]);
   });
+  check('...and nothing comes back in the shell\'s folder',()=>assert.equal(data.agents.some(a=>a.cwd===alpha&&a.desk===saved.id&&a.exit_code===null&&a.id.startsWith('terminal-')),false));
   check('...the coordinator is the same conversation, reopened',()=>assert.deepEqual([coordinator,byId[coordinator]?.desk],[ids.coordinator,saved.id]));
   check('...and the web page comes back',()=>assert.deepEqual([webPage,reopened.pageUrl],[before.page,'http://127.0.0.1:9/fixture-docs']));
   await bufferHas(page,newAgent,`fake-codex args: --no-daemon resume ${conversation}`);
   check('Codex resumes its exact conversation',()=>{});
   check('...under the name it was given',()=>assert.equal(byId[newAgent].display_name||byId[newAgent].name,'Codex fixture'));
-  await page.click(`.terminal-pane[data-pane-id="${newCat}"] .xterm`);
-  await page.keyboard.type('echo reopened-$((40+2))');await page.keyboard.press('Enter');
-  await bufferHas(page,newCat,'reopened-42');
-  check('a command that is not re-run comes back as a working shell',()=>{});
+  await bufferHas(page,newcomer,'fake-codex args: --no-daemon');
+  check('the Codex with no conversation yet starts again as Codex',()=>{});
   await page.screenshot({path:path.join(OUT,'desk-save-05-reopened.png')});
 
   // A folder that is gone: that session is reported and everything else still reopens.
@@ -124,27 +136,27 @@ const outcomes=page=>page.$$eval('#shutdown-desk-dialog .desk-shutdown-list li',
   const report=await page.evaluate(()=>({title:document.querySelector('#shutdown-desk-dialog h2').textContent,rows:[...document.querySelectorAll('#shutdown-desk-dialog .desk-shutdown-list li')].map(li=>[li.querySelector('strong').textContent,li.querySelector('small').textContent,li.querySelector('.desk-shutdown-outcome').textContent]),confirm:document.getElementById('confirm-shutdown-desk').hidden,panes:[...openPaneIds]}));
   for(const id of report.panes)if(id.startsWith('terminal-'))launched.push(id);
   check('a session whose folder is gone is named with the reason',()=>{
-    assert.equal(report.title,`“${DESK}” reopened with 3 of 4 sessions`);
-    assert.deepEqual(report.rows,[['Cat','Choose an existing absolute working directory','Not reopened']]);
+    assert.equal(report.title,`“${DESK}” reopened with 2 of 3 sessions`);
+    assert.deepEqual(report.rows,[['Codex newcomer','Choose an existing absolute working directory','Not reopened']]);
     assert.equal(report.confirm,true);
   });
-  check('...and the rest are open',()=>assert.equal(report.panes.length,4));
+  check('...and the rest are open',()=>assert.equal(report.panes.length,3));
   await page.screenshot({path:path.join(OUT,'desk-save-06-reopen-failure.png')});
   await page.click('#shutdown-desk-dialog .close-dialog');
 
   // Leaving a session out while saving: it stops with the rest but does not come back.
   data=await agentsNow(page);
-  const shellNow=data.agents.find(a=>a.cwd===alpha&&a.desk===saved.id&&a.exit_code===null&&a.id.startsWith('terminal-')).id;
+  const agentNow=data.agents.find(a=>a.cwd===beta&&a.desk===saved.id&&a.exit_code===null&&a.id.startsWith('terminal-')).id;
   await page.click('#desk-button');await page.click('[data-desk-save]');await page.waitForSelector('#shutdown-desk-dialog[open]');
   const confirmText=()=>page.textContent('#confirm-shutdown-desk');
-  const dropButton=`#shutdown-desk-dialog [data-shutdown-drop="${shellNow}"]`;
+  const dropButton=`#shutdown-desk-dialog [data-shutdown-drop="${agentNow}"]`;
   const offered=await page.$$eval('#shutdown-desk-dialog [data-shutdown-drop]',nodes=>nodes.map(n=>[n.title,!!n.querySelector('svg'),n.getAttribute('aria-label').startsWith('Don\'t save ')]));
-  check('every session that would be saved has an × to leave it out',()=>assert.deepEqual(offered,Array(3).fill(['Don\'t save',true,true])));
+  check('every session that would be saved has an × to leave it out',()=>assert.deepEqual(offered,Array(2).fill(['Don\'t save',true,true])));
   await page.click(dropButton);
-  const left=await page.evaluate(id=>{const li=document.querySelector(`#shutdown-desk-dialog [data-shutdown-id="${id}"]`);return {tag:li.querySelector('.desk-shutdown-outcome').textContent,button:li.querySelector('[data-shutdown-drop]').title,focused:document.activeElement===li.querySelector('[data-shutdown-drop]')};},shellNow);
+  const left=await page.evaluate(id=>{const li=document.querySelector(`#shutdown-desk-dialog [data-shutdown-id="${id}"]`);return {tag:li.querySelector('.desk-shutdown-outcome').textContent,button:li.querySelector('[data-shutdown-drop]').title,focused:document.activeElement===li.querySelector('[data-shutdown-drop]')};},agentNow);
   check('leaving one out says it stops and is not reopened',()=>assert.deepEqual(left,{tag:'Stops · not reopened',button:'Save it after all',focused:true}));
   const counted=await confirmText();
-  check('...and the button counts what is saved',()=>assert.equal(counted,'Save 2 of 3 & close'));
+  check('...and the button counts what is saved',()=>assert.equal(counted,'Save 1 of 2 & close'));
   await page.click(dropButton);
   const back=[await confirmText(),await page.getAttribute(dropButton,'title')];
   check('...and it can be put back',()=>assert.deepEqual(back,['Save & close','Don\'t save']));
@@ -162,8 +174,8 @@ const outcomes=page=>page.$$eval('#shutdown-desk-dialog .desk-shutdown-list li',
   data=await agentsNow(page);
   check('the desk was saved and reopened under its new name',()=>assert.deepEqual([savedToast,savedAs,reopenedAs],[`Saved “${RENAMED}” · reopen it from the desk menu`,RENAMED,RENAMED]));
   check('the session left out does not come back, and the rest do',()=>{
-    assert.equal(without.length,3);
-    assert.equal(data.agents.some(a=>a.cwd===alpha&&a.desk===saved.id&&a.exit_code===null&&a.id.startsWith('terminal-')),false);
+    assert.equal(without.length,2);
+    assert.equal(data.agents.some(a=>a.cwd===beta&&a.desk===saved.id&&a.exit_code===null&&a.id.startsWith('terminal-')),false);
   });
 
   // A coordinator's worker: the coordinator keeps it, so it sits under it with no × of its own.

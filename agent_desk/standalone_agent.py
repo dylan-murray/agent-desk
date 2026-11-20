@@ -17,6 +17,7 @@ from agent_desk.launch_profiles import codex_without_daemon, profile_command, lo
 # The per-terminal PTY worker consumes this private launch flag before exec.
 # Keeping argv[0] intact preserves identity in already-running supervisors.
 SHELL_MARKER = '--agent-desk-shell-on-exit'
+KILLED = {signal.SIGHUP, signal.SIGTERM, signal.SIGKILL}
 
 
 def launch_payload(payload):
@@ -47,8 +48,11 @@ def main():
     signal.signal(signal.SIGTTOU,signal.SIG_IGN)
     os.tcsetpgrp(0,os.getpgrp())
     termios.tcsetattr(0,termios.TCSANOW,original)
+    # Only an agent that ended on its own is marked exited. One killed by a signal, as at shutdown,
+    # keeps its conversation so a restart resumes it.
+    marker='' if -code in KILLED or code-128 in KILLED else '\x1b]777;agent-desk;shell\x07'
     # Restore common full-screen modes even if a CLI exited without cleanup.
-    sys.stdout.write('\x1b]777;agent-desk;shell\x07\x1b[?1049l\x1b[?2004l\x1b[?25h\x1b[0m\r\nAgent exited ('+str(code)+'). Shell ready.\r\n')
+    sys.stdout.write(marker+'\x1b[?1049l\x1b[?2004l\x1b[?25h\x1b[0m\r\nAgent exited ('+str(code)+'). Shell ready.\r\n')
     sys.stdout.flush()
     signal.signal(signal.SIGINT,signal.SIG_DFL)
     signal.signal(signal.SIGTTOU,signal.SIG_DFL)
