@@ -1289,9 +1289,24 @@ tr.pair td.empty{background:#ffffff04}
 /* ---------- a note's thread, in the diff ---------- */
 tr.thread td{background:var(--bg)!important;padding:6px 12px 8px 46px;white-space:normal;word-break:normal;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
 .thread-box{max-width:860px;border:1px solid var(--border-strong);border-radius:10px;background:var(--surface);overflow:hidden;font-size:12.5px}
-.thread-box .th{display:flex;align-items:center;gap:8px;padding:9px 12px 0;font-size:12px}
+.thread-box .th{display:flex;align-items:center;gap:8px;min-height:32px;padding:6px 12px;border-bottom:1px solid var(--border);background:#ffffff05;font-size:11.5px;color:var(--fg-muted)}
+.thread-box .th .loc{font:11.5px var(--mono);color:var(--fg-2)}
 .thread-box .th .id{color:var(--fg-muted);font:11px var(--mono)}
-.thread-box .body{padding:3px 12px 10px;color:var(--fg-2);white-space:pre-wrap;line-height:1.5}
+.cm{display:flex;gap:10px;padding:11px 12px}
+.cm+.cm{border-top:1px solid #ffffff0b}
+.av{flex:none;display:grid;place-items:center;width:24px;height:24px;border-radius:50%;background:hsl(var(--h,210) 38% 34%);color:#fff;font-size:11.5px;font-weight:600}
+.av.claude{background:#c96442}.av.codex{background:#e6e6e6;color:#111}.av.grok{background:#7a5ce0}.av.opencode{background:#2a8a7d}.av.pi{background:#b37a26}
+.cb{flex:1;min-width:0}
+.ch{display:flex;align-items:baseline;flex-wrap:wrap;gap:2px 7px;line-height:20px}
+.ch .an{color:var(--fg);font-size:13px;font-weight:600}
+.ch .bot{align-self:center;padding:0 6px;border:1px solid var(--border-strong);border-radius:9px;color:var(--fg-muted);font-size:10px;line-height:15px}
+.ch .at,.ch .gh{color:var(--fg-muted);font-size:11.5px}
+.ch .gh:hover{color:var(--fg-2)}
+.ct{margin-top:3px;color:var(--fg);font-size:13px;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere}
+.ct i{color:var(--fg-muted)}
+.cb .sug{margin:9px 0 2px}
+.thread-box>.proof{margin:0 12px 11px 46px}
+.thread-box .replybox{padding:8px 12px 8px 46px}
 .thread-box.done{border-color:#199e7055}
 .thread-box.done .th::after{content:"Addressed";margin-left:auto;padding:1px 7px;border-radius:9px;background:#199e7024;color:#5fc9a0;font-size:10.5px;font-weight:500}
 .proof{margin:2px 12px 10px;padding:7px 10px;border:1px solid #199e7040;border-left:2px solid var(--good);border-radius:7px;background:#199e700d;font-size:11.5px;color:var(--fg-2)}
@@ -1644,14 +1659,20 @@ function pairRow(o,n,hlOld,hlNew){
 /* ---------- threads (inline comments) ---------- */
 function proofHtml(a){const p=a.status==='addressed'&&a.proof;if(!p)return '';
  return `<div class="proof"><div class="ph">Checked by ${esc(p.author||'Agent')} <span class="at">${esc((p.at||'').slice(5,16))}</span></div><pre>${esc(p.text||'')}</pre>${p.file?`<a href="./proof/${encodeURIComponent(p.file)}" target="_blank" rel="noopener"><img src="./proof/${encodeURIComponent(p.file)}" alt="Screenshot ${esc(p.author||'Agent')} attached as proof"></a>`:''}</div>`;}
-function repliesHtml(a){return (a.replies||[]).map(r=>`<div class="reply"><span class="who ${r.author==='Claude'?'claude':r.author==='Codex'?'codex':''}">${esc(r.author)}</span><span class="txt">${esc(r.text)}</span><span class="at">${esc((r.at||'').slice(5,16))}</span></div>`).join('');}
+const AGENTS=['Codex','Claude','Grok','OpenCode','Pi'];
+function when(at){if(!at)return '';const d=new Date(String(at).replace(' ','T'));return isNaN(d)?String(at):d.toLocaleString([],{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});}
+function avatarHtml(name){const n=String(name||'?'),agent=AGENTS.includes(n),hue=[...n].reduce((h,c)=>(h*31+c.charCodeAt(0))%360,7);
+ return `<span class="av${agent?' '+n.toLowerCase():''}"${agent?'':` style="--h:${hue}"`} aria-hidden="true">${esc((n.trim()[0]||'?').toUpperCase())}</span>`;}
+function commentHtml(author,at,body,extra,url){const name=author||USER;
+ return `<div class="cm">${avatarHtml(name)}<div class="cb"><div class="ch"><span class="an">${esc(name)}</span>${AGENTS.includes(name)?'<span class="bot">agent</span>':''}${at?`<span class="at">${esc(when(at))}</span>`:''}${url?`<a class="gh" href="${esc(url)}" target="_blank" rel="noopener">on GitHub</a>`:''}</div><div class="ct">${body}</div>${extra||''}</div></div>`;}
+function repliesHtml(a){return (a.replies||[]).map(r=>commentHtml(r.author,r.at,esc(r.text))).join('');}
 function threadHtml(a){
  const done=a.status==='addressed';let sug='';
  if(a.suggestion!==null&&a.suggestion!==undefined){
   const oldL=(a.quote||'').split('\n'),newL=a.suggestion===''?[]:a.suggestion.split('\n');
   sug=`<div class="sug"><div class="sh">Suggested change</div><pre>${oldL.map(x=>`<div class="l d">${esc(x)||' '}</div>`).join('')}${newL.map(x=>`<div class="l a">${esc(x)||' '}</div>`).join('')}</pre></div>`;}
  const tag=a.kind==='pr'?`<span class="id">PR ${esc(a.part||'body')}${a.quote?` · “${esc(a.quote.length>60?a.quote.slice(0,60)+'…':a.quote)}”`:''}</span>`:a.kind==='chunk'?`<span class="id">chunk · ${esc(a.label||'')}</span>`:a.kind==='selection'?`<span class="id">“${esc(a.selection||'')}”</span>`:'';
- return `<div class="thread-box ${done?'done':''}" data-id="${a.id}"><div class="th"><b class="${['Codex','Claude','Grok','OpenCode','Pi'].includes(a.author||USER)?'who '+(a.author||USER).toLowerCase():''}" style="padding:0 5px;border-radius:8px">${esc(a.author||USER)}</b><span class="id">#${a.id}</span><span class="id">${a.file?esc(a.file)+(a.start?':'+a.start+(a.end&&a.end!==a.start?'-'+a.end:''):''):''}</span>${tag}</div><div class="body">${esc(a.comment||'')||'<i style="color:var(--fg-muted)">(no comment)</i>'}</div>${sug}${repliesHtml(a)}${proofHtml(a)}<div class="replybox"><input data-reply="${a.id}" placeholder="reply…"></div></div>`;}
+ return `<div class="thread-box ${done?'done':''}" data-id="${a.id}"><div class="th">${a.file?`<span class="loc">${esc(a.file)}${a.start?(a.end&&a.end!==a.start?` · lines ${a.start}–${a.end}`:` · line ${a.start}`):''}</span>`:''}<span class="id">#${a.id}</span>${tag}</div>${commentHtml(a.author,a.created,esc(a.comment||'')||'<i>(no comment)</i>',sug,a.gh_url)}${repliesHtml(a)}${proofHtml(a)}<div class="replybox"><input data-reply="${a.id}" placeholder="Reply…"></div></div>`;}
 function decorateThreads(){
  const drafts={};document.querySelectorAll('tr.thread input[data-reply]').forEach(i=>{if(i.value)drafts[i.dataset.reply]=i.value;});
  const focused=document.activeElement&&document.activeElement.closest&&document.activeElement.closest('tr.thread input[data-reply]')?document.activeElement.dataset.reply:null;

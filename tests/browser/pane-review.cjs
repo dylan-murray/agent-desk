@@ -130,6 +130,9 @@ const note = message => {if (process.env.VERBOSE) console.log('  ok ' + message)
   assert.equal((await frame.locator('#prstate #newgh').textContent()).trim(), '1 new');
   assert.match(await frame.locator('#prstate').textContent(), /1 GitHub comment/);
   assert.equal(await frame.locator('.thread-box', {hasText: 'f-strings read better'}).count(), 1, 'the GitHub comment should sit on its line in the diff');
+  const ghComment = frame.locator('.thread-box', {hasText: 'f-strings read better'}).locator('.cm').first();
+  assert.deepEqual(await ghComment.evaluate(c => ({name: c.querySelector('.an').textContent, avatar: c.querySelector('.av').textContent, link: c.querySelector('.gh').href, nameSize: getComputedStyle(c.querySelector('.an')).fontSize, bodySize: getComputedStyle(c.querySelector('.ct')).fontSize, bodyIsDim: getComputedStyle(c.querySelector('.ct')).color === getComputedStyle(c.querySelector('.at')).color})),
+    {name: 'fixture-reviewer', avatar: 'F', link: 'https://github.com/fixture/project/pull/7#discussion_r501', nameSize: '13px', bodySize: '13px', bodyIsDim: false}, 'a comment shows who wrote it above a full-size body');
   assert.match(await frame.locator('#meta').textContent(), /^feature · vs /);
   await frame.locator('.thread-box', {hasText: 'f-strings read better'}).scrollIntoViewIfNeeded();
   await page.screenshot({path: evidence('pane-review-06-github.png')});
