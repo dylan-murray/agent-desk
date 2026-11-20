@@ -1256,7 +1256,7 @@ body.tab-notes #side{display:block;width:100%;max-width:860px;margin:0 auto}
 /* ---------- the diff ---------- */
 table.diff{width:100%;border-collapse:collapse;font:12px/20px var(--mono);tab-size:4}
 table.diff td{padding:0;vertical-align:top;white-space:pre-wrap;word-break:break-all;font-family:inherit}
-table.diff .num{width:1%;min-width:40px;padding:0 6px;text-align:right;color:#55555c;user-select:none;cursor:pointer;position:relative}
+table.diff .num{width:1%;min-width:40px;padding:0 6px;text-align:right;color:#55555c;user-select:none;cursor:pointer;position:relative;z-index:1}
 table.diff .num:hover{color:var(--accent)}
 table.diff .code{padding:0 8px 0 4px;position:relative;cursor:pointer}
 table.diff td.chunk{width:18px;min-width:18px;padding:0;text-align:center;user-select:none;position:relative}
@@ -1277,8 +1277,9 @@ tr.del td{background:var(--del-bg)} tr.del .num{background:var(--del-num);color:
 tr.hunk td{background:var(--hunk-bg);color:var(--hunk-fg);padding:3px 8px 3px 12px;font-size:11px}
 tr.sel td{background:var(--sel)!important}
 tr.commented .num.new::before,tr.commented.del .num.old::before{content:"";position:absolute;left:0;top:0;bottom:0;width:2px;background:var(--amber)}
-.plus{position:absolute;right:-8px;top:2px;z-index:2;width:16px;height:16px;border-radius:4px;background:var(--accent);color:#fff;font:600 12px/16px sans-serif;text-align:center;display:none;pointer-events:none}
+.plus{position:absolute;right:-8px;top:2px;z-index:2;width:16px;height:16px;border-radius:4px;background:var(--accent);color:#fff;font:600 12px/16px sans-serif;text-align:center;display:none;cursor:pointer}
 tr:hover .num.click .plus{display:block}
+body.line-drag,body.line-drag *{user-select:none!important;cursor:pointer}
 .split td.code{width:50%}
 .split td.num{min-width:36px}
 .split tr.pair td.l{border-right:1px solid var(--border)}
@@ -1688,7 +1689,7 @@ let drag=null, suppressClick=false;
 function cellFor(row,side){const c=row.querySelector(`td.num.${side}`);return c&&c.dataset.n?c:null;}
 document.addEventListener('mousedown',e=>{
  const num=e.target.closest('td.num.click');if(!num||e.button!==0)return;
- e.preventDefault();const sec=num.closest('section.file');
+ e.preventDefault();getSelection().removeAllRanges();document.body.classList.add('line-drag');const sec=num.closest('section.file');
  drag={file:sec.dataset.path,side:num.dataset.side,anchor:+num.dataset.n,start:+num.dataset.n,end:+num.dataset.n,el:num,moved:false,shift:e.shiftKey};
  if(!(e.shiftKey&&sel&&sel.file===drag.file&&sel.side===drag.side)){sel={file:drag.file,side:drag.side,start:drag.start,end:drag.end};markSel();}});
 document.addEventListener('mousemove',e=>{
@@ -1697,7 +1698,7 @@ document.addEventListener('mousemove',e=>{
  drag.moved=true;drag.start=Math.min(drag.anchor,n);drag.end=Math.max(drag.anchor,n);drag.el=c;
  sel={file:drag.file,side:drag.side,start:drag.start,end:drag.end};markSel();});
 document.addEventListener('mouseup',e=>{
- if(!drag)return;const d=drag;drag=null;
+ if(!drag)return;const d=drag;drag=null;document.body.classList.remove('line-drag');getSelection().removeAllRanges();
  if(d.moved){suppressClick=true;setTimeout(()=>suppressClick=false,0);openComposer('line',{file:d.file,side:d.side,start:d.start,end:d.end},d.el,d.shift);}});
 document.addEventListener('click',e=>{
  if(suppressClick){suppressClick=false;return;}

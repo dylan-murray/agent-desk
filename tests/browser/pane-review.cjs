@@ -88,6 +88,17 @@ const note = message => {if (process.env.VERBOSE) console.log('  ok ' + message)
   assert.equal(await frame.locator('tr.composer-row').count(), 0);
   note('shift-click extends a line comment to a range without losing what was typed');
 
+  // The + overhangs the code; pressing anywhere on it and dragging selects lines, never the code's text.
+  await gutter(2).hover();
+  const cell = await gutter(2).boundingBox(), plus = await gutter(2).locator('.plus').boundingBox(), lastRow = await gutter(5).boundingBox();
+  const overhang = cell.x + cell.width + 1;assert.ok(overhang < plus.x + plus.width, 'the + no longer overhangs the code');
+  await page.mouse.move(overhang, plus.y + plus.height / 2);await page.mouse.down();
+  await page.mouse.move(overhang, lastRow.y + lastRow.height / 2, {steps: 6});await page.mouse.up();
+  assert.equal(await frame.evaluate(() => getSelection().toString()), '', 'dragging from the + selected the code text');
+  assert.match(await frame.locator('#cwhere').textContent(), /lines 2–5/);
+  await frame.locator('#ctext').press('Escape');
+  note('dragging from any part of the + selects lines, not text');
+
   // A pane's own review asks for a second opinion from inside the review, from the agents this desk has.
   assert.equal(await pane.locator('.pane-dock-review').isVisible(), false, 'the title bar has no second opinion for a pane\'s own review');
   await frame.locator('#codex').click();
