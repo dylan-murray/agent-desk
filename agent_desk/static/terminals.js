@@ -44,7 +44,7 @@ function markTerminalConnection(id,connected){const activity=terminalActivity.ge
 function noteTerminalExit(id,code){const agent=agents.find(a=>a.id===id);if(agent){agent.exit_code=code;agent.status=code===0?'completed':'error';}}
 let dismissedTerminals=new Set();
 try{dismissedTerminals=new Set(JSON.parse(localStorage.getItem('agent-desk-closed-terminals')||'[]'));}catch{}
-const genericTerminalTitles=new Set(['claude','claude code','codex','cortex','cortex code','grok','opencode','pi','terminal','sh','bash','zsh','fish','dash','ksh','tcsh','csh','login']);
+const genericTerminalTitles=new Set(['claude','claude code','codex','cortex','cortex code','cursor','cursor agent','cursor-agent','grok','opencode','pi','terminal','sh','bash','zsh','fish','dash','ksh','tcsh','csh','login']);
 function meaningfulTerminalTitle(title){const text=String(title||'').replace(/^[◐◑◒◓✳✶✻✽✢⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]\s*/u,'').trim();return text&&!genericTerminalTitles.has(text.toLowerCase())?text:'';}
 function withTerminalActivity(agent){
   agent={...agent,...(sessionLaunchProfiles[agent.id]||{})};
@@ -662,7 +662,8 @@ const resumeFlags={
   grok:{latest:['--continue'],id:identity=>['--resume',identity]},
   opencode:{latest:['--continue'],id:identity=>['--session',identity]},
   pi:{picker:['--resume'],latest:['--continue'],id:identity=>['--session',identity]},
-  cortex:{picker:['--resume'],latest:['--continue'],id:identity=>['--resume',identity]}
+  cortex:{picker:['--resume'],latest:['--continue'],id:identity=>['--resume',identity]},
+  'cursor-agent':{picker:['--resume'],latest:['--continue'],id:identity=>['--resume',identity]}
 };
 function resumeCommand(harness,mode,identity){
   if(mode==='new'||mode==='portable')return [];

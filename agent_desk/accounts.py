@@ -17,7 +17,7 @@ HARNESSES = {'codex': ('CODEX_HOME', '.codex', 'Codex'), 'claude': ('CLAUDE_CONF
              'cortex': (None, '.snowflake/cortex', 'Cortex Code')}
 LIMIT = 20
 # CLIs launched as they are by default, with no config folder to select. Grok, OpenCode and Pi can also have added accounts.
-SINGLE = {'grok': 'Grok', 'opencode': 'OpenCode', 'pi': 'Pi', 'cortex': 'Cortex Code'}
+SINGLE = {'grok': 'Grok', 'opencode': 'OpenCode', 'pi': 'Pi', 'cortex': 'Cortex Code', 'cursor-agent': 'Cursor'}
 
 
 def _saved():

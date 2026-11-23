@@ -33,12 +33,15 @@ SHELL_FLAGS = {'-l', '-i', '-il', '-li', '--login'}
 NAMES = {'claude': 'Claude', 'codex': 'Codex', **SINGLE}
 UUID = r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
 ROLLOUT = re.compile(r'/sessions/.*rollout-.*(' + UUID + r')\.jsonl$')
+CURSOR_CHAT = re.compile(r'/chats/[0-9a-f]{32}/(' + UUID + r')/store\.db$')
 OPENCODE_LOG = re.compile(r'/opencode/log/[^/]+\.log$')
 OPENCODE_SESSION = re.compile(r'(?:sessionID=|service=session id=)(ses_[A-Za-z0-9]{10,60})\b')
 # How each agent resumes one conversation, and what its conversation IDs look like. Pi leaves no
 # trace of which conversation a running process has, so it is never resumed.
-RESUME = {'claude': '--resume', 'codex': 'resume', 'grok': '--resume', 'opencode': '--session', 'cortex': '--resume'}
-IDS = {'claude': UUID, 'codex': UUID, 'grok': UUID, 'cortex': UUID + r'|[0-9]{6,20}', 'opencode': r'ses_[A-Za-z0-9]{10,60}'}
+RESUME = {'claude': '--resume', 'codex': 'resume', 'grok': '--resume', 'opencode': '--session', 'cortex': '--resume',
+          'cursor-agent': '--resume'}
+IDS = {'claude': UUID, 'codex': UUID, 'grok': UUID, 'cortex': UUID + r'|[0-9]{6,20}', 'opencode': r'ses_[A-Za-z0-9]{10,60}',
+       'cursor-agent': UUID}
 LOG_TAIL = 4 << 20
 LOGGED_PID = re.compile(r'"pid":\s*\d')
 LOGGED_GROK_SESSION = re.compile(r'"msg":\s*"session (?:created|loaded)"')
@@ -340,6 +343,11 @@ def codex_sessions(tree, files):
     return found
 
 
+def cursor_sessions(tree, files):
+    return {(depth, match.group(1)) for pid, (depth, _) in tree.items()
+            for match in map(CURSOR_CHAT.search, files.get(pid, ())) if match}
+
+
 def _shallowest(found):
     if not found:
         return None
@@ -464,6 +472,8 @@ def agent_sessions(name, tree, config_dirs, files):
         found = grok_sessions(tree)
     elif name == 'cortex':
         found = cortex_sessions(tree)
+    elif name == 'cursor-agent':
+        found = cursor_sessions(tree, files)
     else:
         found = opencode_sessions(tree, files)
     return {(depth, identity) for depth, identity in found if valid_id(name, identity)}
@@ -482,8 +492,8 @@ def observe(sessions, config_dirs=None):
         return {}
     trees = process_tree({k: s.process.pid for k, (s, _) in agents.items()} | {k: s.process.pid for k, s in wrappers.items()})
     inside = agent_processes([pid for k in wrappers for pid, (depth, _) in trees.get(k, {}).items() if depth > 0])
-    file_pids = [pid for k, (_, name) in agents.items() if name in ('codex', 'opencode') for pid in trees.get(k, {})]
-    file_pids += [pid for pid, name in inside.items() if name in ('codex', 'opencode')]
+    file_pids = [pid for k, (_, name) in agents.items() if name in ('codex', 'opencode', 'cursor-agent') for pid in trees.get(k, {})]
+    file_pids += [pid for pid, name in inside.items() if name in ('codex', 'opencode', 'cursor-agent')]
     files = open_files(file_pids) if file_pids else {}
     config_dirs = claude_config_dirs() if config_dirs is None else config_dirs
     result = {}

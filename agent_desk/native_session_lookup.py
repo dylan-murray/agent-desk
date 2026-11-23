@@ -35,7 +35,7 @@ def find_conversation(profile,task_id,handoff=None):
     home=Path.home()
     harness=harness_of(profile);known=account(profile)
     if harness=='opencode':return _opencode_conversation(task_id,handoff or 'reply '+task_id+' --file',config_folder(profile) if known else None)
-    root=(config_folder(profile)/'projects') if known and harness=='claude' else home/'.snowflake'/'cortex'/'conversations' if harness=='cortex' else (config_folder(profile)/'sessions') if known else home/'.grok'/'sessions' if profile=='grok' else home/'.pi'/'agent'/'sessions' if profile=='pi' else None
+    root=(config_folder(profile)/'projects') if known and harness=='claude' else home/'.snowflake'/'cortex'/'conversations' if harness=='cortex' else Path(os.environ.get('CURSOR_DATA_DIR') or home/'.cursor')/'projects' if harness=='cursor-agent' else (config_folder(profile)/'sessions') if known else home/'.grok'/'sessions' if profile=='grok' else home/'.pi'/'agent'/'sessions' if profile=='pi' else None
     if os.environ.get('AGENT_DESK_REMOTE_NATIVE') == '1':
         if harness=='claude':root=Path(os.environ.get('CLAUDE_CONFIG_DIR',str(home/'.claude')))/'projects'
         elif harness=='codex':root=Path(os.environ.get('CODEX_HOME',str(home/'.codex')))/'sessions'
@@ -56,13 +56,13 @@ def find_conversation(profile,task_id,handoff=None):
                     if record.get('type')=='session_meta':native=record.get('payload',{}).get('id')
                     if harness=='pi' and record.get('type')=='session':native=record.get('id')
                     if task_id not in line:continue
-                    message=record if harness in ('grok','cortex') else record.get('message',{}) if harness in ('claude','pi') else record.get('payload',{})
-                    if (message.get('type') if harness=='grok' else message.get('role'))!='user':continue
+                    message=record if harness in ('grok','cortex') else record.get('message',{}) if harness in ('claude','pi','cursor-agent') else record.get('payload',{})
+                    if (message.get('type') if harness=='grok' else record.get('role') if harness=='cursor-agent' else message.get('role'))!='user':continue
                     content=message.get('content','')
                     text=content if isinstance(content,str) else '\n'.join(x.get('text','') for x in content if isinstance(x,dict) and x.get('type') in ('text','input_text'))
                     if (handoff or 'reply '+task_id+' --file') not in text:continue
                     # Cortex names each conversation's files after its session ID.
-                    identity=Path(name).parent.name if harness=='grok' else Path(name).name.removesuffix('.history.jsonl') if harness=='cortex' else record.get('sessionId') if harness=='claude' else native
+                    identity=Path(name).parent.name if harness=='grok' else Path(name).name.removesuffix('.history.jsonl') if harness=='cortex' else record.get('sessionId') if harness=='claude' else (Path(name).stem if Path(name).parent.name==Path(name).stem else None) if harness=='cursor-agent' else native
                     if identity:identities.add(identity)
         except OSError:continue
     return next(iter(identities)) if len(identities)==1 else None

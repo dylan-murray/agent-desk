@@ -21,7 +21,7 @@ def providers():
 
 
 # CLIs that run as workers but have no planning adapter, so they cannot coordinate or read sources.
-WORKER_ONLY = {'cortex'}
+WORKER_ONLY = {'cortex', 'cursor-agent'}
 
 
 def planners():

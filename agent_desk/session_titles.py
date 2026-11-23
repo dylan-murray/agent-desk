@@ -3,19 +3,20 @@
 Agents set the terminal title with an OSC 0/2 escape; scan() finds the last one in the output,
 across chunk boundaries. ConversationTitles reads each CLI's own record of a conversation's title:
 Claude Code's transcript (ai-title, or custom-title once renamed), Codex's session index or else
-the first real prompt in its rollout, and Cortex Code's conversation file.
+the first real prompt in its rollout, Cortex Code's conversation file, and Cursor's chat store.
 """
 import json
 import os
 from pathlib import Path
 import re
+import sqlite3
 import threading
 
 OSC_TITLE = re.compile(rb'\x1b\][02];([^\x07\x1b]*)(?:\x07|\x1b\\)')
 OSC_START = b'\x1b]'
 CARRY_LIMIT = 1024
 SPINNER = re.compile(r'^[◐◑◒◓✳✶✻✽✢⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]\s*')
-GENERIC = {'claude', 'claude code', 'codex', 'cortex', 'cortex code', 'grok', 'opencode', 'pi', 'terminal',
+GENERIC = {'claude', 'claude code', 'codex', 'cortex', 'cortex code', 'cursor', 'cursor agent', 'cursor-agent', 'grok', 'opencode', 'pi', 'terminal',
            'sh', 'bash', 'zsh', 'fish', 'dash', 'ksh', 'tcsh', 'csh', 'login'}
 TITLE_LIMIT = 240
 PROMPT_LIMIT = 80
@@ -126,12 +127,37 @@ def _cortex_title(path):
     return None if not isinstance(title, str) or title.startswith('Chat for session: ') else title
 
 
+def cursor_homes():
+    if os.environ.get('CURSOR_CONFIG_DIR', '').strip():
+        return [Path(os.environ['CURSOR_CONFIG_DIR']).expanduser()]
+    if os.environ.get('XDG_CONFIG_HOME', '').strip():
+        return [Path(os.environ['XDG_CONFIG_HOME']).expanduser() / 'cursor']
+    return [Path.home() / '.cursor']
+
+
+def _cursor_title(path):
+    try:
+        db = sqlite3.connect(path.as_uri() + '?mode=ro', uri=True, timeout=1)
+        try:
+            row = db.execute("SELECT value FROM meta WHERE key='0'").fetchone()
+        finally:
+            db.close()
+    except sqlite3.Error:
+        return None
+    try:
+        value = json.loads(bytes.fromhex(row[0])) if row and isinstance(row[0], str) else None
+    except ValueError:
+        return None
+    title = value.get('name') if isinstance(value, dict) else None
+    return None if title == 'New Agent' else title
+
+
 class ConversationTitles:
 
     UUID = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
 
-    def __init__(self, claude=None, codex=None, cortex=None):
-        self.claude_dirs, self.codex_dirs, self.cortex_dirs = claude, codex, cortex
+    def __init__(self, claude=None, codex=None, cortex=None, cursor=None):
+        self.claude_dirs, self.codex_dirs, self.cortex_dirs, self.cursor_dirs = claude, codex, cortex, cursor
         self.tails, self.paths, self.files = {}, {}, {}
         self.lock = threading.Lock()
 
@@ -155,12 +181,15 @@ class ConversationTitles:
             if path.is_file():
                 self.paths[native] = ('cortex', path)
                 return self.paths[native]
+        for home in self.cursor_dirs if self.cursor_dirs is not None else cursor_homes():
+            for path in (Path(home) / 'chats').glob(f'*/{native}/store.db'):
+                self.paths[native] = ('cursor', path)
+                return self.paths[native]
         return None
 
-    def _file(self, path, read):
-        """read(path), again only when the file changes."""
-        stat = path.stat()
-        key = (stat.st_ino, stat.st_mtime_ns, stat.st_size)
+    def _file(self, path, read, also=()):
+        """read(path), again only when the file (or one of ``also``) changes."""
+        key = tuple((stat.st_ino, stat.st_mtime_ns, stat.st_size) for stat in (path.stat(), *(p.stat() for p in also if p.exists())))
         if self.files.get(path, (None,))[0] != key:
             self.files[path] = (key, read(path))
         return self.files[path][1]
@@ -181,6 +210,8 @@ class ConversationTitles:
                     return clean(state.get('custom')) or clean(state.get('ai'))
                 if found[0] == 'cortex':
                     return clean(self._file(found[1], _cortex_title))
+                if found[0] == 'cursor':
+                    return clean(self._file(found[1], _cursor_title, (found[1].with_name('store.db-wal'),)))
                 index = found[2]
                 named = clean(self._tail(index, _codex_index_fold).get(native)) if index.exists() else None
                 return named or clean(self._tail(found[1], _codex_rollout_fold).get('prompt'))

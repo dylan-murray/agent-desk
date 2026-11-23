@@ -20,12 +20,22 @@ function pi(lines,b){
  if(b.cursorX!==0||(lines[y]||'').trim()||!RULE.test(lines[y-1]||'')||!RULE.test(lines[y+1]||''))return false;
  return !/^\s*[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]\s|Working\.\.\./m.test(lines.slice(Math.max(0,y-5),y).join('\n'));
 }
+const CURSOR_HINT='Add a follow-up';
+function cursorAgent(lines,b){
+ const y=lines.map(line=>/^\s*→ /.test(line)).lastIndexOf(true);
+ if(y<0)return false;
+ const start=lines[y].indexOf('→ ')+2,row=b.getLine(b.baseY+y);
+ if(lines[y].slice(start).trimEnd()!==CURSOR_HINT||!row.getCell(start)?.isInverse())return false;
+ for(let x=start+1;x<start+CURSOR_HINT.length;x++)if(!row.getCell(x)?.isDim())return false;
+ return true;
+}
 function ready(term,harness,hidden=false,sync=false){
  if(harness==='grok')return classify(term,hidden,sync).ready;
  if(sync||!term.modes.bracketedPasteMode)return false;
  const b=term.buffer.active;
  const lines=Array.from({length:term.rows},(_,i)=>b.getLine(b.baseY+i)?.translateToString(true)||'');
  if(harness==='pi')return pi(lines,b);
+ if(harness==='cursor-agent')return cursorAgent(lines,b);
  if(hidden)return false;
  if(harness==='opencode')return opencode(lines,b);
  // Claude Code 2.1 draws a no-break space after its prompt marker.
@@ -53,6 +63,10 @@ function working(term,harness,hidden=false,sync=false,title=''){
  if(harness==='grok')return classify(term,hidden,sync).state==='working';
  if(harness==='claude'&&/^[◐◓◑◒\u2801-\u28ff]/u.test(title))return true;
  if(sync)return false;
+ if(harness==='cursor-agent'){
+  const b=term.buffer.active;
+  return Array.from({length:term.rows},(_,i)=>b.getLine(b.baseY+i)?.translateToString(true)||'').some(line=>/ctrl\+c to stop|^\s*\S{1,3}\s+Working\b/.test(line));
+ }
  const b=term.buffer.active,from=Math.max(0,b.cursorY-8),to=Math.min(term.rows,b.cursorY+5);
  const nearby=Array.from({length:to-from},(_,i)=>b.getLine(b.baseY+from+i)?.translateToString(true)||'').join('\n');
  return /esc(?:ape)?\s+to\s+interrupt/i.test(nearby);

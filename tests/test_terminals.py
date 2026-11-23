@@ -42,6 +42,18 @@ class TerminalTests(unittest.TestCase):
         self.assertEqual(reserved,[True])
         self.assertEqual(len(session.process.stdin.getvalue().splitlines()),1)
 
+    def test_a_cursor_followup_sends_enter_after_the_paste(self):
+        session=TerminalSession.__new__(TerminalSession)
+        session.launch_profile=None;session.argv=['/usr/local/bin/cursor-agent'];session.cols=120;session.rows=24
+        session.lock=threading.Lock();session.input_lock=threading.RLock();session.start=0
+        session.buffer=bytearray(b'\x1b[?2004h\x1b[?25l\x1b[2J\x1b[H\r\n  \x1b[2m\xe2\x86\x92 \x1b[0m\x1b[7mA\x1b[27m\x1b[2mdd a follow-up\x1b[0m')
+        session.process=SimpleNamespace(poll=lambda:None,stdin=io.BytesIO())
+        with patch('agent_desk.terminals.time.sleep') as sleep:
+            session.send_task('Rebase on main')
+        events=[base64.b64decode(json.loads(line)['data']) for line in session.process.stdin.getvalue().splitlines()]
+        self.assertEqual(events,[b'\x1b[200~Rebase on main\x1b[201~',b'\r'])
+        sleep.assert_called_once()
+
     def launch(self):
         return self.manager.launch(dict(cwd=self.temp.name, argv=['/bin/sh'], name='Test shell'))
 

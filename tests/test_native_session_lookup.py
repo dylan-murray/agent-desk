@@ -62,6 +62,25 @@ class CortexLookupTests(unittest.TestCase):
             self.assertEqual(find_conversation('cortex-prod','task-123'),'11111111-2222-4333-8444-555555555555')
 
 
+class CursorLookupTests(unittest.TestCase):
+    def test_a_top_level_transcript_names_the_chat(self):
+        with tempfile.TemporaryDirectory() as temp, patch('agent_desk.native_session_lookup.Path.home',return_value=Path(temp)), \
+             patch.dict('os.environ',{},clear=False) as env:
+            env.pop('CURSOR_DATA_DIR',None)
+            root=Path(temp)/'.cursor/projects/tmp-project/agent-transcripts'
+            def write(identity,role,text,folder=None):
+                path=root/(folder or identity)/(identity+'.jsonl');path.parent.mkdir(parents=True,exist_ok=True)
+                path.write_text(json.dumps(dict(role=role,message=dict(content=[dict(type='text',text='<user_query>\n'+text+'\n</user_query>')])))+'\n')
+            write('11111111-2222-4333-8444-555555555555','assistant','reply task-123 --file /tmp/report')
+            self.assertIsNone(find_conversation('cursor-agent','task-123'))
+            write('11111111-2222-4333-8444-555555555555','user','Run reply task-123 --file /tmp/report')
+            self.assertEqual(find_conversation('cursor-agent','task-123'),'11111111-2222-4333-8444-555555555555')
+            write('22222222-2222-4333-8444-555555555555','user','Run reply task-123 --file /tmp/report',folder='11111111-2222-4333-8444-555555555555/subagents')
+            self.assertEqual(find_conversation('cursor-agent','task-123'),'11111111-2222-4333-8444-555555555555')
+            write('66666666-7777-4888-8999-aaaaaaaaaaaa','user','Run reply task-123 --file /tmp/report')
+            self.assertIsNone(find_conversation('cursor-agent','task-123'))
+
+
 class OpenCodeLookupTests(unittest.TestCase):
     def test_user_text_part_in_a_top_level_session(self):
         with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ,{'XDG_DATA_HOME':temp}):

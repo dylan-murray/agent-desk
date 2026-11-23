@@ -10,7 +10,7 @@ async function feedbackRequest(path,body){
   if(!response.ok)throw Error(data.error||'Agent Desk could not save the notes');
   return data;
 }
-const codingAgent=a=>['claude','codex','grok','opencode','pi'].includes(a.harness)||/^(claude|codex)(-[a-z0-9-]+)?$/.test(a.launch_profile||'');
+const codingAgent=a=>['claude','codex','grok','opencode','pi','cursor-agent'].includes(a.harness)||/^(claude|codex)(-[a-z0-9-]+)?$/.test(a.launch_profile||'');
 // Coordinators and standalone coding agents take notes; workers get theirs from their coordinator.
 async function targets(){
   const {agents:live=[]}=await terminalRequest('/api/agents');

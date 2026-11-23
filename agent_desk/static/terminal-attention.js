@@ -18,6 +18,17 @@ function terminalApprovalPrompt(term){
     const no=lines.findIndex((line,i)=>i>yes&&/^\s*[❯ ]\s*2\.\s*No, exit\s*$/.test(line));
     if(yes>project&&no===yes+1&&no-project<=15)return 'Do you trust this project?';
   }
+  const folder=lines.findIndex(line=>/^\s*│\s*Do you trust the contents of this directory\?\s*(?:│\s*)?$/.test(line));
+  if(folder>=0){
+    const yes=lines.findIndex((line,i)=>i>folder&&/^\s*│\s*(?:▶\s*)?\[a\] Trust this workspace\s*(?:│\s*)?$/.test(line));
+    const quit=lines.findIndex((line,i)=>i>yes&&/^\s*│\s*(?:▶\s*)?\[q\] Quit\s*(?:│\s*)?$/.test(line));
+    if(yes>folder&&yes-folder<=24&&quit>yes&&lines.slice(yes+1,quit).every(line=>/^[\s│]*$/.test(line)))return 'Do you trust the contents of this directory?';
+  }
+  const proceed=lines.findLastIndex(line=>/^\s*[→ ]\s*Proceed \(y\)\s*$/.test(line));
+  if(proceed>=0&&/^\s*Reject\b.*\(esc or n\b/.test(lines[proceed+1]||'')){
+    const asked=lines.slice(Math.max(0,proceed-6),proceed).reverse().find(line=>/\?\s*$/.test(line));
+    if(asked)return asked.trim().slice(0,240);
+  }
 
   const question=/(?:do you (?:want|trust)|would you like|allow .{0,100}\?|approve .{0,100}\?|proceed\?|continue\?)[^\n]*/i;
   const match=text.match(question);

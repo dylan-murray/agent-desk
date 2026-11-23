@@ -261,7 +261,7 @@ async function openShutdownDesk(save=false){
   for(const agent of listed)if(!inList.has(agent.parent_id))place(agent,0);
   for(const agent of listed)if(!depth.has(agent.id))place(agent,0);
   const row=agent=>{const [label,detail]=outcome(agent),level=depth.get(agent.id);
-    return `<li data-shutdown-id="${escapeHTML(agent.id)}" class="${plan.leave.includes(agent)?'kept':label.startsWith('Saves')?'saved':''}${shutdownState.drop.has(agent.id)?' dropped':''}${level?' child':''}"${level?` style="--depth:${level}"`:''}><span class="session-avatar" style="--agent-color:${agentColor(agent.id)}">${({codex:'CX',claude:'CC',grok:'GX',opencode:'OC',pi:'PI',cortex:'CO'})[agent.harness]||'AI'}</span><span class="desk-shutdown-name"><strong>${escapeHTML(sessionTitle(agent))}</strong><small>${escapeHTML(agent.project||'')}${agent.cwd?' · '+escapeHTML(shortPath(agent.cwd)):''}</small></span><span class="desk-shutdown-outcome" title="${escapeHTML(detail)}">${escapeHTML(label)}</span>${toggle(agent)}</li>`;};
+    return `<li data-shutdown-id="${escapeHTML(agent.id)}" class="${plan.leave.includes(agent)?'kept':label.startsWith('Saves')?'saved':''}${shutdownState.drop.has(agent.id)?' dropped':''}${level?' child':''}"${level?` style="--depth:${level}"`:''}><span class="session-avatar" style="--agent-color:${agentColor(agent.id)}">${({codex:'CX',claude:'CC',grok:'GX',opencode:'OC',pi:'PI',cortex:'CO','cursor-agent':'CU'})[agent.harness]||'AI'}</span><span class="desk-shutdown-name"><strong>${escapeHTML(sessionTitle(agent))}</strong><small>${escapeHTML(agent.project||'')}${agent.cwd?' · '+escapeHTML(shortPath(agent.cwd)):''}</small></span><span class="desk-shutdown-outcome" title="${escapeHTML(detail)}">${escapeHTML(label)}</span>${toggle(agent)}</li>`;};
   const confirm=dialog.querySelector('#confirm-shutdown-desk'),kept=[...plan.stop,...plan.close].filter(savable);
   shutdownState.render=()=>{
     dialog.querySelector('.desk-shutdown-list').innerHTML=ordered.map(row).join('');
@@ -355,8 +355,8 @@ async function reopened(desk,result){
 // An imported desk is reopened from the same dialog, so nothing starts before it has been seen. Each
 // row says what that session comes back as here. One whose account this app does not have waits for
 // an account to be picked (or to be left out): it never falls back to another account on its own.
-const avatarMarks={codex:'CX',claude:'CC',grok:'GX',opencode:'OC',pi:'PI',cortex:'CO',shell:'SH'};
-const singleCLIs=[['grok','Grok'],['opencode','OpenCode'],['pi','Pi'],['cortex','Cortex Code']];
+const avatarMarks={codex:'CX',claude:'CC',grok:'GX',opencode:'OC',pi:'PI',cortex:'CO','cursor-agent':'CU',shell:'SH'};
+const singleCLIs=[['grok','Grok'],['opencode','OpenCode'],['pi','Pi'],['cortex','Cortex Code'],['cursor-agent','Cursor']];
 function reopenAccountOptions(harness){
   const choices=[...launchAccounts.map(a=>[a.id,a.label,a.harness]),...singleCLIs.filter(([id])=>!launchAccounts.some(a=>a.id===id)).map(([id,label])=>[id,label,id])];
   return [...choices.filter(c=>c[2]===harness),...choices.filter(c=>c[2]!==harness)];

@@ -303,9 +303,9 @@ class TerminalSession:
 
     def submit(self, text, harness):
         paste=b'\x1b[200~'+text.encode()+b'\x1b[201~'
-        if harness!='opencode':
+        if harness not in ('opencode','cursor-agent'):
             return self.send(dict(op='input',data=base64.b64encode(paste+b'\r').decode()))
-        # OpenCode drops an Enter that arrives with the paste. The caller holds
+        # OpenCode and Cursor drop an Enter that arrives with the paste. The caller holds
         # the input lock, so nothing typed can land between the two writes.
         self.send(dict(op='input',data=base64.b64encode(paste).decode()))
         time.sleep(.5)

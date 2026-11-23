@@ -10,6 +10,8 @@ Discovery roots, as read from the harnesses themselves:
 - Pi's bundled docs (``docs/skills.md``, 0.79) name ``~/.pi/agent/skills`` and ``~/.agents/skills``.
 - Cortex Code (1.1.87) lists ``~/.snowflake/cortex/skills`` and ``~/.claude/skills`` in ``cortex skill list``,
   but not ``~/.agents/skills``, so shared skills are linked into its own folder.
+- Cursor's CLI (2026.11.22) reads ``~/.cursor/skills``, ``~/.agents/skills``, ``~/.claude/skills``, ``~/.codex/skills``
+  and ``~/.grok/skills``.
 """
 import os
 import re
@@ -25,7 +27,7 @@ EXPLICIT_OPENAI = re.compile(r'allow_implicit_invocation:\s*false')
 # ("Claude:", "in Claude Code that is ...") is guidance, not a dependency.
 CLAUDE_ONLY_TOOLS = re.compile(r'\b(Monitor\(|AskUserQuestion|TodoWrite|ExitPlanMode|EnterPlanMode|subagent_type|Skill tool)')
 MCP_TOOL = re.compile(r'`mcp__[A-Za-z0-9_]+`')
-HARNESS_EXAMPLE = re.compile(r'\b(Claude|Claude Code|Codex|Grok|OpenCode|Pi|Cortex Code)\b\s*(:|that is|exposes)')
+HARNESS_EXAMPLE = re.compile(r'\b(Claude|Claude Code|Codex|Grok|OpenCode|Pi|Cortex Code|Cursor)\b\s*(:|that is|exposes)')
 # `/name` or a bare /name on a line about skills, subagents or sessions, but not a URL or endpoint path.
 SKILL_REFERENCE = re.compile(r'(?:`/([a-z][a-z0-9-]+)`|(?<![\w/.:>])/([a-z][a-z0-9-]+)(?=[\s,;:)!?]|$))')
 SKILL_CONTEXT = re.compile(r'\b(skills?|subagents?|session|run)\b', re.I)
@@ -70,6 +72,10 @@ def harnesses(home=None, environ=None):
     cortex = home / '.snowflake' / 'cortex'
     if cortex.is_dir():
         found.append(dict(id='cortex', label='Cortex Code', roots=[cortex / 'skills', home / '.claude' / 'skills'], link_root=cortex / 'skills'))
+    cursor = Path(environ['CURSOR_CONFIG_DIR']).expanduser() if environ.get('CURSOR_CONFIG_DIR', '').strip() else home / '.cursor'
+    if (cursor / 'cli-config.json').is_file():
+        roots = [cursor / 'skills', shared, *(home / folder / 'skills' for folder in ('.claude', '.codex', '.grok'))]
+        found.append(dict(id='cursor-agent', label='Cursor', roots=roots, link_root=shared))
     return found
 
 
