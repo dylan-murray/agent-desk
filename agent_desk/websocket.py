@@ -1,7 +1,9 @@
-"""The server half of RFC 6455 over the standard-library HTTP handler: text messages only."""
+"""RFC 6455 over the standard library, text messages only: the server half behind the HTTP handler,
+and a loopback client for command-line tools that use the same streams as the browser."""
 import base64
 import binascii
 import hashlib
+import os
 import socket
 import struct
 import threading
@@ -51,11 +53,38 @@ def unmask(data, mask):
     return (int.from_bytes(data, 'big') ^ int.from_bytes(key, 'big')).to_bytes(len(data), 'big')
 
 
-class WebSocket:
-    """One reader thread calls receive(); any thread may send."""
+def connect(port, path, timeout=10, headers=None):
+    """Open a client WebSocket to this machine's desk; raises OSError when nothing is listening."""
+    sock = socket.create_connection(('127.0.0.1', port), timeout=timeout)
+    try:
+        key = base64.b64encode(os.urandom(16)).decode()
+        extra = ''.join(f'{name}: {value}\r\n' for name, value in (headers or {}).items())
+        sock.sendall((f'GET {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n'
+                      f'Sec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n{extra}\r\n').encode())
+        rfile = sock.makefile('rb')
+        status = rfile.readline().split()
+        reply = {}
+        while (line := rfile.readline().strip()):
+            name, _, value = line.decode('latin-1').partition(':')
+            reply[name.strip().lower()] = value.strip()
+        expected = base64.b64encode(hashlib.sha1((key + GUID).encode()).digest()).decode()
+        if len(status) < 2 or status[1] != b'101' or reply.get('sec-websocket-accept') != expected:
+            raise OSError('The desk refused the WebSocket handshake')
+        sock.settimeout(None)
+        return WebSocket(rfile, sock.makefile('wb', buffering=0), client=sock)
+    except BaseException:
+        sock.close()
+        raise
 
-    def __init__(self, rfile, wfile):
+
+class WebSocket:
+    """One reader thread calls receive(); any thread may send. Clients mask what they send, servers do not.
+
+    `client` is the socket a client owns (closed with it), or True for tests that bring their own files."""
+
+    def __init__(self, rfile, wfile, client=None):
         self.rfile, self.wfile = rfile, wfile
+        self.client = client
         self.lock = threading.Lock()
         self.closed = False
 
@@ -79,8 +108,8 @@ class WebSocket:
         while True:
             first, second = self.read(2)
             final, opcode, length = first & 0x80, first & 0x0F, second & 0x7F
-            if first & 0x70 or not second & 0x80:
-                self.fail(1002, 'Client frames must be masked and use no extensions')
+            if first & 0x70 or bool(second & 0x80) == bool(self.client):
+                self.fail(1002, 'Only client frames are masked, and no extensions are used')
             if length == 126:
                 length = struct.unpack('!H', self.read(2))[0]
             elif length == 127:
@@ -89,8 +118,8 @@ class WebSocket:
                 self.fail(1002, 'Invalid control frame')
             if len(message) + length > MAX_MESSAGE:
                 self.fail(1009, 'Message too large')
-            mask = self.read(4)
-            payload = unmask(self.read(length), mask)
+            mask = b'' if self.client else self.read(4)
+            payload = unmask(self.read(length), mask) if mask else self.read(length)
             if opcode == CLOSE:
                 self.close()
                 raise Closed('Closed by peer')
@@ -114,9 +143,12 @@ class WebSocket:
                     self.fail(1007, 'Invalid UTF-8')
 
     def send(self, opcode, payload):
-        size = len(payload)
-        header = bytes([0x80 | opcode]) + (bytes([size]) if size < 126 else struct.pack('!BH', 126, size) if size < 65536
-                                           else struct.pack('!BQ', 127, size))
+        size, flag = len(payload), 0x80 if self.client else 0
+        header = bytes([0x80 | opcode]) + (bytes([flag | size]) if size < 126 else struct.pack('!BH', flag | 126, size) if size < 65536
+                                           else struct.pack('!BQ', flag | 127, size))
+        if self.client:
+            mask = os.urandom(4)
+            header, payload = header + mask, unmask(payload, mask)
         with self.lock:
             if self.closed:
                 raise Closed('Connection closed')
@@ -136,3 +168,10 @@ class WebSocket:
             self.send(CLOSE, struct.pack('!H', code) + reason.encode()[:120])
         except Closed:
             pass
+        if isinstance(self.client, socket.socket):
+            # A server's files belong to its HTTP handler; a client's are its own.
+            for owned in (self.rfile, self.wfile, self.client):
+                try:
+                    owned.close()
+                except OSError:
+                    pass
