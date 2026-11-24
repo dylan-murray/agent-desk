@@ -16,7 +16,7 @@
   }
   function populate(){
     fill(el('terminal-harness'),el('terminal-harness').querySelector('option[value="grok"]'));
-    fill(el('special-choice'),el('special-choice').querySelector('option[value="custom"]'),['claude','codex']);
+    fill(el('special-choice'),el('special-choice').querySelector('option[value="grok"]'));
     if(!el('special-choice').dataset.chosen){el('special-choice').value='claude';el('special-choice').dataset.chosen='true';}
     el('skill-tool-agent')?.replaceChildren();
     document.dispatchEvent(new Event('agent-desk-accounts'));

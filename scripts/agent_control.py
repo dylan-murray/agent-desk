@@ -19,6 +19,10 @@ from agent_desk.launchers import python_command
 from agent_desk.local_transport import urlopen, endpoint_key, desk_url
 
 
+class DeskRefused(ValueError):
+    pass
+
+
 class DeskClient:
     def __init__(self, desk):
         endpoint_key(desk)
@@ -49,7 +53,7 @@ class DeskClient:
                 message = 'Agent Desk request failed'
             finally:
                 exc.close()
-            raise ValueError(message) from None
+            raise DeskRefused(message) from None
 
     def agents(self):
         return [dict(agent, controllable=bool(agent.get('terminal_id')),

@@ -39,6 +39,18 @@ def fallback_editor(parent):
     return parent.get('VISUAL') or parent.get('EDITOR') or ''
 
 
+LAUNCH_ENV = ('CURSOR_CONFIG_DIR', 'OPENCODE_CONFIG_CONTENT')
+
+
+def launch_environment(value):
+    if value is None:
+        return {}
+    if not isinstance(value, dict) or any(key not in LAUNCH_ENV or not isinstance(text, str) or '\0' in text or len(text) > 100000
+                                          for key, text in value.items()):
+        raise ValueError('Invalid launch environment')
+    return dict(value)
+
+
 def pane_environment(parent, terminal_id, token, desk, readouts_dir=None):
     """Let any process in a pane set that pane's readouts, and only that pane's, and open its
     editor in the page."""
@@ -96,7 +108,7 @@ def _cpu_seconds(value):
 
 class TerminalSession:
     def __init__(self, cwd, argv, name, parent_id=None, coordinator=None, launch_profile=None, desk=None, readouts_dir=None,
-                 identity=None, origin=0, banner=b'', on_exit=None):
+                 identity=None, origin=0, banner=b'', on_exit=None, env=None):
         self.id = identity or 'terminal-' + secrets.token_hex(8)
         self.pane_token = secrets.token_urlsafe(32)
         self.readouts, self.readouts_published = None, 0
@@ -136,7 +148,7 @@ class TerminalSession:
         self.process = subprocess.Popen(
             [sys.executable, str(Path(__file__).with_name('terminal_worker.py')), cwd, json.dumps(launch_argv), launch_profile or '', *([json.dumps(native)] if native else [])],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            start_new_session=True, bufsize=0, env=pane_environment(os.environ, self.id, self.pane_token, desk, readouts_dir))
+            start_new_session=True, bufsize=0, env=pane_environment(os.environ, self.id, self.pane_token, desk, readouts_dir) | (env or {}))
         profile=launch_profile or (Path(argv[0]).name if Path(argv[0]).name in SINGLE else '')
         harness=harness_of(profile) or profile
         self.screen=WorkerScreen(harness) if harness in PROMPTS else None
@@ -365,6 +377,7 @@ class TerminalManager:
             launch_profile = infer_profile(argv)
         if not isinstance(name, str) or not 1 <= len(name) <= 100:
             raise ValueError('Name must contain 1–100 characters')
+        env = launch_environment(payload.get('env'))
         executable = shutil.which(argv[0])
         if not executable:
             raise ValueError('Executable not found: ' + argv[0])
@@ -378,7 +391,7 @@ class TerminalManager:
             if identity in self.sessions:
                 raise ValueError('Terminal ID is already in use')
             session = TerminalSession(cwd, [executable, *argv[1:]], name, parent_id, coordinator, launch_profile, self.desk,
-                                      self.readouts_folder(), identity, origin, banner, self.persist)
+                                      self.readouts_folder(), identity, origin, banner, self.persist, env)
             self.sessions[session.id] = session
         if persist:
             self.persist()

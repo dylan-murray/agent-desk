@@ -197,6 +197,43 @@ sys.exit(done.returncode)
         self.assertEqual(run['state'], 'review', run['detail'])
         self.assertIn('Nothing found.', run['detail'])
 
+    def test_an_automation_that_cannot_reach_the_desk_reports_through_its_run_folder(self):
+        agent = self.root / 'sandboxed-agent'
+        agent.write_text(f'''#!{sys.executable}
+import re, subprocess, sys
+from pathlib import Path
+prompt = sys.argv[-1]
+Path(re.search(r'The result file is (.+?result\\.md);', prompt).group(1)).write_text('# Fixture report\\n\\nSandboxed and fine.\\n')
+command = next(line for line in prompt.splitlines() if ' report --run ' in line and '--state review' in line)
+unreachable = re.sub(r'agent-desk://[0-9a-f]{{32}}', 'agent-desk://' + 'f' * 32, command)
+done = subprocess.run(['/bin/sh', '-c', unreachable], capture_output=True, text=True)
+print(done.stdout, done.stderr, flush=True)
+sys.stdin.read()
+''');agent.chmod(0o755)
+        code, role = self.request('/api/special-agents/save', dict(name='Sandboxed fixture', kind='researcher', scope='fixture', instructions='Report.',
+                                                                    cwd=str(self.root), choice='custom', command=str(agent), mode='direct'))
+        self.assertEqual(code, 200, role)
+        code, launched = self.request('/api/special-agents/launch', {'id': role['id']})
+        self.assertEqual(code, 200, launched)
+        def finished():
+            run = next(r for r in self.request('/api/special-agents')[1]['runs'] if r['id'] == launched['run_id'])
+            return run if run['state'] not in ('launching', 'running') else None
+        run = self.until(finished)
+        self.assertEqual(run['state'], 'review', run['detail'])
+        self.assertIn('Sandboxed and fine.', run['detail'])
+        handoffs = list((self.data / 'automation-runs' / launched['run_id'] / 'handoff').iterdir())
+        self.assertEqual([path.suffix for path in handoffs], ['.submitted'])
+
+    def test_the_page_cannot_set_a_panes_environment(self):
+        code, item = self.request('/api/terminals/launch', {'cwd': str(self.root), 'argv': ['/bin/sh', '-c', 'echo "CFG=[$CURSOR_CONFIG_DIR]"; sleep 5'],
+                                                            'env': {'CURSOR_CONFIG_DIR': '/tmp/fictional-config'}})
+        self.assertEqual(code, 200, item)
+        def printed():
+            output = self.request('/api/terminals/output?id=' + item['id'] + '&cursor=0')[1]
+            text = base64.b64decode(output.get('data') or '').decode(errors='replace')
+            return text if 'CFG=[' in text else None
+        self.assertIn('CFG=[]', self.until(printed))
+
     def test_clean_shutdown_restart_allows_new_terminals_without_resume(self):
         self.assertEqual(self.request('/api/desktop/shutdown', {})[0], 200)
         self.processes[-1].wait(timeout=15)
