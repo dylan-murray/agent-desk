@@ -1141,6 +1141,7 @@ class Handler(SimpleHTTPRequestHandler):
                 if self.path == '/api/projects/create':
                     return self.send_json(create_directory(payload.get('parent'), payload.get('name')))
                 if self.path == '/api/terminals/launch':
+                    payload.pop('env', None)
                     # A child started without a desk (agent_control.py launch --parent) is left
                     # unplaced, so it goes, and keeps going, wherever its parent is.
                     desk = DESKS.desk_for(payload.pop('desk', None)) if 'desk' in payload or not payload.get('parent_id') else None
@@ -1468,7 +1469,9 @@ def main():
     cleanup_stop = threading.Event()
     def cleanup_automations():
         while not cleanup_stop.is_set():
-            try:SPECIAL_AGENTS.close_completed(TERMINALS)
+            try:
+                SPECIAL_AGENTS.collect_handoffs()
+                SPECIAL_AGENTS.close_completed(TERMINALS)
             except Exception:
                 import logging
                 logging.exception('Automation terminal cleanup will retry')

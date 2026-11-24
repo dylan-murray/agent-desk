@@ -46,7 +46,7 @@ const APP=process.env.AGENT_DESK_TEST_URL||'http://127.0.0.1:4310/';
   const after=await options();
   check('the launcher offers it straight away, beside its agent',()=>assert.deepEqual(after,['shell=Shell','codex=Codex','claude=Claude','claude-personal=Claude · Personal','grok=Grok','opencode=OpenCode','pi=Pi','cortex=Cortex Code','cursor-agent=Cursor','custom=Custom executable']));
   const special=await page.locator('#special-choice option').evaluateAll(nodes=>nodes.map(node=>node.value));
-  check('automations offer it too',()=>assert.deepEqual(special,['codex','claude','claude-personal','custom']));
+  check('automations offer it too',()=>assert.deepEqual(special,['codex','claude','claude-personal','grok','opencode','pi','cortex','cursor-agent','custom']));
   await page.selectOption('#terminal-harness','claude-personal');await page.locator('#launch-terminal-form button[type=submit]').click();
   await page.waitForFunction(()=>!document.getElementById('launch-terminal-dialog').open);
   check('launching it names the account, not a shell alias the user must define',()=>{assert.equal(launches[0].launch_profile,'claude-personal');assert.deepEqual(launches[0].argv.slice(0,4),['/bin/zsh','-lic','claude-personal "$@"','agent-desk']);assert.equal(launches[0].name,'Claude · Personal');});
@@ -61,10 +61,10 @@ const APP=process.env.AGENT_DESK_TEST_URL||'http://127.0.0.1:4310/';
   await page.fill('#account-name','Work');await page.fill('#account-folder','~/.pi-work');await page.locator('#account-save').click();
   await page.waitForFunction(()=>document.querySelectorAll('#accounts-list li').length===3);await page.locator('#accounts-close').click();
   const withPi=await options(),specialWithPi=await page.locator('#special-choice option').evaluateAll(nodes=>nodes.map(node=>node.value));
-  check('a Pi account goes beside Pi and runs with its own folder, but not as an automation',()=>{
+  check('a Pi account goes beside Pi and runs with its own folder, in automations too',()=>{
    assert.match(piHint,/PI_CODING_AGENT_DIR=~\/\.pi-personal pi/);
    assert.deepEqual(withPi,['shell=Shell','codex=Codex','claude=Claude','grok=Grok','opencode=OpenCode','pi=Pi','pi-work=Pi · Work','cortex=Cortex Code','cursor-agent=Cursor','custom=Custom executable']);
-   assert.deepEqual(specialWithPi,['codex','claude','custom']);});
+   assert.deepEqual(specialWithPi,['codex','claude','grok','opencode','pi','pi-work','cortex','cursor-agent','custom']);});
   await page.selectOption('#terminal-harness','pi-work');await page.locator('#launch-terminal-form button[type=submit]').click();
   await page.waitForFunction(()=>!document.getElementById('launch-terminal-dialog').open);
   check('launching the Pi account names it',()=>{assert.equal(launches.at(-1).launch_profile,'pi-work');assert.deepEqual(launches.at(-1).argv.slice(0,4),['/bin/zsh','-lic','pi-work "$@"','agent-desk']);});

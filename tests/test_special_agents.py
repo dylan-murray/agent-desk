@@ -238,6 +238,104 @@ class SpecialAgentTests(unittest.TestCase):
         self.assertEqual(saved['terminal_id'],'terminal-fast')
 
 
+    def test_every_harness_may_write_its_run_folder_and_report_but_nothing_broader(self):
+        cursor_home = Path(self.temp.name) / 'cursor-home'
+        cursor_home.mkdir()
+        run = self.store.start_run(self.role['id'])
+        output = Path(run['context']['output_dir'])
+        broad = {'--dangerously-skip-permissions', '--dangerously-bypass-approvals-and-sandbox', '--always-approve', '--yolo', '--force',
+                 '--dangerously-allow-all-tool-calls', '--bypass', 'bypassPermissions', 'danger-full-access'}
+        (Path(self.temp.name) / 'snowflake' / 'cortex').mkdir(parents=True)
+        (Path(self.temp.name) / 'snowflake' / 'cortex' / 'settings.json').write_text('{"theme": "dark"}')
+        with patch.dict(os.environ, CURSOR_CONFIG_DIR=str(cursor_home), SNOWFLAKE_HOME=str(Path(self.temp.name) / 'snowflake')), patch('agent_desk.automation_grants.DATA_DIR', Path(self.temp.name)):
+            for choice, mode in (('claude', '/bin/zsh'), ('codex', '/bin/zsh'), ('grok', 'direct'), ('opencode', 'direct'), ('pi', 'direct'),
+                                 ('cortex', 'direct'), ('cursor-agent', 'direct')):
+                with self.subTest(choice):
+                    role = self.store.save_role(dict(self.role, id='', choice=choice, command=choice, mode=mode))
+                    payload = launch_payload(role, dict(run, context=dict(run['context'], role=role)), 'http://127.0.0.1:4310', Path('/tmp'))
+                    argv, env = payload['argv'], payload.get('env', {})
+                    self.assertFalse(broad & set(argv), argv)
+                    self.assertIn('report --run ' + run['id'], argv[-1])
+                    self.assertEqual(payload['launch_profile'], choice if choice in ('claude', 'codex') else None)
+                    granted = ' '.join(argv[:-1]) + json.dumps(env)
+                    if choice == 'cortex':
+                        granted += Path(argv[argv.index('--config') + 1]).read_text()
+                    if choice != 'pi':
+                        self.assertIn(str(output), granted)
+                    if choice == 'grok':
+                        self.assertNotIn('--add-dir', argv)
+                    self.assertNotIn(str(Path(self.temp.name)) + '/**', granted.replace(str(output), ''))
+        self.assertEqual(set(env), {'CURSOR_CONFIG_DIR'})
+        settings = json.loads((Path(env['CURSOR_CONFIG_DIR']) / 'cli-config.json').read_text())
+        self.assertIn('Write(' + str(output) + '/**)', settings['permissions']['allow'])
+        self.assertEqual(sum(rule.startswith('Shell(') for rule in settings['permissions']['allow']), 3)
+
+    def test_cursor_runs_on_the_users_own_folder_with_only_this_runs_rules_added(self):
+        from agent_desk.automation_grants import cursor_config
+        home = Path(self.temp.name) / 'cursor-home'
+        (home / 'chats').mkdir(parents=True)
+        (home / 'mcp.json').write_text('{}')
+        original = {'version': 1, 'editor': {'vimMode': True}, 'permissions': {'allow': ['Shell(ls)'], 'deny': ['Shell(rm)']}}
+        (home / 'cli-config.json').write_text(json.dumps(original))
+        folder = cursor_config('run-1', ['Write(/runs/run-1/**)'], home=home, root=Path(self.temp.name))
+        self.assertEqual({p.name for p in folder.iterdir()}, {'chats', 'mcp.json', 'cli-config.json'})
+        self.assertEqual((folder / 'chats').resolve(), (home / 'chats').resolve())
+        self.assertFalse((folder / 'cli-config.json').is_symlink())
+        layered = json.loads((folder / 'cli-config.json').read_text())
+        self.assertEqual(layered['editor'], {'vimMode': True})
+        self.assertEqual(layered['permissions'], {'allow': ['Shell(ls)', 'Write(/runs/run-1/**)'], 'deny': ['Shell(rm)']})
+        self.assertEqual(json.loads((home / 'cli-config.json').read_text()), original)
+        self.assertNotIn(Path(self.temp.name) / 'automation-runs', folder.parents)
+
+    def test_cortex_keeps_its_own_settings_when_the_user_has_none(self):
+        from agent_desk.automation_grants import cortex_settings
+        missing = Path(self.temp.name) / 'no-cortex'
+        self.assertIsNone(cortex_settings('run-1', ['Write(/runs/run-1/**)'], home=missing, root=Path(self.temp.name)))
+        missing.mkdir()
+        (missing / 'settings.json').write_text(json.dumps({'theme': 'dark', 'permissions': {'allow': ['Read'], 'deny': ['Bash(rm:*)']}}))
+        path = cortex_settings('run-1', ['Write(/runs/run-1/**)'], home=missing, root=Path(self.temp.name))
+        self.assertEqual(json.loads(path.read_text()), {'theme': 'dark', 'permissions': {'allow': ['Read', 'Write(/runs/run-1/**)'], 'deny': ['Bash(rm:*)']}})
+
+    def test_a_report_saved_in_the_run_folder_is_submitted_and_others_are_refused(self):
+        run = self.store.start_run(self.role['id'])
+        folder = Path(run['context']['output_dir']) / 'handoff'
+        folder.mkdir()
+        (folder / 'report-other.json').write_text(json.dumps(dict(operation='report', run_id='another-run', state='review', detail='Not mine')))
+        (folder / 'finding-foreign.json').write_text(json.dumps(dict(operation='finding', run_id=run['id'], role_id='another-role',
+                                                                       event_key='x', title='Foreign', detail='Nope', url='')))
+        (folder / 'finding-1.json').write_text(json.dumps(dict(operation='finding', run_id=run['id'], role_id=self.role['id'],
+                                                                event_key='thread:1', title='Lead', detail='Evidence', url='')))
+        (folder / 'report-1.json').write_text(json.dumps(dict(operation='report', run_id=run['id'], state='review', detail='# Done')))
+        self.assertEqual(self.store.collect_handoffs(), 2)
+        self.assertEqual(sorted(p.name for p in folder.iterdir()),
+                         ['finding-1.submitted', 'finding-foreign.rejected', 'report-1.submitted', 'report-other.rejected'])
+        snapshot = self.store.snapshot()
+        self.assertEqual(next(r for r in snapshot['runs'] if r['id'] == run['id'])['state'], 'review')
+        (folder / 'report-2.json').write_text(json.dumps(dict(operation='report', run_id=run['id'], state='failed', detail='Late')))
+        self.assertEqual(self.store.collect_handoffs(), 0)
+        self.assertTrue((folder / 'report-2.json').exists())
+
+    def test_a_symlinked_handoff_folder_is_ignored(self):
+        run = self.store.start_run(self.role['id'])
+        elsewhere = Path(self.temp.name) / 'elsewhere'
+        elsewhere.mkdir()
+        (elsewhere / 'report-1.json').write_text(json.dumps(dict(operation='report', run_id=run['id'], state='review', detail='# Done')))
+        (Path(run['context']['output_dir']) / 'handoff').symlink_to(elsewhere)
+        self.assertEqual(self.store.collect_handoffs(), 0)
+        self.assertEqual(self.store.snapshot()['runs'][0]['state'], 'launching')
+
+    def test_the_report_helper_saves_a_report_it_cannot_deliver(self):
+        root = Path(__file__).resolve().parents[1]
+        result = Path(self.temp.name) / 'result.md'
+        result.write_text('# Report\n')
+        env = dict(os.environ, AGENT_DESK_DATA_DIR=self.temp.name)
+        done = subprocess.run([sys.executable, str(root / 'scripts' / 'special_agent.py'), '--desk', 'agent-desk://' + 'f' * 32,
+                               'report', '--run', 'run-1', '--state', 'blocked', '--file', str(result)], env=env, capture_output=True, text=True)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        [saved] = (Path(self.temp.name) / 'handoff').iterdir()
+        self.assertEqual(json.loads(saved.read_text()), dict(operation='report', run_id='run-1', state='blocked', detail='# Report\n'))
+        self.assertIn('submits it within a few seconds', done.stdout)
+
     def test_auto_mode_is_scoped_to_claude_automations(self):
         run=self.store.start_run(self.role['id'])
         for choice in ('claude','claude-personal','codex','codex-personal','custom'):
