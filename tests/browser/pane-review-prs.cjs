@@ -98,7 +98,7 @@ const note = message => {if (process.env.VERBOSE) console.log('  ok ' + message)
   assert.equal(await frame.locator('#meta').evaluate(el => el.classList.contains('away')), true);
   assert.equal(await frame.locator('#prstate a').getAttribute('href'), PR8);
   await frame.waitForFunction(() => document.querySelector('section.file[data-path="farewell.py"]')?.textContent.includes('Use an f-string here too'), null, {timeout: 15000});
-  assert.equal(await frame.locator('#codex').isDisabled(), true, 'a second opinion reads the checked-out files, so it waits');
+  assert.equal(await frame.locator('#codex').isDisabled(), false, 'a second opinion reviews the PR shown, from a temporary checkout of its head');
   assert.equal(git('rev-parse', '--abbrev-ref', 'HEAD'), 'feature', 'nothing was checked out');
   assert.equal(fs.existsSync(path.join(project, 'farewell.py')), false);
   await pause(400);

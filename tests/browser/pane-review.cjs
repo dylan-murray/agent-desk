@@ -53,6 +53,8 @@ const note = message => {if (process.env.VERBOSE) console.log('  ok ' + message)
 
   await pane.locator('.pane-dock-tab[data-entry="@review"]').click();
   await until(async () => (await pane.locator('.pane-dock-frame:not([hidden])').count()) === 1, 'Review did not open the code review', 300);
+  assert.equal(await pane.locator('.pane-dock-title b').textContent(), 'Code review');
+  assert.equal(await pane.locator('.pane-dock-tab[data-entry="@review"] span').textContent(), 'Review');
   const frame = await (await pane.locator('.pane-dock-frame:not([hidden])').elementHandle()).contentFrame();
   await frame.waitForSelector('text=app.py', {timeout: 15000});
   await frame.waitForFunction(() => /^Send to /.test(document.querySelector('#send')?.textContent.trim() || ''), null, {timeout: 10000});
@@ -151,7 +153,7 @@ const note = message => {if (process.env.VERBOSE) console.log('  ok ' + message)
   assert.equal(await frame.locator('#prstate a').getAttribute('href'), 'https://github.com/fixture/project/pull/7');
   await frame.waitForSelector('#prstate #newgh', {timeout: 10000});
   assert.equal((await frame.locator('#prstate #newgh').textContent()).trim(), '1 new');
-  assert.match(await frame.locator('#prstate').textContent(), /1 GitHub comment/);
+  assert.equal(await frame.locator('#prstate .ghc').getAttribute('aria-label'), '1 GitHub comment');
   assert.equal(await frame.locator('.thread-box', {hasText: 'f-strings read better'}).count(), 1, 'the GitHub comment should sit on its line in the diff');
   const ghComment = frame.locator('.thread-box', {hasText: 'f-strings read better'}).locator('.cm').first();
   assert.deepEqual(await ghComment.evaluate(c => ({name: c.querySelector('.an').textContent, avatar: c.querySelector('.av').textContent, link: c.querySelector('.gh').href, nameSize: getComputedStyle(c.querySelector('.an')).fontSize, bodySize: getComputedStyle(c.querySelector('.ct')).fontSize, bodyIsDim: getComputedStyle(c.querySelector('.ct')).color === getComputedStyle(c.querySelector('.at')).color})),

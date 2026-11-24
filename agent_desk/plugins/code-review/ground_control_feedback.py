@@ -726,7 +726,7 @@ body:has(#gc-feedback){padding-bottom:72px}
  // A tool with its own submit button keeps it. A tool that also gives the status a place
  // (#gc-inline) gets it there and loses the floating box, which would only repeat the button.
  const oldStatus=document.getElementById('sent');if(oldStatus)oldStatus.hidden=true;
- const legacy=document.getElementById('send');if(legacy){legacy.textContent=button.textContent;legacy.title='Send the open notes to '+dest.name;legacy.onclick=send;
+ const legacy=document.getElementById('send');if(legacy){legacy.textContent=dest.adapter==='manual'?button.textContent:'Send';if(dest.adapter!=='manual'){const to=document.createElement('span');to.className='gc-to';to.textContent=' to '+dest.name;legacy.append(to);}legacy.title='Send the open notes to '+dest.name;legacy.onclick=send;
   const slot=document.getElementById('gc-inline');if(slot){copy.className=legacy.className.replace(/\b(primary|wide)\b/g,'').trim();slot.append(status,copy,prompt);box.remove();}}
 })();
 </script>"""

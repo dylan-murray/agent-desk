@@ -42,7 +42,7 @@ function dockEntries(agent){
   if(!editorPane(agent))return tools.map(ui=>({id:ui.id,title:ui.title,ui}));
   const review=reviewTool(tools);
   // Editor and Review sit among the plugins by order (Editor 20, Review 40), so Files (10) comes first.
-  const placed=[{id:'@editor',title:'Editor',order:20},{id:'@review',title:'Review',ui:review,order:40},...(typeof pluginEntries==='function'?pluginEntries().map(entry=>({...entry,order:entry.plugin.order})):[])];
+  const placed=[{id:'@editor',title:'Editor',order:20},{id:'@review',title:'Review',heading:'Code review',ui:review,order:40},...(typeof pluginEntries==='function'?pluginEntries().map(entry=>({...entry,order:entry.plugin.order})):[])];
   return [...placed.sort((a,b)=>a.order-b.order),...tools.filter(ui=>ui!==review).map(ui=>({id:ui.id,title:ui.title,ui}))];
 }
 // The tab a tool appears under in its owner's dock: the pane's review shows under Review.
@@ -141,7 +141,7 @@ function showDock(view,agent,dock,entries){
   });
   // The title bar names what is shown; a plugin may add a subtitle and a short note of its own.
   const shown=tabState(entry);
-  panel.querySelector('.pane-dock-title b').textContent=entry.ui&&!entry.id.startsWith('@')?entry.ui.title:entry.title;
+  panel.querySelector('.pane-dock-title b').textContent=entry.ui&&!entry.id.startsWith('@')?entry.ui.title:entry.heading||entry.title;
   panel.querySelector('.pane-dock-subtitle').textContent=shown.subtitle||'';
   panel.querySelector('.pane-dock-flag').textContent=shown.note||'';
   const editor=panel.querySelector('.pane-dock-editor'),note=panel.querySelector('.pane-dock-note');

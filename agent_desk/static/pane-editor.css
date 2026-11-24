@@ -46,7 +46,7 @@
 .terminal-bar .pane-edit{opacity:0;transition:opacity .15s}
 .terminal-pane:hover .pane-edit,.terminal-pane.focused .pane-edit,.pane-actions:focus-within .pane-edit,.pane-edit[aria-pressed=true]{opacity:1}
 .pane-edit[aria-pressed=true]{color:color-mix(in srgb,var(--agent-color) 60%,#fff);background:color-mix(in srgb,var(--agent-color) 14%,transparent)}
-.terminal-bar:has(.pane-pr) .pane-edit{max-width:80px;overflow:hidden;flex-shrink:0;transition:opacity .15s,max-width .15s,margin .15s}
-.terminal-pane:not(:hover,.focused) .terminal-bar:has(.pane-pr) .pane-actions:not(:focus-within,:has(.pane-pr-more[aria-expanded=true])) .pane-edit:not([aria-pressed=true]){max-width:0;margin-left:-6px;padding:0}
+.terminal-bar:is(:has(.pane-pr),:has(.pane-edit[aria-pressed=true])) .pane-edit{max-width:80px;overflow:hidden;flex-shrink:0;transition:opacity .15s,max-width .15s,margin .15s}
+.terminal-pane:not(:hover,.focused) .terminal-bar:is(:has(.pane-pr),:has(.pane-edit[aria-pressed=true])) .pane-actions:not(:focus-within,:has(.pane-pr-more[aria-expanded=true])) .pane-edit:not([aria-pressed=true]){max-width:0;margin-left:-6px;padding:0}
 @media(prefers-reduced-motion:reduce){.terminal-bar .pane-edit{transition:none}}
 @media(max-width:760px){.pane-editor-mode,.pane-editor-where{display:none}}
