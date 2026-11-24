@@ -1,12 +1,10 @@
 """Managed local terminals with bounded in-memory replay and ordered input."""
 import base64
-import hashlib
 import json
 import logging
 import os
 from pathlib import Path
 import secrets
-import shlex
 import re
 import shutil
 import stat
@@ -17,6 +15,7 @@ import time
 from agent_desk.accounts import harness_of, HARNESSES, SINGLE
 from agent_desk.worker_screen import WorkerScreen, WorkerNotReady
 from agent_desk import readouts
+from agent_desk.launchers import python_launcher
 from agent_desk import session_titles
 
 PANE_BIN = Path(__file__).with_name('bin')
@@ -25,36 +24,13 @@ PANE_BIN = Path(__file__).with_name('bin')
 PANE_VARIABLES = ('AGENT_DESK_TERMINAL_ID', 'AGENT_DESK_PANE_TOKEN', 'AGENT_DESK_PANE_PID', 'AGENT_DESK_URL', 'AGENT_DESK_READOUTS_DIR',
                   'AGENT_DESK_FALLBACK_EDITOR')
 PANE_EDIT = Path(__file__).with_name('pane_edit.py')
-_launcher = None
 
 
 def pane_editor():
     """What $EDITOR runs in a pane: a launcher that starts the pane editor on the desk's own Python, which can
-    reach the desk in the browser or the desktop app. A python3 found on PATH may be too old or someone else's.
-
-    git and other tools run $EDITOR through a shell, so its path must have no spaces. The desktop app's data
-    folder is under Application Support, so the launcher goes under ~/.agent-desk there, where its sockets live.
-    Without a usable launcher, panes keep the editor they had."""
-    global _launcher
-    if _launcher is None:
-        from agent_desk.local_transport import private_directory
-        from agent_desk.paths import DATA_DIR
-        script = f'#!/bin/sh\nexec {shlex.quote(sys.executable)} {shlex.quote(str(PANE_EDIT))} "$@"\n'
-        try:
-            root = DATA_DIR if ' ' not in str(DATA_DIR) else private_directory(Path(os.environ.get('AGENT_DESK_SOCKET_ROOT', str(Path.home() / '.agent-desk'))))
-            folder = root / 'bin' / hashlib.sha256(script.encode()).hexdigest()[:12]
-            folder.mkdir(mode=0o700, parents=True, exist_ok=True)
-            path = folder / 'agent-desk-edit'
-            if not path.is_file() or path.read_text() != script:
-                temporary = folder / f'.agent-desk-edit.{os.getpid()}'
-                temporary.write_text(script)
-                temporary.chmod(0o700)
-                temporary.replace(path)
-            _launcher = path
-        except OSError as error:
-            logging.getLogger(__name__).warning('Panes keep their own editor: %s', error)
-            _launcher = False
-    return _launcher or None
+    reach the desk in the browser or the desktop app. git and other tools run $EDITOR through a shell, so the
+    launcher's path has no spaces. Without a usable launcher, panes keep the editor they had."""
+    return python_launcher(PANE_EDIT, 'agent-desk-edit')
 
 
 def fallback_editor(parent):

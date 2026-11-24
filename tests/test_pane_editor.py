@@ -15,7 +15,7 @@ from urllib.request import Request, urlopen
 from http.server import BaseHTTPRequestHandler
 import socketserver
 
-from agent_desk import pane_edit, paths, server, terminals
+from agent_desk import launchers, pane_edit, paths, server
 from agent_desk.pane_editor import PaneEdits
 from agent_desk import pane_files
 from agent_desk.local_transport import runtime_directory
@@ -129,7 +129,7 @@ class PaneEditorEnvironmentTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             data, root = Path(folder) / 'Application Support' / 'Agent Desk', Path(folder) / 'sockets'
             data.mkdir(parents=True)
-            with patch.object(paths, 'DATA_DIR', data), patch.object(terminals, '_launcher', None), patch.dict(os.environ, AGENT_DESK_SOCKET_ROOT=str(root)):
+            with patch.object(paths, 'DATA_DIR', data), patch.object(launchers, '_launchers', {}), patch.dict(os.environ, AGENT_DESK_SOCKET_ROOT=str(root)):
                 launcher = pane_editor()
         self.assertTrue(launcher.is_relative_to(root), launcher)
         self.assertNotIn(' ', str(launcher))

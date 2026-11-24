@@ -171,6 +171,32 @@ class DesktopIntegrationTests(unittest.TestCase):
             self.assertEqual(result.returncode, 1, result.stderr or result.stdout)
             self.assertEqual(result.stdout.strip(), '')
 
+    def test_an_automation_reports_when_the_agents_python3_is_too_old(self):
+        old = self.root / 'old-python';old.mkdir()
+        (old / 'python3').write_text('#!/bin/sh\necho "python3 is too old for Agent Desk" >&2\nexit 1\n');(old / 'python3').chmod(0o755)
+        agent = self.root / 'fixture-agent'
+        agent.write_text(f'''#!{sys.executable}
+import os, re, subprocess, sys
+from pathlib import Path
+prompt = sys.argv[-1]
+Path(re.search(r'The result file is (.+?result\\.md);', prompt).group(1)).write_text('# Fixture report\\n\\nNothing found.\\n')
+command = next(line for line in prompt.splitlines() if ' report --run ' in line and '--state review' in line)
+env = dict(os.environ, PATH={str(old)!r} + os.pathsep + os.environ['PATH'])
+done = subprocess.run(['/bin/sh', '-c', command], env=env, capture_output=True, text=True)
+sys.exit(done.returncode)
+''');agent.chmod(0o755)
+        code, role = self.request('/api/special-agents/save', dict(name='Fixture automation', kind='researcher', scope='fixture', instructions='Report nothing found.',
+                                                                    cwd=str(self.root), choice='custom', command=str(agent), mode='direct'))
+        self.assertEqual(code, 200, role)
+        code, launched = self.request('/api/special-agents/launch', {'id': role['id']})
+        self.assertEqual(code, 200, launched)
+        def finished():
+            run = next(r for r in self.request('/api/special-agents')[1]['runs'] if r['id'] == launched['run_id'])
+            return run if run['state'] not in ('launching', 'running') else None
+        run = self.until(finished)
+        self.assertEqual(run['state'], 'review', run['detail'])
+        self.assertIn('Nothing found.', run['detail'])
+
     def test_clean_shutdown_restart_allows_new_terminals_without_resume(self):
         self.assertEqual(self.request('/api/desktop/shutdown', {})[0], 200)
         self.processes[-1].wait(timeout=15)

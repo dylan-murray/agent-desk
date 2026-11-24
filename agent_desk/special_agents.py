@@ -7,6 +7,7 @@ import threading
 from contextlib import contextmanager
 from pathlib import Path
 from agent_desk.accounts import harness_of
+from agent_desk.launchers import python_command
 from agent_desk.report_format import DIAGRAM_GUIDANCE, STRUCTURE_GUIDANCE
 
 
@@ -303,7 +304,7 @@ def launch_payload(role, run, desk, root, event_context=None):
     if context:
         role=context['role'];event_context=context['event_context']
     output=Path(context['output_dir']) if context else root/'data'/'automation-runs'/run['id']
-    helper = 'python3 ' + shlex.quote(str(root / 'scripts' / 'special_agent.py')) + ' --desk ' + shlex.quote(desk)
+    helper = python_command(root / 'scripts' / 'special_agent.py', 'agent-desk-automation') + ' --desk ' + shlex.quote(desk)
     prompt = f'''You are the user's dedicated {role['kind']} agent, named {role['name']}.
 Scope: {role['scope']}
 Instructions: {role['instructions']}

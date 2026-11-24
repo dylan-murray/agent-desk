@@ -1,4 +1,8 @@
 import json
+import os
+import shlex
+import subprocess
+import sys
 import tempfile
 import threading
 import unittest
@@ -85,6 +89,20 @@ class SpecialAgentTests(unittest.TestCase):
         self.assertIn('not a scheduled background service', payload['argv'][-1])
         self.assertIn('fenced html-diagram block', payload['argv'][-1])
         self.assertNotIn('$(touch', payload['argv'][2])
+
+    def test_the_report_command_runs_on_the_desks_python_not_python3_from_path(self):
+        run = self.store.start_run(self.role['id'])
+        payload = launch_payload(self.role, run, 'agent-desk://' + 'a' * 32, Path(__file__).resolve().parents[1])
+        report = next(line for line in payload['argv'][-1].splitlines() if ' report --run ' in line and '--state review' in line)
+        launcher = shlex.split(report)[0]
+        self.assertNotIn(' ', launcher)
+        self.assertIn(shlex.quote(sys.executable), Path(launcher).read_text())
+        self.assertIn('Bash(' + report + ')', payload['argv'][payload['argv'].index('--settings') + 1].replace('\\"', '"'))
+        with tempfile.TemporaryDirectory() as folder:
+            (Path(folder) / 'python3').write_text('#!/bin/sh\nexit 7\n');(Path(folder) / 'python3').chmod(0o755)
+            done = subprocess.run([launcher, '--help'], env=dict(os.environ, PATH=folder + os.pathsep + os.environ['PATH']), capture_output=True, text=True, timeout=30)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn('report', done.stdout)
 
     def test_a_reply_to_a_report_becomes_the_users_instruction_for_the_next_pass(self):
         first = self.store.start_run(self.role['id'])

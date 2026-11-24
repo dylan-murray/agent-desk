@@ -15,6 +15,7 @@ import time
 from urllib.error import HTTPError
 from urllib.parse import urlencode, urlparse
 from urllib.request import Request
+from agent_desk.launchers import python_command
 from agent_desk.local_transport import urlopen, endpoint_key, desk_url
 
 
@@ -107,7 +108,7 @@ class DeskClient:
         task, created = mailbox.create(self.desk, controller, identity, text, task_id)
         if not created:
             return dict(task=task, resent=False, next_action='Inspect existing task; dispatch is never retried automatically')
-        command = 'python3 ' + shlex.quote(str(Path(__file__).resolve())) + ' --desk ' + shlex.quote(self.desk)
+        command = python_command(Path(__file__), 'agent-desk-control') + ' --desk ' + shlex.quote(self.desk)
         message = (text + '\n\n[Agent Desk delegation ' + task['id'] + ']\n'
                    'When finished, you MUST report back using your shell tool. Write a concise result to a UTF-8 file and run:\n' +
                    command + ' reply ' + task['id'] + ' --file /absolute/path/to/result.txt\n'

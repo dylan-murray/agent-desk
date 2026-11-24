@@ -82,5 +82,7 @@ const {chromium}=require('playwright');const withAccounts=require('./accounts-fi
  await page.locator('#terminal-launch-error',{hasText:'Fixture stops here'}).waitFor();
  const prompt=writes.find(w=>w.path==='/api/terminals/launch').body.argv.join(' ');
  assert.match(prompt,/Model routing is on for this session/);assert.match(prompt,/--route-file/);
+ assert.match(prompt,/\/agent-desk-control --desk http:\/\/127\.0\.0\.1:\d+ list/,'the controller runs its control CLI on the desk\'s own Python');
+ assert.doesNotMatch(prompt,/python3 /);
  assert.deepEqual(errors,[]);console.log('Model router browser check passed');
 }finally{await browser.close();}})().catch(e=>{console.error(e);process.exit(1);});

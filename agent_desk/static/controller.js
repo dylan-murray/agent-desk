@@ -1,6 +1,5 @@
 function controllerPrompt(goal,name,routed=false){
-  const quote=value=>"'"+value.replace(/'/g,"'\\''")+"'";
-  const tool='python3 '+quote(terminalDefaultCwd+'/scripts/agent_control.py')+' --desk '+quote(location.origin);
+  const tool=window.AGENT_DESK_CONFIG.control_command;
   return `You are the controller agent for this local Agent Desk workspace.
 Your own managed terminal name is ${JSON.stringify(name)}. Do not send commands to or stop your own terminal.
 User objective: ${goal}

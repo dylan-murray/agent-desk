@@ -8,6 +8,7 @@ import json
 import os
 import re
 import secrets
+import shlex
 import subprocess
 import socketserver
 import sys
@@ -25,6 +26,7 @@ from agent_desk.workflow_runtime import WorkflowRuntime
 from agent_desk.event_bus import EventError, MAX_BYTES
 from agent_desk import desk_tokens, pane_guard, skill_harnesses, tool_registration, web_pages
 from agent_desk.conversation_bridge import ConversationBridge
+from agent_desk.launchers import python_command
 from agent_desk.special_agents import SpecialAgents, launch_payload
 from agent_desk.tool_runtime import ToolRuntime
 from agent_desk.plugins import BUNDLED, Plugins
@@ -608,7 +610,7 @@ class Handler(SimpleHTTPRequestHandler):
             self.wfile.write(body)
             return
         if route == '/config.js':
-            body = ('window.AGENT_DESK_CONFIG=' + json.dumps({'development': DEVELOPMENT, 'annotations': annotations_available(), 'terminal_limit': DESKS.terminal_limit(), 'accounts': [{k: a[k] for k in ('id', 'harness', 'name', 'label')} for a in accounts.accounts()]}) + ';').encode()
+            body = ('window.AGENT_DESK_CONFIG=' + json.dumps({'development': DEVELOPMENT, 'annotations': annotations_available(), 'terminal_limit': DESKS.terminal_limit(), 'accounts': [{k: a[k] for k in ('id', 'harness', 'name', 'label')} for a in accounts.accounts()], 'control_command': python_command(ROOT / 'scripts' / 'agent_control.py', 'agent-desk-control') + ' --desk ' + shlex.quote(self.server.desk_url)}) + ';').encode()
             self.send_response(200)
             self.send_header('Content-Type', 'application/javascript')
             self.send_header('Cache-Control', 'no-store')
