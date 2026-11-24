@@ -34,6 +34,7 @@ from __future__ import annotations
 from ground_control_feedback import Feedback, add_arguments, watch_feedback, wrap_handler
 
 import argparse
+import contextlib
 import hashlib
 import html
 import json
@@ -412,10 +413,10 @@ class Notes:
     def pr(self) -> dict | None:
         return self._read().get("pr")
 
-    def set_pr(self, url: str) -> None:
+    def set_pr(self, url: str, title: str | None = None) -> None:
         with self._lock:
             d = self._read()
-            d["pr"] = {"url": url, "at": time.strftime("%Y-%m-%d %H:%M:%S")}
+            d["pr"] = {"url": url, "at": time.strftime("%Y-%m-%d %H:%M:%S"), **({"title": title} if title else {})}
             self._write(d)
 
     def submit(self) -> dict:
@@ -667,14 +668,14 @@ class SecondOpinion:
             "added": self.added, "error": self.error, "summary": self.summary,
         }
 
-    def start(self, repo: Path, base: str, untracked: bool, notes: Notes) -> bool:
+    def start(self, repo: Path, base: str, untracked: bool, notes: Notes, view: dict | None = None) -> bool:
         with self._lock:
             if self.running:
                 return False
             self.running, self.error, self.added, self.summary = True, None, 0, None
             self.started = time.strftime("%Y-%m-%d %H:%M:%S")
             self.finished = None
-        threading.Thread(target=self._run, args=(repo, base, untracked, notes), daemon=True).start()
+        threading.Thread(target=self._run, args=(repo, base, untracked, notes, view), daemon=True).start()
         return True
 
     def run_blocking(self, repo: Path, base: str, untracked: bool, notes: Notes) -> dict:
@@ -683,16 +684,36 @@ class SecondOpinion:
         self._run(repo, base, untracked, notes)
         return self.status()
 
-    def _run(self, repo: Path, base: str, untracked: bool, notes: Notes) -> None:
+    def _run(self, repo: Path, base: str, untracked: bool, notes: Notes, view: dict | None = None) -> None:
         try:
-            review = self.ask(repo, base, untracked, self.env)
-            self.added = add_reviewer_notes(notes, diff_model(repo, base, untracked), review, self.author)
+            if view:
+                with pr_checkout(repo, view["head"]) as tree:
+                    review = self.ask(tree, view["base"], False, self.env)
+                model = diff_model(repo, view["base"], False, view["head"], view["branch"])
+            else:
+                review = self.ask(repo, base, untracked, self.env)
+                model = diff_model(repo, base, untracked)
+            self.added = add_reviewer_notes(notes, model, review, self.author, view["url"] if view else None)
             self.summary = review.get("summary")
         except Exception as exc:  # noqa: BLE001 -- surfaced on the page, never crashes the server
             self.error = f"{type(exc).__name__}: {exc}"[:400]
         finally:
             self.running = False
             self.finished = time.strftime("%Y-%m-%d %H:%M:%S")
+
+
+@contextlib.contextmanager
+def pr_checkout(repo: Path, head: str):
+    import tempfile
+
+    with tempfile.TemporaryDirectory(prefix="review-app-pr-") as tmp:
+        tree = Path(tmp) / "tree"
+        git(repo, "worktree", "add", "--detach", str(tree), head)
+        try:
+            yield tree
+        finally:
+            git(repo, "worktree", "remove", "--force", str(tree), check=False)
+            git(repo, "worktree", "prune", check=False)
 
 
 def review_prompt(repo: Path, base: str, untracked: bool) -> str:
@@ -773,7 +794,7 @@ def ask_claude(repo: Path, base: str, untracked: bool, env: dict | None = None) 
     return parse_review(str(reply.get("result") or ""), "claude")
 
 
-def add_reviewer_notes(notes: Notes, model: dict, review: dict, author: str) -> int:
+def add_reviewer_notes(notes: Notes, model: dict, review: dict, author: str, pr: str | None = None) -> int:
     """Turn a structured review into notes. Line comments are anchored to the
     NEW side and quoted from the diff so threads render and `--apply` works;
     anything that doesn't map onto the diff becomes a file-level note."""
@@ -787,6 +808,8 @@ def add_reviewer_notes(notes: Notes, model: dict, review: dict, author: str) -> 
         if severity:
             comment = f"[{severity}] {comment}"
         item: dict = {"kind": "file", "file": c.get("file", ""), "comment": comment, "author": author}
+        if pr:
+            item["pr"] = pr
         if f and start > 0:
             end = max(end, start)
             lines = [
@@ -931,7 +954,7 @@ def branch_pr(repo: Path) -> dict | None:
     if not shutil.which("gh"):
         return None
     try:
-        result = subprocess.run(["gh", "pr", "view", "--json", "url,state,baseRefName"], cwd=repo, capture_output=True, text=True,
+        result = subprocess.run(["gh", "pr", "view", "--json", "url,state,baseRefName,title"], cwd=repo, capture_output=True, text=True,
                                 timeout=30, check=False, stdin=subprocess.DEVNULL)
         data = json.loads(result.stdout) if result.returncode == 0 else {}
     except (OSError, ValueError, subprocess.SubprocessError):
@@ -942,7 +965,7 @@ def branch_pr(repo: Path) -> dict | None:
     refs = git(repo, "for-each-ref", "--format=%(refname:short)", f"refs/remotes/*/{name}", check=False).split() if name else []
     ref = next((r for r in sorted(refs, key=lambda r: not r.startswith("origin/")) + [name] if r and git(repo, "rev-parse", "--verify", "--quiet", r + "^{commit}", check=False).strip()), None)
     base = git(repo, "merge-base", ref, "HEAD", check=False).strip() if ref else ""
-    return {"url": data["url"], "base": base or None}
+    return {"url": data["url"], "base": base or None, "title": str(data.get("title") or "") or None, "base_name": name if base else None}
 
 
 def github_remotes(repo: Path) -> dict:
@@ -978,7 +1001,7 @@ def other_pr(repo: Path, url: str) -> dict:
         git(repo, "fetch", "--quiet", "--no-tags", remote, f"pull/{data['number']}/head", "refs/heads/" + str(data.get("baseRefName") or ""))
     base = git(repo, "merge-base", base_oid, head).strip()
     return {"url": data["url"], "number": data["number"], "title": str(data.get("title") or "")[:200], "branch": str(data.get("headRefName") or ""),
-            "head": head, "base": base}
+            "head": head, "base": base, "base_name": str(data.get("baseRefName") or "") or None}
 
 
 VIEW_LOCK = threading.Lock()
@@ -1036,9 +1059,11 @@ def follow_pr(notes: Notes, repo: Path, interval: float) -> None:
         else:
             pr = branch_pr(repo)
             if pr:
-                if (notes.pr() or {}).get("url") != pr["url"]:
-                    notes.set_pr(pr["url"])
+                known = notes.pr() or {}
+                if (known.get("url"), known.get("title")) != (pr["url"], pr["title"]):
+                    notes.set_pr(pr["url"], pr["title"])
                 Handler.base = pr["base"] or Handler.base
+                Handler.base_name = pr["base_name"]
                 try:
                     import_github_reviews(notes, current_model(), fetch_github_reviews(pr["url"]), pr["url"])
                 except (RuntimeError, ValueError, OSError, subprocess.SubprocessError) as exc:
@@ -1185,7 +1210,12 @@ svg.i{display:block;flex-shrink:0;width:14px;height:14px;fill:none;stroke:curren
 #stats{flex:none}
 #stats{font:11px var(--mono)}
 /* The branch gives way first; the PR and its comments stay whole. */
-#prstate{display:flex;align-items:center;gap:7px;flex:none;margin-left:auto}
+#prstate{display:flex;align-items:center;gap:7px;flex:1 1 auto;min-width:0}
+#prstate .prlink{display:flex;align-items:baseline;gap:6px;min-width:0;color:var(--fg);text-decoration:none}#prstate .prlink:hover .prtitle{text-decoration:underline;text-underline-offset:2px}
+#prstate .prtitle{min-width:0;overflow:hidden;text-overflow:ellipsis;font-weight:500;color:var(--fg)}#prstate .prnum{flex:none;color:var(--fg-muted);font-variant-numeric:tabular-nums}
+#prstate .sp{flex:1 1 0;min-width:4px}#branch:hover #meta b{color:var(--fg)}
+#prstate .sync{display:inline-flex;align-items:center;gap:5px;flex:none;height:22px;padding:0 7px;border:1px solid transparent;border-radius:6px;background:none;color:var(--fg-muted);font-size:11.5px;font-variant-numeric:tabular-nums;cursor:pointer}
+#prstate .sync:hover{border-color:var(--border-strong);color:var(--fg)}#prstate .sync svg.i{display:block;width:12px;height:12px;color:currentColor}#prstate .sync .rf{margin-left:1px}#prstate .sync:disabled .rf{animation:spin 1s linear infinite}
 #prstate .sep{width:1px;height:14px;background:var(--border-strong)}
 #prstate svg.i{color:#b9b0f5}
 #prstate .ghc{color:var(--fg-muted)}
@@ -1402,8 +1432,12 @@ tr.composer-row td{background:var(--bg)!important;padding:8px 12px 10px 46px;whi
 
 /* ---------- the action bar ---------- */
 #bar{position:fixed;left:0;right:0;bottom:0;z-index:55;display:flex;align-items:center;gap:8px;height:var(--barh);padding:0 10px;background:#121214;border-top:1px solid #ffffff12}
-#barcount{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--fg-2);font-size:12px}
-#barcount b{color:var(--amber);font-weight:600}
+#branch{display:flex;flex:0 1 auto;align-items:center;gap:7px;min-width:0;overflow:hidden;white-space:nowrap;color:var(--fg-muted);font-size:12px}
+#branch svg.i{width:13px;height:13px;flex:none;color:var(--fg-muted)}
+#branch-pop{position:fixed;z-index:120;display:flex;align-items:center;gap:6px;max-width:calc(100vw - 12px);padding:5px 5px 5px 10px;border:1px solid var(--border-strong);border-radius:8px;background:var(--raised);box-shadow:0 8px 24px #0000008c;color:var(--fg);font-size:12px}
+#branch-pop[hidden],#hover-tip[hidden]{display:none}
+#hover-tip{position:fixed;z-index:120;display:grid;gap:3px;max-width:260px;padding:8px 10px;border:1px solid var(--border-strong);border-radius:8px;background:var(--raised);box-shadow:0 8px 24px #0000008c;color:var(--fg-muted);font-size:11.5px;line-height:1.4;pointer-events:none}#hover-tip b{color:var(--fg);font-weight:600}#branch-pop code{font:12px var(--mono);overflow-wrap:anywhere;user-select:all}#branch-pop .ib{width:24px;height:24px;flex:none}#branch-pop svg.i{width:13px;height:13px}#branch-pop small{color:var(--amber);font-size:11px;white-space:nowrap}
+#branch #meta{display:flex;min-width:0;overflow:hidden}#branch #meta b{min-width:56px;overflow:hidden;text-overflow:ellipsis;font-weight:500;color:var(--fg-2)}#branch #meta .base{flex:none;margin-left:.35em}#send{gap:0}#send .gc-to{margin-left:.3em}#branch #meta.away b{color:var(--amber)}
 #gc-inline{display:flex;align-items:center;gap:6px;min-width:0;margin:0 auto 0 0!important;font-size:11.5px!important;color:var(--fg-muted)}
 #gc-inline p{margin:0!important;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #gc-inline p:empty{display:none}
@@ -1443,19 +1477,18 @@ tr.composer-row td{background:var(--bg)!important;padding:8px 12px 10px 46px;whi
 #toast{position:fixed;left:50%;bottom:calc(var(--barh) + 12px);transform:translateX(-50%);padding:6px 12px;border:1px solid var(--border-strong);border-radius:8px;background:var(--raised);color:var(--fg);font-size:12px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:99;max-width:calc(100vw - 24px)}
 #toast.show{opacity:1}
 @media(max-width:560px){
- #stats,#prstate .ghc{display:none}
+ #stats{display:none}
  #tabs .vseg{display:none}
  .file>header .lines,.file>header .path .dir{display:none}
  .viewed span{display:none}
  #codex .lbl{display:none}
+ #send .gc-to{display:none}
 }
-@media(max-width:440px){#meta,#top .branch-ico,#prstate .sep{display:none}}
+@media(max-width:440px){#branch .branch-ico,#branch .base{display:none}}
 @media(prefers-reduced-motion:reduce){.file .body{animation:none}.file>header .chev{transition:none}}
 </style></head>
 <body>
 <div id="top">
-  <svg class="i branch-ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="4.5" cy="3.5" r="1.5"/><circle cx="4.5" cy="12.5" r="1.5"/><circle cx="11.5" cy="5" r="1.5"/><path d="M4.5 5v6M11.5 6.5c0 3-4 2.5-7 4.5"/></svg>
-  <span id="meta"></span><span id="stats"></span>
   <span id="prstate"></span>
   <button class="btn small" id="openpr" hidden title="Approve this change and ask the agent to commit, push and open a draft PR. The agent writes the title and body for you to review here first. Shift-click for ready-for-review.">Approve &amp; open PR</button>
 </div>
@@ -1483,10 +1516,10 @@ tr.composer-row td{background:var(--bg)!important;padding:8px 12px 10px 46px;whi
   </aside>
 </div>
 <div id="bar">
-  <span id="barcount"></span>
+  <span id="branch"><svg class="i branch-ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="4.5" cy="3.5" r="1.5"/><circle cx="4.5" cy="12.5" r="1.5"/><circle cx="11.5" cy="5" r="1.5"/><path d="M4.5 5v6M11.5 6.5c0 3-4 2.5-7 4.5"/></svg><span id="meta"></span><span id="stats"></span></span>
   <div id="gc-inline"></div>
   <div id="sent" hidden></div>
-  <div class="opinion"><button class="btn" id="codex" aria-haspopup="menu" aria-expanded="false" title="Ask another coding agent to review this diff; its comments land here as notes"><svg class="spark" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5 9.3 6.7 13.5 8 9.3 9.3 8 13.5 6.7 9.3 2.5 8 6.7 6.7Z"/></svg><span class="lbl">Second opinion</span><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></button>
+  <div class="opinion"><button class="btn" id="codex" aria-haspopup="menu" aria-expanded="false" aria-label="Second opinion: ask another coding agent to review this diff"><svg class="spark" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5 9.3 6.7 13.5 8 9.3 9.3 8 13.5 6.7 9.3 2.5 8 6.7 6.7Z"/></svg><span class="lbl">Second opinion</span><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></button>
     <div id="opinion-menu" role="menu" hidden></div></div>
   <button class="btn primary" id="send" title="Save this round for the agent to retrieve; automatic delivery depends on your host">Send feedback</button>
 </div>
@@ -1602,9 +1635,18 @@ function untrackedHead(n,hidden){return `<div class="untracked-head"><b>${n} unt
 document.addEventListener('click',async e=>{if(!e.target.closest('#untracked-toggle'))return;
  try{untrackedHidden()?localStorage.removeItem(untrackedKey()):localStorage.setItem(untrackedKey(),'hide');}catch(err){}
  await render();renderNotes();});
+const branchPop=document.createElement('div');branchPop.id='branch-pop';branchPop.setAttribute('role','tooltip');branchPop.hidden=true;document.body.append(branchPop);
+let branchPopTimer=0;
+function showBranchPop(){if(!model)return;clearTimeout(branchPopTimer);const r=$('#branch').getBoundingClientRect();
+ branchPop.innerHTML=`<code>${esc(model.branch)}</code><button type="button" class="ib" id="branch-copy" title="Copy branch name" aria-label="Copy branch name"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 3.5v-.5c0-.8-.7-1.5-1.5-1.5H4c-.8 0-1.5.7-1.5 1.5v5c0 .8.7 1.5 1.5 1.5h.5"/></svg></button>${model.checked_out===false?'<small>not checked out here</small>':''}`;
+ branchPop.hidden=false;const w=branchPop.offsetWidth;branchPop.style.left=Math.max(6,Math.min(r.left,innerWidth-w-6))+'px';branchPop.style.top=(r.top-branchPop.offsetHeight-6>4?r.top-branchPop.offsetHeight-6:r.bottom+6)+'px';
+ $('#branch-copy').onclick=async()=>{try{await navigator.clipboard.writeText(model.branch);toast('Copied '+model.branch);}catch(e){toast('Could not copy the branch name');}};}
+function hideBranchPop(){clearTimeout(branchPopTimer);branchPopTimer=setTimeout(()=>{branchPop.hidden=true;},150);}
+$('#branch').addEventListener('mouseenter',showBranchPop);$('#branch').addEventListener('mouseleave',hideBranchPop);
+branchPop.addEventListener('mouseenter',()=>clearTimeout(branchPopTimer));branchPop.addEventListener('mouseleave',hideBranchPop);
 async function render(){
  parkComposer();const main=$('#main');
- $('#meta').textContent=model.checked_out===false?`${model.branch} · not checked out here`:`${model.branch} · vs ${model.base==='HEAD'?'HEAD (working tree)':model.base.slice(0,10)}`;
+ $('#meta').innerHTML=`<b>${esc(model.branch)}</b><span class="base">${esc(model.checked_out===false?' · not checked out here':` · vs ${model.base==='HEAD'?'HEAD (working tree)':model.base_name||model.base.slice(0,10)}`)}</span>`;
  $('#meta').classList.toggle('away',model.checked_out===false);
  $('#stats').innerHTML=`<span class="stat-add">+${model.additions}</span> <span class="stat-del">−${model.deletions}</span>`;
  $('#nfiles').textContent=model.files.length;
@@ -1872,11 +1914,10 @@ let submittingFeedback=false;
 let noteFilter='all';
 const FILTERS=[['all','All',a=>true],['open','Open',a=>a.status!=='addressed'],['done','Addressed',a=>a.status==='addressed'],['gh','GitHub',a=>!!a.gh_id]];
 function renderNotes(){
- const open=notes.filter(a=>a.status!=='addressed'),done=notes.length-open.length;
+ const open=notes.filter(a=>a.status!=='addressed');
  $('#cnt').textContent='Notes';
  $('#send').disabled=submittingFeedback||!open.length;
  $('#nopen').textContent=open.length?`${open.length} open`:'';$('#nopen').classList.toggle('amb',open.length>0);
- $('#barcount').innerHTML=open.length?`<b>${open.length}</b> open note${open.length===1?'':'s'}${done?` · ${done} addressed`:''}`:notes.length?'Every note is addressed':'No notes yet';
  for(const sec of document.querySelectorAll('section.file')){const n=open.filter(a=>a.file===sec.dataset.path).length,slot=sec.querySelector('.cntslot');
   if(slot)slot.innerHTML=n?`<span class="cnt" title="${n} open note${n===1?'':'s'}">${ICONS.note}${n}</span>`:'';}
  if(!FILTERS.some(([k])=>k===noteFilter))noteFilter='all';
@@ -1972,25 +2013,36 @@ async function selectPr(url){if(url===((prView&&prView.url)||null))return;
  try{const r=await fetch('./pr-select',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url})});const c=await r.json();if(!r.ok)throw Error(c.error||'failed');
   prView=c.view;await refresh(true);}
  catch(err){toast('Could not open that pull request: '+err.message.slice(0,120));}}
+function hostOf(url){try{const h=new URL(url).hostname.toLowerCase();return /(^|\.)github\.com$/.test(h)?'GitHub':h.includes('gitlab')?'GitLab':h;}catch(e){return 'GitHub';}}
+const hoverTip=document.createElement('div');hoverTip.id='hover-tip';hoverTip.setAttribute('role','tooltip');hoverTip.hidden=true;document.body.append(hoverTip);
+document.addEventListener('mouseover',e=>{const b=e.target.closest('[data-tip]');if(!b||b.contains(e.relatedTarget))return;
+ hoverTip.innerHTML=b.dataset.tip;hoverTip.hidden=false;const r=b.getBoundingClientRect(),w=hoverTip.offsetWidth;
+ const h=hoverTip.offsetHeight;hoverTip.style.left=Math.max(6,Math.min(r.right-w,innerWidth-w-6))+'px';hoverTip.style.top=(r.bottom+6+h<innerHeight?r.bottom+6:Math.max(4,r.top-h-6))+'px';});
+document.addEventListener('mouseout',e=>{const b=e.target.closest('[data-tip]');if(b&&!b.contains(e.relatedTarget))hoverTip.hidden=true;});
+document.addEventListener('click',e=>{if(e.target.closest('[data-tip]'))hoverTip.hidden=true;},true);
 function renderPr(req,branchPr,draft){const el=$('#prstate');if(!el)return;prState={req,pr:branchPr,draft};renderPrDraft();
  const pr=prView||branchPr,choices=prChoices();
  $('#openpr').hidden=!!(pr&&pr.url)||!!(req&&req.n);
  const gh=notes.filter(a=>a.gh_id),seen=ghSeen(),fresh=gh.filter(a=>!seen.has(a.gh_id));
  const key=JSON.stringify([req,pr,draft&&draft.rev,gh.length,fresh.length,choices.map(c=>c.url+':'+c.comments)]);if(el.dataset.key===key)return;el.dataset.key=key;
+ const place=html=>{el.innerHTML=html;};
  const pick=choices.length>1?`<button class="prpick" id="prpick" aria-haspopup="menu" aria-expanded="false" title="Switch to another of this terminal's pull requests" aria-label="Switch pull request"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></button>`:'';
  if(pr&&pr.url){const m=/github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)/.exec(pr.url)||[];
-  el.innerHTML=`<span class="sep"></span>${ICONS.pr}<a href="${esc(pr.url)}" target="_blank" rel="noopener" title="${esc(pr.title?'#'+m[2]+' '+pr.title:pr.url)}">${m[1]?esc(m[1])+'#'+m[2]:esc(pr.url.replace(/^https?:\/\/(www\.)?/,''))}</a>${pick}<span class="ghc">${gh.length?`${gh.length} GitHub comment${gh.length===1?'':'s'}`:'no GitHub comments'}</span>${fresh.length?`<button class="newc" id="newgh" title="Show the comments that came in from GitHub">${fresh.length} new</button>`:''}<button class="tlink" id="pull-reviews" title="GitHub comments come in on their own every two minutes; this checks now">Check now</button>`;
+  const label=pr.title?`<span class="prtitle">${esc(pr.title)}</span><span class="prnum">#${m[2]||''}</span>`:`<span class="prtitle">${m[1]?esc(m[1])+'#'+m[2]:esc(pr.url.replace(/^https?:\/\/(www\.)?/,''))}</span>`;
+  const host=hostOf(pr.url),said=`${gh.length} ${host} comment${gh.length===1?'':'s'}`;
+  const tip=`<b>${esc(host)} review comments</b><span>${gh.length} on this pull request${fresh.length?`, ${fresh.length} new`:''}</span><span>Click to sync from ${esc(host)} now. They also sync on their own every two minutes.</span>`;
+  place(`${ICONS.pr}<a class="prlink" href="${esc(pr.url)}" target="_blank" rel="noopener" title="${esc((m[1]?m[1]+'#'+m[2]:pr.url)+(pr.title?' · '+pr.title:''))}">${label}</a>${pick}<span class="sp"></span>${fresh.length?`<button class="newc" id="newgh" title="Show the comments that came in from GitHub">${fresh.length} new</button>`:''}<button class="sync" id="pull-reviews" data-tip="${esc(tip)}" aria-label="${said}. Sync review comments from ${esc(host)}">${ICONS.note}<span class="ghc" aria-label="${said}">${gh.length}</span><svg class="i rf" viewBox="0 0 16 16" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.6-3.7"/><path d="M13 2.5v3h-3"/></svg></button>`);
   $('#newgh')?.addEventListener('click',()=>{noteFilter='gh';setTab('notes');renderNotes();});
   $('#prpick')?.addEventListener('click',openPrMenu);
-  $('#pull-reviews').onclick=async e=>{const b=e.currentTarget;b.disabled=true;b.textContent='Checking…';
+  $('#pull-reviews').onclick=async e=>{const b=e.currentTarget;b.disabled=true;
    try{const r=await fetch('./pull-reviews',{method:'POST'});const c=await r.json();if(!r.ok)throw Error(c.error||'failed');
     const parts=[c.comments&&`${c.comments} comment${c.comments>1?'s':''}`,c.replies&&`${c.replies} repl${c.replies>1?'ies':'y'}`,c.reviews&&`${c.reviews} review${c.reviews>1?'s':''}`,c.conversation&&`${c.conversation} conversation comment${c.conversation>1?'s':''}`].filter(Boolean);
-    toast(parts.length?`Pulled ${parts.join(', ')} from GitHub`:'Nothing new on GitHub');el.dataset.key='';await refresh(true);}
-   catch(err){toast('Could not check GitHub: '+err.message.slice(0,120));b.disabled=false;b.textContent='Check now';}};return;}
- if(req&&req.n&&req.stage==='open'){el.innerHTML=`<span class="sep"></span><span class="pending">Description rev ${req.rev} approved · waiting for the agent to open the PR…</span>`;return;}
- if(req&&req.n&&draft){el.innerHTML=`<span class="sep"></span><button class="ready">PR description rev ${draft.rev} is ready to review</button>`;el.querySelector('.ready').onclick=()=>{setTab('changes');$('#prdraft').scrollIntoView({behavior:'smooth',block:'start'});};return;}
- if(req&&req.n){el.innerHTML=`<span class="sep"></span><span class="pending">Approved · waiting for the agent to draft the PR description…</span>`;return;}
- el.innerHTML='<span class="sep"></span><span class="pending">No pull request yet</span>';}
+    toast(parts.length?`Pulled ${parts.join(', ')} from ${hostOf(pr.url)}`:`Nothing new on ${hostOf(pr.url)}`);el.dataset.key='';await refresh(true);}
+   catch(err){toast(`Could not check ${hostOf(pr.url)}: `+err.message.slice(0,120));b.disabled=false;}};return;}
+ if(req&&req.n&&req.stage==='open'){place(`<span class="pending">Description rev ${req.rev} approved · waiting for the agent to open the PR…</span>`);return;}
+ if(req&&req.n&&draft){place(`<button class="ready">PR description rev ${draft.rev} is ready to review</button>`);el.querySelector('.ready').onclick=()=>{setTab('changes');$('#prdraft').scrollIntoView({behavior:'smooth',block:'start'});};return;}
+ if(req&&req.n){place(`<span class="pending">Approved · waiting for the agent to draft the PR description…</span>`);return;}
+ place('<span class="pending">No pull request yet</span>');}
 let reviewersRunning={},reviewerState={};
 const opinionMenu=$('#opinion-menu');
 function openOpinion(show){opinionMenu.hidden=!show;$('#codex').setAttribute('aria-expanded',String(show));if(show)opinionMenu.querySelector('button:not(:disabled)')?.focus();}
@@ -2018,16 +2070,17 @@ function renderReviewer(all){if(!all)return;reviewerState=all;renderOpinionMenu(
  b.classList.toggle('busy',running.length>0);
  b.innerHTML=running.length?`<span class="spin"></span>${esc(running.length>1?running.length+' agents reviewing':running[0]+' reviewing')}`:'<svg class="spark" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5 9.3 6.7 13.5 8 9.3 9.3 8 13.5 6.7 9.3 2.5 8 6.7 6.7Z"/></svg><span class="lbl">Second opinion</span><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg>';
  for(const [k,rv] of Object.entries(all)){if(reviewersRunning[k]&&!rv.running)toast(rv.error?`${rv.author} failed: ${rv.error.slice(0,80)}`:`${rv.author} left ${rv.added} note(s)`);reviewersRunning[k]=!!rv.running;}
- const last=Object.values(all).filter(rv=>rv.finished||rv.error).map(rv=>rv.error?`${rv.author}: last run failed: ${rv.error}`:`${rv.author}: last run ${rv.finished}, ${rv.added} note(s)`);
- b.title=last.length?last.join('\n'):'Ask another coding agent to review this diff; its comments land here as notes';}
+ const ready=Object.values(all).filter(rv=>rv.available).map(rv=>rv.author);
+ const runs=Object.values(all).filter(rv=>rv.running||rv.finished||rv.error).map(rv=>`<span>${esc(rv.author)}: ${rv.running?'reviewing now':rv.error?'last run failed':`${rv.added} note${rv.added===1?'':'s'} at ${esc((rv.finished||'').slice(11,16))}`}</span>`);
+ b.removeAttribute('title');
+ b.dataset.tip=`<b>Second opinion</b><span>Ask another coding agent to review this diff, read-only. Its line comments and suggested changes land here as notes.</span>`
+  +(ready.length?`<span>Available: ${esc(ready.join(', '))}</span>`:'<span>No coding agents are installed on this machine.</span>')+runs.join('');}
 
 /* ---------- state / hot reload ---------- */
 async function refresh(force){
  let d;try{d=await (await fetch('./state')).json();}catch(e){return;}
  prView=d.view||null;repoSlugs=d.repos||[];
  renderReviewer(d.reviewers);renderPr(d.pr_request,d.pr,d.pr_draft);
- // A second opinion reads the files on disk, which belong to the checked-out branch.
- $('#codex').disabled=!!prView;if(prView)$('#codex').title='A second opinion reads the checked-out work. Switch back to it first.';
  const changed=d.digest!==digest;const notesKey=JSON.stringify([d.annotations,d.round_replies,d.submission,d.pr_request,d.pr,d.pr_draft]);const notesChanged=notesKey!==lastNotesKey;lastNotesKey=notesKey;notes=d.annotations;force=force||notesChanged;
  if(changed||force){if(changed){const m=await (await fetch('./diff')).json();model=m;digest=d.digest;hlCache={};rawCache={};expandState={};await render();if(digest!==null&&changed&&model)toast('diff reloaded');}
   else if(model){model.submission=d.submission;model.round_replies=d.round_replies;decorateThreads();}
@@ -2054,6 +2107,7 @@ addEventListener('resize',()=>decoratePins());
 
 
 class Handler(BaseHTTPRequestHandler):
+    base_name: str | None = None
     repo: Path
     base: str
     untracked: bool
@@ -2091,6 +2145,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(404, b"// not vendored")
         elif path == "/diff":
             model = current_model()
+            model["base_name"] = (self.view or {}).get("base_name") if self.view else Handler.base_name
             model["submission"] = self.notes.submission()
             self._send(200, json.dumps(model).encode())
         elif path == "/file":
@@ -2182,10 +2237,7 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(keys, list) or not keys or any(k not in REVIEWERS for k in keys):
                 self._send(400, json.dumps({"error": f"reviewers must be a list of {sorted(REVIEWERS)}"}).encode())
                 return
-            if self.view:
-                self._send(409, json.dumps({"error": "A second opinion reads the checked-out work. Switch back to it first."}).encode())
-                return
-            started = {k: REVIEWERS[k].start(self.repo, self.base, self.untracked, self.notes) for k in keys}
+            started = {k: REVIEWERS[k].start(self.repo, self.base, self.untracked, self.notes, self.view) for k in keys}
             self._send(200, json.dumps({"started": started, "reviewers": {k: r.status() for k, r in REVIEWERS.items()}}).encode())
             return
         elif path == "/pull-reviews":

@@ -265,7 +265,7 @@ class ReviewAppTests(unittest.TestCase):
         self.git('commit', '-qam', 'Feature')
         tools = Path(self.temp.name) / 'bin'
         tools.mkdir()
-        (tools / 'gh').write_text('#!/bin/sh\necho \'{"url": "https://github.com/fixture/project/pull/7", "state": "OPEN", "baseRefName": "main"}\'\n')
+        (tools / 'gh').write_text('#!/bin/sh\necho \'{"url": "https://github.com/fixture/project/pull/7", "state": "OPEN", "baseRefName": "main", "title": "Add a feature"}\'\n')
         (tools / 'gh').chmod(0o755)
         sys.path.insert(0, str(BUNDLED / 'code-review'))
         try:
@@ -273,7 +273,7 @@ class ReviewAppTests(unittest.TestCase):
         finally:
             sys.path.remove(str(BUNDLED / 'code-review'))
         with patch.dict(os.environ, {'PATH': f'{tools}{os.pathsep}{os.environ["PATH"]}'}):
-            self.assertEqual(review_app.branch_pr(self.repo), {'url': 'https://github.com/fixture/project/pull/7', 'base': start})
+            self.assertEqual(review_app.branch_pr(self.repo), {'url': 'https://github.com/fixture/project/pull/7', 'base': start, 'title': 'Add a feature', 'base_name': 'main'})
             (tools / 'gh').write_text('#!/bin/sh\necho \'{"url": "https://github.com/fixture/project/pull/7", "state": "MERGED", "baseRefName": "main"}\'\n')
             self.assertIsNone(review_app.branch_pr(self.repo), 'a merged pull request is not followed')
 
@@ -289,6 +289,15 @@ else:
     sys.exit('fake gh: ' + ' '.join(args))
 '''
 
+FAKE_CODEX = '''import json, sys
+from pathlib import Path
+args = sys.argv[1:]
+tree = Path(args[args.index('-C') + 1])
+json.dump({'cwd': str(tree), **{name: (tree / name).read_text() for name in ('other.py', 'app.py')}}, open(REVIEWED, 'w'))
+review = {'summary': '', 'comments': [{'file': 'other.py', 'start': 1, 'end': 1, 'severity': 'nit', 'comment': 'read at the PR head', 'suggestion': None}]}
+Path(args[args.index('-o') + 1]).write_text(json.dumps(review))
+'''
+
 
 class PullRequestSwitchTests(unittest.TestCase):
     """Review can show another of the terminal's pull requests, read from Git without checking it out."""
@@ -300,6 +309,9 @@ class PullRequestSwitchTests(unittest.TestCase):
         tools.mkdir()
         (tools / 'gh').write_text(f'#!{sys.executable}\n' + FAKE_GH)
         (tools / 'gh').chmod(0o755)
+        self.reviewed = Path(self.temp.name) / 'reviewed.json'
+        (tools / 'codex').write_text(f'#!{sys.executable}\n' + FAKE_CODEX.replace('REVIEWED', repr(str(self.reviewed))))
+        (tools / 'codex').chmod(0o755)
         self.prs = Path(self.temp.name) / 'prs.json'
         self.environment = {k: v for k, v in os.environ.items() if not k.startswith('AGENT_DESK_')} | {
             'REVIEW_APP_HOME': str(Path(self.temp.name) / 'notes'), 'GIT_AUTHOR_NAME': 'Fixture', 'GIT_AUTHOR_EMAIL': 'fixture@example.com',
@@ -387,7 +399,19 @@ class PullRequestSwitchTests(unittest.TestCase):
         self.assertEqual(sorted(n['comment'] for n in snapshot['annotations']), ['Say hello properly', 'on PR 8'], 'Send carries only the notes on the PR shown')
         self.assertIn('pull request #8 (branch other), which is not checked out', sent['prompt'])
 
-        self.assertEqual(self.post(base, '/second-opinion', {'reviewers': ['codex']})[0], 409)
+        self.assertEqual(self.post(base, '/second-opinion', {'reviewers': ['codex']})[0], 200)
+        for _ in range(100):
+            state = get('/state')
+            if state['reviewers']['codex']['finished']:
+                break
+            time.sleep(.1)
+        self.assertEqual(state['reviewers']['codex']['added'], 1, state['reviewers']['codex']['error'])
+        reviewed = json.loads(self.reviewed.read_text())
+        self.assertNotEqual(reviewed['cwd'], str(self.repo), 'the reviewer reads the PR head, not the checked-out work')
+        self.assertEqual((reviewed['other.py'], reviewed['app.py']), ('hello\n', 'one\n'))
+        self.assertEqual([(n['comment'], n['pr']) for n in get('/state')['annotations'] if n.get('author') == 'Codex'], [('[nit] read at the PR head', self.url)])
+        self.assertEqual(self.git('worktree', 'list', '--porcelain').count('worktree '), 1, 'the temporary checkout is removed')
+        self.assertEqual(self.git('rev-parse', '--abbrev-ref', 'HEAD'), 'feature')
         code, refused = self.post(base, '/pr-select', {'url': 'https://github.com/someone/else/pull/1'})
         self.assertEqual((code, refused['error']), (502, 'that pull request is in another repository'))
         self.assertEqual(get('/state')['view']['number'], 8, 'a refused switch keeps the PR shown')
