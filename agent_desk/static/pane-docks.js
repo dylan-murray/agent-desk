@@ -190,7 +190,7 @@ function sendReviewPullRequests(frame,agent,url){
 }
 // Review's send button names the coding agent it goes to; a pane whose agent the desk can't tell names the session.
 const reviewTarget=agent=>{
-  const names={claude:'Claude',codex:'Codex',grok:'Grok',opencode:'OpenCode',pi:'Pi',cortex:'Cortex Code'};
+  const names={claude:'Claude',codex:'Codex',grok:'Grok',opencode:'OpenCode',pi:'Pi',cortex:'Cortex Code','cursor-agent':'Cursor'};
   // The launch choice says which agent a pane runs, whatever process is in front; an account names its CLI.
   const account=(window.AGENT_DESK_CONFIG?.accounts||[]).find(item=>item.id===agent.launch_profile);
   return names[account?.harness||agent.launch_profile||agent.harness||'']||sessionTitle(agent);

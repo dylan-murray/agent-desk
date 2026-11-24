@@ -86,6 +86,20 @@ class SkillHarnessTests(unittest.TestCase):
         seen = {s['name']: s['availability']['cortex'] for s in result['skills']}
         self.assertEqual(seen, {'shared': False, 'claude-only': True, 'cortex-only': True})
 
+    def test_cursor_reads_its_own_folder_and_the_shared_claude_codex_and_grok_ones(self):
+        (self.home / '.cursor').mkdir()
+        skill(self.home / '.agents' / 'skills' / 'shared')
+        skill(self.home / '.cursor' / 'skills' / 'editor-only')
+        self.assertNotIn('cursor-agent', [h['id'] for h in self.listing()['harnesses']])
+        (self.home / '.cursor' / 'cli-config.json').write_text('{}')
+        skill(self.home / '.cursor' / 'skills' / 'cursor-only')
+        skill(self.home / '.codex' / 'skills' / 'codex-only')
+        skill(self.home / '.pi' / 'agent' / 'skills' / 'pi-only')
+        result = self.listing()
+        self.assertEqual([h['id'] for h in result['harnesses']][-1], 'cursor-agent')
+        seen = {s['name']: s['availability']['cursor-agent'] for s in result['skills']}
+        self.assertEqual(seen, {'shared': True, 'editor-only': True, 'cursor-only': True, 'codex-only': True, 'pi-only': False})
+
     def test_grok_claude_compatibility_can_be_turned_off(self):
         skill(self.home / '.claude' / 'skills' / 'claude-only')
         (self.home / '.grok' / 'config.toml').write_text('[compat.claude]\nskills = false\n')

@@ -22,6 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CLAUDE_ID = '11111111-1111-4111-8111-111111111111'
 GROK_ID = '44444444-4444-7444-8444-444444444444'
 CORTEX_ID = '55555555-5555-4555-8555-555555555555'
+CURSOR_ID = '66666666-6666-4666-8666-666666666666'
 OPENCODE_ID = 'ses_0fixture0opencode0session'
 CODEX_ID = '22222222-2222-7222-8222-222222222222'
 SUBAGENT_ID = '33333333-3333-7333-8333-333333333333'
@@ -91,6 +92,15 @@ with open(os.path.join(folder, 'coco.log'), 'a') as f:
 print('ARGV ' + json.dumps(args), flush=True)
 sys.stdin.read()
 '''
+FAKE_CURSOR = '''import hashlib, json, os, sys
+args = sys.argv[1:]
+sid = args[args.index('--resume') + 1] if '--resume' in args else os.environ['FAKE_SESSION']
+folder = os.path.join(os.environ['CURSOR_CONFIG_DIR'], 'chats', hashlib.md5(os.getcwd().encode()).hexdigest(), sid)
+os.makedirs(folder, exist_ok=True)
+store = open(os.path.join(folder, 'store.db'), 'ab')
+print('ARGV ' + json.dumps(args), flush=True)
+sys.stdin.read()
+'''
 FAKE_OPENCODE = '''import json, os, sys, time
 args = sys.argv[1:]
 sid = args[args.index('--session') + 1] if '--session' in args else os.environ['FAKE_SESSION']
@@ -136,7 +146,7 @@ class RestoreTests(unittest.TestCase):
         self.env = patch.dict(os.environ, PATH=f'{self.bin}{os.pathsep}{os.environ["PATH"]}', SHELL='/bin/sh',
                               FAKE_SESSION=CLAUDE_ID, CLAUDE_CONFIG_DIR=str(self.root / 'claude-config'), FAKE_CODEX_HOME=str(self.root / 'codex-home'),
                               FAKE_SUBAGENT=SUBAGENT_ID, GROK_HOME=str(self.root / 'grok-home'),
-                              SNOWFLAKE_HOME=str(self.root / 'snowflake'), FAKE_OPENCODE_DATA=str(self.root / 'opencode-data'))
+                              SNOWFLAKE_HOME=str(self.root / 'snowflake'), FAKE_OPENCODE_DATA=str(self.root / 'opencode-data'), CURSOR_CONFIG_DIR=str(self.root / 'cursor'))
         self.env.start()
         self.store = SessionStore(self.root / 'terminal-sessions-4399.json')
         self.managers = []
@@ -432,14 +442,14 @@ class RestoreTests(unittest.TestCase):
         payload, resumed, detail = plan(item)
         self.assertEqual((payload['argv'], resumed), (['pi'], False))
         self.assertEqual(detail, 'Pi conversations are not recorded, so this is a new session')
-        for cli, label in (('opencode', 'OpenCode'), ('grok', 'Grok'), ('cortex', 'Cortex Code')):
+        for cli, label in (('opencode', 'OpenCode'), ('grok', 'Grok'), ('cortex', 'Cortex Code'), ('cursor-agent', 'Cursor')):
             payload, resumed, detail = plan(dict(item, name=label, argv=[cli], native_session=None))
             self.assertEqual((payload['argv'], resumed), ([cli], False))
             self.assertEqual(detail, f'no {label} conversation had started, so this is a new session')
 
-    def test_grok_opencode_and_cortex_resume_the_conversation_their_own_records_name(self):
+    def test_grok_opencode_cortex_and_cursor_resume_the_conversation_their_own_records_name(self):
         for cli, source, identity, flag in (('grok', FAKE_GROK, GROK_ID, '--resume'), ('opencode', FAKE_OPENCODE, OPENCODE_ID, '--session'),
-                                            ('cortex', FAKE_CORTEX, CORTEX_ID, '--resume')):
+                                            ('cortex', FAKE_CORTEX, CORTEX_ID, '--resume'), ('cursor-agent', FAKE_CURSOR, CURSOR_ID, '--resume')):
             with self.subTest(cli):
                 (self.bin / cli).write_text(f'#!{sys.executable}\n' + source)
                 (self.bin / cli).chmod(0o755)

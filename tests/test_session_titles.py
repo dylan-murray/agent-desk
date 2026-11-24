@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+import sqlite3
 import tempfile
 import unittest
 
@@ -8,6 +9,7 @@ from agent_desk.session_titles import ConversationTitles, clean, scan
 CLAUDE_ID = '11111111-2222-4333-8444-555555555555'
 CODEX_ID = '01a1a228-5f78-7ee1-84a3-971a8cdded2c'
 CORTEX_ID = '7e4b1e96-fe7d-4b39-a5cc-1c6a56749de4'
+CURSOR_ID = '3c9a0f12-6b4e-4d2a-9e81-52f7a0c4d6b3'
 
 
 class TerminalTitleTests(unittest.TestCase):
@@ -34,8 +36,8 @@ class ConversationTitleTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='desk-titles-')
         self.root = Path(self.temp.name)
-        self.claude, self.codex, self.cortex = self.root / 'claude', self.root / 'codex', self.root / 'cortex'
-        self.titles = ConversationTitles(claude=[self.claude], codex=[self.codex], cortex=[self.cortex])
+        self.claude, self.codex, self.cortex, self.cursor = (self.root / name for name in ('claude', 'codex', 'cortex', 'cursor'))
+        self.titles = ConversationTitles(claude=[self.claude], codex=[self.codex], cortex=[self.cortex], cursor=[self.cursor])
 
     def tearDown(self):
         self.temp.cleanup()
@@ -78,6 +80,29 @@ class ConversationTitleTests(unittest.TestCase):
         self.assertEqual(self.titles.title(CORTEX_ID), 'Counting rows across obligation tables')
         conversation.write_text('{"title": "half writ')
         self.assertIsNone(self.titles.title(CORTEX_ID))
+
+    def test_cursor_uses_its_chat_name_once_it_has_one_and_sees_renames_in_the_wal(self):
+        store = self.cursor / 'chats' / ('a' * 32) / CURSOR_ID / 'store.db'
+        store.parent.mkdir(parents=True)
+        db = sqlite3.connect(store)
+        db.execute('PRAGMA journal_mode=WAL')
+        db.execute('CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT)')
+
+        def name(value):
+            db.execute("INSERT OR REPLACE INTO meta VALUES ('0', ?)", (json.dumps({'agentId': CURSOR_ID, 'name': value}).encode().hex(),))
+            db.commit()
+        try:
+            name('New Agent')
+            self.assertIsNone(self.titles.title(CURSOR_ID))
+            name('Fix the flaky upload test')
+            self.assertEqual(self.titles.title(CURSOR_ID), 'Fix the flaky upload test')
+            name('Upload retries')
+            self.assertEqual(self.titles.title(CURSOR_ID), 'Upload retries')
+            db.execute("INSERT OR REPLACE INTO meta VALUES ('0', 'not hex')")
+            db.commit()
+            self.assertIsNone(self.titles.title(CURSOR_ID))
+        finally:
+            db.close()
 
     def test_unknown_or_malformed_ids_have_no_title(self):
         self.assertIsNone(self.titles.title('00000000-0000-4000-8000-000000000000'))

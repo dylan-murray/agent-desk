@@ -1,5 +1,5 @@
 const assert=require('node:assert/strict');global.self=global;
-const {Terminal}=require('../agent_desk/static/vendor/xterm.js');const {ready}=require('../scripts/worker_prompt.cjs');
+const {Terminal}=require('../agent_desk/static/vendor/xterm.js');const {ready,working}=require('../scripts/worker_prompt.cjs');
 (async()=>{
  for(const [harness,marker] of [['claude','❯'],['codex','›']]){
   const term=new Terminal({cols:80,rows:24,allowProposedApi:true});
@@ -46,5 +46,13 @@ const {Terminal}=require('../agent_desk/static/vendor/xterm.js');const {ready}=r
  await qw(editor(' ok','unsent draft'));assert.equal(ready(q,'pi',true),false);
  await qw(editor(' ⠋ Working...',''));assert.equal(ready(q,'pi',true),false,'Pi is working');
  await qw(editor(' ok','')+'\x1b[?2004l');assert.equal(ready(q,'pi',true),false);q.dispose();
+ const composer=(input,above='',hint=true)=>'\x1b[?2004h\x1b[?25l\x1b[2J\x1b[H'+above+'\r\n\r\n  \x1b[2m→ \x1b[0m'+(hint?'\x1b[7mA\x1b[27m\x1b[2mdd a follow-up\x1b[0m':input+'\x1b[7m \x1b[27m')+'\r\n\r\n  Auto · 6.2%\r\n  ~/project';
+ const u=new Terminal({cols:120,rows:24,allowProposedApi:true}),uw=s=>new Promise(r=>u.write(s,r));
+ await uw(composer(''));assert.equal(ready(u,'cursor-agent',true),true,'empty Cursor composer');assert.equal(working(u,'cursor-agent'),false);
+ await uw(composer('unsent draft',' READY',false));assert.equal(ready(u,'cursor-agent',true),false,'Cursor draft');
+ await uw(composer('Add a follow-up','',false));assert.equal(ready(u,'cursor-agent',true),false,'the hint\'s words typed as a draft');
+ await uw(composer('',' ⠘⠆ Working  21 tokens'));assert.equal(working(u,'cursor-agent'),true,'Cursor is working');
+ await uw(composer('')+'\x1b[5;100Hctrl+c to stop');assert.equal(working(u,'cursor-agent'),true,'Cursor shows how to stop a turn');
+ await uw('\x1b[2J\x1b[H Write to this file?\r\n  → Proceed (y)\r\n    Reject & propose changes (esc or n or p)');assert.equal(ready(u,'cursor-agent',true),false,'an approval question is not the composer');u.dispose();
  console.log('PASS: worker prompt guards reject drafts, approval choices, busy states, hidden cursors, and incomplete redraws');
 })().catch(error=>{console.error(error);process.exitCode=1;});

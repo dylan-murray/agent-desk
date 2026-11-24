@@ -5,7 +5,7 @@ const workspaces=new Map();
 const providerLabels={};
 function syncProviderLabels(){for(const key of Object.keys(providerLabels))delete providerLabels[key];Object.assign(providerLabels,accountLabels());}
 // Cortex Code runs as a worker only: it has no planning adapter to coordinate or read sources with.
-const plannerLabels=()=>Object.fromEntries(Object.entries(providerLabels).filter(([profile])=>profile!=='cortex'));
+const plannerLabels=()=>Object.fromEntries(Object.entries(providerLabels).filter(([profile])=>!['cortex','cursor-agent'].includes(profile)));
 syncProviderLabels();document.addEventListener('agent-desk-accounts',syncProviderLabels);
 let drafts={};try{drafts=JSON.parse(localStorage.getItem('agent-desk-coordinator-drafts')||'{}');}catch{}
 
