@@ -1437,8 +1437,8 @@ tr.composer-row td{background:var(--bg)!important;padding:8px 12px 10px 46px;whi
 #branch-pop{position:fixed;z-index:120;display:flex;align-items:center;gap:6px;max-width:calc(100vw - 12px);padding:5px 5px 5px 10px;border:1px solid var(--border-strong);border-radius:8px;background:var(--raised);box-shadow:0 8px 24px #0000008c;color:var(--fg);font-size:12px}
 #branch-pop[hidden],#hover-tip[hidden]{display:none}
 #hover-tip{position:fixed;z-index:120;display:grid;gap:3px;max-width:260px;padding:8px 10px;border:1px solid var(--border-strong);border-radius:8px;background:var(--raised);box-shadow:0 8px 24px #0000008c;color:var(--fg-muted);font-size:11.5px;line-height:1.4;pointer-events:none}#hover-tip b{color:var(--fg);font-weight:600}#branch-pop code{font:12px var(--mono);overflow-wrap:anywhere;user-select:all}#branch-pop .ib{width:24px;height:24px;flex:none}#branch-pop svg.i{width:13px;height:13px}#branch-pop small{color:var(--amber);font-size:11px;white-space:nowrap}
-#branch #meta{display:flex;min-width:0;overflow:hidden}#branch #meta b{min-width:56px;overflow:hidden;text-overflow:ellipsis;font-weight:500;color:var(--fg-2)}#branch #meta .base{flex:none;margin-left:.35em}#send{gap:0}#send .gc-to{margin-left:.3em}#branch #meta.away b{color:var(--amber)}
-#gc-inline{display:flex;align-items:center;gap:6px;min-width:0;margin:0 auto 0 0!important;font-size:11.5px!important;color:var(--fg-muted)}
+#branch #meta{display:flex;min-width:0;overflow:hidden}#branch #meta b{flex:0 1000000 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;font-weight:500;color:var(--fg-2)}#branch #meta .base{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;margin-left:.35em}#send{gap:0}#send .gc-to{margin-left:.3em}#branch #meta.away b{color:var(--amber)}
+#gc-inline{display:flex;flex:0 1000000 auto;align-items:center;gap:6px;min-width:0;margin:0 auto 0 0!important;font-size:11.5px!important;color:var(--fg-muted)}
 #gc-inline p{margin:0!important;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #gc-inline p:empty{display:none}
 #gc-inline textarea{position:fixed;left:10px;right:10px;bottom:calc(var(--barh) + 8px);width:auto!important;z-index:56;background:#0a0a0b;color:var(--fg-2);border:1px solid var(--border-strong);border-radius:8px;padding:8px}
@@ -1647,7 +1647,7 @@ branchPop.addEventListener('mouseenter',()=>clearTimeout(branchPopTimer));branch
 async function render(){
  parkComposer();const main=$('#main');
  $('#meta').innerHTML=`<b>${esc(model.branch)}</b><span class="base">${esc(model.checked_out===false?' · not checked out here':` · vs ${model.base==='HEAD'?'HEAD (working tree)':model.base_name||model.base.slice(0,10)}`)}</span>`;
- $('#meta').classList.toggle('away',model.checked_out===false);
+ $('#meta').classList.toggle('away',model.checked_out===false);{const b=$('#meta b');b.style.minWidth='';b.style.minWidth=Math.min(b.scrollWidth,48)+'px';}
  $('#stats').innerHTML=`<span class="stat-add">+${model.additions}</span> <span class="stat-del">−${model.deletions}</span>`;
  $('#nfiles').textContent=model.files.length;
  for(const b of document.querySelectorAll('#viewseg button'))b.setAttribute('aria-pressed',String(b.dataset.view===view));
