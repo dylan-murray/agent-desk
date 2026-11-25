@@ -1986,16 +1986,18 @@ function markGhSeen(){if(!model)return;const seen=ghSeen();let changed=false;for
  if(!changed)return;try{localStorage.setItem('ra-gh-seen:'+model.repo,JSON.stringify([...seen]));}catch(e){}renderPr(prState.req,prState.pr,prState.draft);}
 // The terminal's pull requests come from the desk page that shows this review in a pane; the desk already
 // watches them for its PR chip. Another one than the checked-out branch's is read from Git, not checked out.
-let deskPrs=[],prView=null,repoSlugs=[];
+let deskPrs=[],prView=null,repoSlugs=[],deskHidden=[];
 const slugOf=url=>((/github\.com\/([^/]+\/[^/]+)\/pull\//.exec(url||'')||[])[1]||'').toLowerCase();
 addEventListener('message',e=>{
  if(e.source!==parent||parent===window||e.data?.agentDesk!=='pull-requests'||!Array.isArray(e.data.prs))return;
  deskPrs=e.data.prs.filter(p=>p&&typeof p.url==='string'&&/^https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+$/.test(p.url)).slice(0,20)
   .map(p=>({url:p.url,number:+p.url.split('/').pop(),title:String(p.title||'').slice(0,200),branch:String(p.branch||'').slice(0,200),comments:Number.isInteger(p.comments)?p.comments:0}));
+ deskHidden=(Array.isArray(e.data.hidden)?e.data.hidden:[]).filter(u=>typeof u==='string').slice(0,200);
+ if(prView&&deskHidden.includes(prView.url))selectPr(null);
  renderPr(prState.req,prState.pr,prState.draft);});
 function prChoices(){const home=prState.pr&&prState.pr.url,list=deskPrs.filter(p=>repoSlugs.includes(slugOf(p.url)));
  if(home&&list.length&&!list.some(p=>p.url===home))list.unshift({url:home,number:+home.split('/').pop(),title:'',branch:'',comments:0});
- if(prView&&!list.some(p=>p.url===prView.url))list.push({...prView,comments:0});return list;}
+ if(prView&&!list.some(p=>p.url===prView.url)&&!deskHidden.includes(prView.url))list.push({...prView,comments:0});return list;}
 const prMenu=$('#pr-menu');
 function closePrMenu(){prMenu.hidden=true;$('#prpick')?.setAttribute('aria-expanded','false');}
 function openPrMenu(e){e.stopPropagation();if(!prMenu.hidden)return closePrMenu();

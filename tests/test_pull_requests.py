@@ -332,6 +332,7 @@ class PrintedLinkTests(GhFixture):
         self.prs.forget('term-1', PR_URL, self.repo)
         self.assertIsNone(self.prs.status(self.repo, 'term-1'))
         self.assertIsNotNone(self.prs.status(self.repo, 'term-2'), 'other terminals in the folder still show it')
+        self.assertEqual((self.prs.hidden_urls('term-1'), self.prs.hidden_urls('term-2')), ([PR_URL], []), 'the review in term-1 stops following it too')
         self.answer(pull_request(number=44, url='https://github.com/example-org/example-repo/pull/44'))
         self.poll()
         self.assertEqual(self.prs.status(self.repo, 'term-1')['number'], 44)

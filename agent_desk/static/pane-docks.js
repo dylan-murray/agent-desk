@@ -183,10 +183,11 @@ function showDock(view,agent,dock,entries){
 // goes only to the review's own origin, again whenever its page loads, and the review reads each one from Git.
 function sendReviewPullRequests(frame,agent,url){
   const pr=agent.pull_request,list=pr?[pr,...(pr.others||[])].filter(p=>p.state==='open'||p.state==='draft').map(p=>({url:p.url,title:p.title||'',branch:p.branch||'',comments:p.comments||0})):[];
+  const message={agentDesk:'pull-requests',prs:list,hidden:agent.pull_requests_hidden||[]};
   try{const at=new URL(url);frame.reviewOrigin=at.protocol+'//'+at.host;}catch{return;}
-  if(!frame.reviewPrs)frame.addEventListener('load',()=>frame.contentWindow?.postMessage({agentDesk:'pull-requests',prs:frame.reviewPrs},frame.reviewOrigin));
-  if(JSON.stringify(list)===JSON.stringify(frame.reviewPrs))return;
-  frame.reviewPrs=list;frame.contentWindow?.postMessage({agentDesk:'pull-requests',prs:list},frame.reviewOrigin);
+  if(!frame.reviewPrs)frame.addEventListener('load',()=>frame.contentWindow?.postMessage(frame.reviewPrs,frame.reviewOrigin));
+  if(JSON.stringify(message)===JSON.stringify(frame.reviewPrs))return;
+  frame.reviewPrs=message;frame.contentWindow?.postMessage(message,frame.reviewOrigin);
 }
 // Review's send button names the coding agent it goes to; a pane whose agent the desk can't tell names the session.
 const reviewTarget=agent=>{

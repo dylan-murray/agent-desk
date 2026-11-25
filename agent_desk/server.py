@@ -654,6 +654,8 @@ class Handler(SimpleHTTPRequestHandler):
                 for agent in managed:
                     agent.update(folder_context(agent['cwd']))
                     agent['pull_request'] = PULL_REQUESTS.status(agent['repo'], agent['id'])
+                    if hidden_prs := PULL_REQUESTS.hidden_urls(agent['id']):
+                        agent['pull_requests_hidden'] = hidden_prs
                     if agent['id'] in PROTECTED_PANES:
                         agent['protected'] = True
                 known_pids = {a.get('pid') for a in reported} | TERMINALS.child_pids()
