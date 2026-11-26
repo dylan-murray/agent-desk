@@ -14,6 +14,19 @@
 .pane-branch[hidden]{display:none}.pane-branch svg{flex-shrink:0;width:11px;height:11px;fill:none;stroke:var(--lavender);stroke-width:1.3;stroke-linecap:round;stroke-linejoin:round}.pane-branch span{overflow:hidden;text-overflow:ellipsis}
 .pane-usage{display:flex;align-items:stretch;flex-shrink:0;margin-left:auto;font-variant-numeric:tabular-nums;white-space:nowrap}
 .pane-usage:empty{display:none}
+/* Parts switched off in Settings → Terminal panes → Bottom bar, or from the bar's right-click menu. */
+:root[data-pane-bar-hide~=folder] .terminal-pane>.pane-status>:is(.pane-remote,.pane-path),:root[data-pane-bar-hide~=branch] .terminal-pane>.pane-status>.pane-branch,
+:root[data-pane-bar-hide~=time] .pane-usage .usage-time,:root[data-pane-bar-hide~=cpu] .pane-usage .usage-cpu,:root[data-pane-bar-hide~=memory] .pane-usage .usage-group,
+:root[data-pane-bar-hide~=all] .terminal-pane>.pane-status{display:none}
+#pane-bar-menu{position:fixed;z-index:80;display:flex;flex-direction:column;gap:2px;min-width:190px;padding:5px;border:1px solid #36363b;border-radius:9px;background:#1b1b1e;box-shadow:0 12px 30px #0006}
+#pane-bar-menu[hidden]{display:none}
+.pane-bar-menu-title{margin:0;padding:5px 10px 4px;color:var(--ink-muted);font-size:10.5px}
+#pane-bar-menu hr{width:100%;height:1px;margin:3px 0;border:0;background:#ffffff12}
+#pane-bar-menu button{display:flex;align-items:center;gap:8px;min-height:28px;margin:0;padding:5px 10px;border:0;border-radius:5px;background:none;box-shadow:none;color:var(--ink-2);font-size:11px;text-align:left;cursor:pointer}
+#pane-bar-menu button:hover,#pane-bar-menu button:focus-visible{background:#ffffff0d;color:var(--ink-1);outline:none}
+#pane-bar-menu [data-settings]{padding-left:30px}
+.pane-bar-check{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;visibility:hidden}
+#pane-bar-menu [aria-checked=true] .pane-bar-check{visibility:visible}
 .usage-time,.usage-cpu,.usage-group{display:flex;align-items:center;gap:6px;padding:0 12px;border-left:1px solid #ffffff0b}
 .usage-span{color:var(--ink-1)}.usage-time[data-state="idle"] .usage-span{color:var(--ink-2)}
 .usage-time[data-state="working"] .usage-label::before{content:"";display:inline-block;width:5px;height:5px;margin:0 6px 1px 0;border-radius:50%;background:#7fc6a8;box-shadow:0 0 0 0 #7fc6a866;animation:usage-pulse 1.8s ease-out infinite}

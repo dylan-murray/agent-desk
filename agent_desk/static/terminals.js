@@ -492,7 +492,7 @@ function updatePane(view,a){
   const remote=view.node.querySelector('.pane-remote');
   remote.hidden=!a.remote_node;remote.textContent=a.remote_node?'Remote · '+a.remote_name+(a.remote_connected===false?' · disconnected':'')+' /':'';
   view.node.querySelector('.pane-path').innerHTML='<bdi>'+escapeHTML(shortPath(a.cwd||'Folder unavailable'))+'</bdi>';
-  view.node.querySelector('.pane-directory').title=a.cwd||'';
+  view.node.querySelector('.pane-directory').title=(a.cwd?a.cwd+'\n':'')+'Right-click to choose what this bar shows';
   if(a.terminal_id&&!a.remote_node)showPaneBranch(view,a.id);
   const state=a.terminal_id&&a.exit_code!==null?'Exited'+(a.exit_code?' · '+a.exit_code:''):['needs_input','error'].includes(a.status)?labels[a.status]:'';
   view.node.querySelector('.pane-state').textContent=state;
