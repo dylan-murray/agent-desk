@@ -14,19 +14,86 @@ async function refreshPlugins(){
 const pluginEntries=()=>[...dockPlugins].sort((a,b)=>a.order-b.order||a.tab.localeCompare(b.tab)).map(plugin=>({id:'plugin:'+plugin.id,title:plugin.tab,plugin}));
 
 const pluginCalls={
-  'pane.info':{run:bridge=>{const agent=everyAgent().find(a=>a.id===bridge.pane);return {title:agent?sessionTitle(agent):'',folder:(agent?.cwd||'').split('/').pop(),project:agent?.project||''};}},
-  'files.list':{permission:'files.read',run:bridge=>terminalRequest('/api/files/list',{id:bridge.pane}).then(list=>({files:list.files,truncated:!!list.truncated}))},
-  'files.changes':{permission:'files.read',run:bridge=>terminalRequest('/api/files/changes',{id:bridge.pane}).then(result=>({changes:result.changes,lines:result.lines||{},git:result.git}))},
-  'files.read':{permission:'files.read',run:(bridge,params)=>terminalRequest('/api/files/read',{id:bridge.pane,path:pluginPath(params.path)}).then(file=>({path:file.path,text:file.text,version:file.version}))},
-  'editor.open':{permission:'editor.open',run:(bridge,params)=>{window.paneEditor.open(bridge.pane,pluginPath(params.path));return {opened:true};}},
+  'pane.info':{run:bridge=>{
+    const agent=everyAgent().find(a=>a.id===bridge.pane),info={title:agent?sessionTitle(agent):'',folder:(agent?.cwd||'').split('/').pop(),project:agent?.project||''};
+    // Full paths name your home folder, so only a plugin that may browse beyond the pane's folder sees them.
+    if(agent&&bridge.plugin.permissions.includes('files.browse'))Object.assign(info,{path:agent.cwd,workingIn:paneFolders.get(agent.id)||agent.cwd,agent:runningAgent(agent)});
+    return info;
+  }},
+  'files.list':{permission:'files.read',run:(bridge,params)=>terminalRequest('/api/files/list',{id:bridge.pane,...browsed(bridge,params.folder)}).then(list=>({files:list.files,truncated:!!list.truncated,branch:list.branch||null,
+    ...(bridge.plugin.permissions.includes('files.browse')?{root:list.root,home:list.home,repo:list.repo||null}:{})}))},
+  'files.changes':{permission:'files.read',run:(bridge,params)=>terminalRequest('/api/files/changes',{id:bridge.pane,...browsed(bridge,params.folder)}).then(result=>({changes:result.changes,lines:result.lines||{},git:result.git}))},
+  'files.read':{permission:'files.read',run:(bridge,params)=>terminalRequest('/api/files/read',{id:bridge.pane,path:pluginPath(bridge,params.path)}).then(file=>({path:file.path,text:file.text,version:file.version}))},
+  'files.copyPath':{permission:'files.read',run:async(bridge,params)=>{await navigator.clipboard.writeText(fullPath(bridge,params.path));return {copied:true};}},
+  'editor.open':{permission:'editor.open',run:(bridge,params)=>{window.paneEditor.open(bridge.pane,pluginPath(bridge,params.path));return {opened:true};}},
   'editor.current':{permission:'editor.open',run:bridge=>({path:window.paneEditor.current(bridge.pane)})},
+  'agent.mention':{permission:'agent.input',run:(bridge,params)=>mentionInPane(bridge,params.path)},
+  'agent.move':{permission:'agent.input',run:(bridge,params)=>moveAgent(bridge,params.folder)},
   'buttons.set':{run:(bridge,params)=>setPluginButton(bridge,params)},
   'tab.set':{run:(bridge,params)=>setPluginTab(bridge,params)}
 };
-function pluginPath(path){
-  // The server keeps every path inside the pane's folder; this only refuses what is not a path at all.
-  if(typeof path!=='string'||!path||path.length>1000||path.includes('\0'))throw Error('Name a file in the pane\'s folder');
+function pluginPath(bridge,path){
+  // The server keeps a relative path inside the pane's folder and a full one inside your home folder; this only refuses
+  // what is not a path at all, and a full path from a plugin that may not leave the pane's folder.
+  if(typeof path!=='string'||!path||path.length>4096||/[\u0000-\u001f]/.test(path))throw Error('Name a file in the pane\'s folder');
+  if(path.startsWith('/')&&!bridge.plugin.permissions.includes('files.browse'))throw Error(`${bridge.plugin.title} has no permission for files outside the pane's folder (needs files.browse)`);
   return path;
+}
+function browsed(bridge,folder){
+  if(folder==null)return {};
+  if(!bridge.plugin.permissions.includes('files.browse'))throw Error(`${bridge.plugin.title} has no permission for other folders (needs files.browse)`);
+  if(typeof folder!=='string'||!folder.startsWith('/')||folder.length>4096||/[\u0000-\u001f]/.test(folder))throw Error('Name a folder by its full path');
+  return {folder};
+}
+function fullPath(bridge,path){
+  const agent=everyAgent().find(a=>a.id===bridge.pane);if(!agent)throw Error('This pane has closed');
+  path=pluginPath(bridge,path);
+  return path.startsWith('/')?path.replace(/\/+$/,'')||'/':agent.cwd.replace(/\/+$/,'')+'/'+path;
+}
+
+// Where a pane's agent was last moved to with Move here; the pane's own folder is where it started.
+const paneFolders=new Map();
+const runningAgent=agent=>!agent.agent_exited&&agent.exit_code==null?paneAgentName(agent):'';
+const shellWord=text=>/^[\w@%+=:,./-]+$/.test(text)?text:"'"+text.replace(/'/g,"'\\''")+"'";
+function typeInPane(id,text,{enter=false}={}){
+  const view=paneViews.get(id);if(!view?.term||view.exited)throw Error('This pane\'s terminal is not running');
+  // A paste, so an agent's input box takes it as text and not as keys; nothing is sent unless asked to.
+  view.term.paste(text);if(enter)view.term.input('\r');
+  // After a dialog closes it hands focus back to what opened it; the terminal takes it after that.
+  view.term.focus();setTimeout(()=>view.term.focus());
+}
+// Add to agent: a coding agent gets an @mention it reads on send; a shell gets the path as a word.
+function mentionInPane(bridge,path){
+  const agent=everyAgent().find(a=>a.id===bridge.pane),full=fullPath(bridge,path),name=runningAgent(agent);
+  // An agent reads a mention from the folder it started in; a shell from wherever it was moved to.
+  const base=(name?agent.cwd:paneFolders.get(agent.id)||agent.cwd).replace(/\/+$/,'')+'/';
+  const shown=full.startsWith(base)?full.slice(base.length):full;
+  typeInPane(agent.id,name?'@'+shown+' ':shellWord(shown)+' ');
+  return {typed:true};
+}
+function moveAgent(bridge,folder){
+  const agent=everyAgent().find(a=>a.id===bridge.pane);if(!agent)throw Error('This pane has closed');
+  folder=browsed(bridge,folder).folder.replace(/\/+$/,'')||'/';
+  const dialog=$('#move-agent-dialog'),name=runningAgent(agent),from=paneFolders.get(agent.id)||agent.cwd,short=path=>{const home=window.AGENT_DESK_CONFIG?.home;return home&&(path===home||path.startsWith(home+'/'))?'~'+path.slice(home.length):path;};
+  const choices=name?[['tell',`Tell ${name} to work there`,`Puts a message in ${name}'s input for you to send. Same conversation.`],['new',`Start a new ${name} there`,`Opens the launcher with this folder. This ${name} keeps running.`]]
+    :[['cd','Change this terminal\'s folder','Runs cd in the terminal.'],['new','Start an agent there','Opens the launcher with this folder.']];
+  dialog.querySelector('h2').textContent=`Move ${name||'this terminal'} to ${folder.split('/').pop()||folder}?`;
+  dialog.querySelector('.move-agent-path').textContent=short(folder);
+  dialog.querySelector('.move-agent-why').textContent=name?`${name} can't change folders in the middle of a conversation. It works in ${short(from)}.`:`It's in ${short(from)}.`;
+  dialog.querySelector('.move-agent-choices').innerHTML=choices.map(([id,title,detail])=>`<button type="button" data-choice="${id}"><strong>${escapeHTML(title)}</strong><small>${escapeHTML(detail)}</small></button>`).join('');
+  return new Promise(resolve=>{
+    let choice=null;
+    dialog.querySelectorAll('[data-choice]').forEach(button=>button.onclick=()=>{choice=button.dataset.choice;dialog.close();});
+    dialog.addEventListener('close',()=>{
+      try{
+        if(choice==='cd'){typeInPane(agent.id,'\x15cd '+shellWord(folder),{enter:true});paneFolders.set(agent.id,folder);}
+        if(choice==='tell'){typeInPane(agent.id,`From here on, work in ${folder}.`);paneFolders.set(agent.id,folder);}
+        if(choice==='new'){const key=[agent.launch_profile,agent.harness].find(k=>k&&launchChoices[k]);openTerminalLauncher(folder,key||null);}
+        resolve({choice});
+      }catch(error){toast(error.message);resolve({choice:null});}
+    },{once:true});
+    dialog.showModal();dialog.querySelector('[data-choice]').focus();
+  });
 }
 
 function connectPlugin(frame,plugin,pane){

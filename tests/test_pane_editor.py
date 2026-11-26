@@ -69,6 +69,40 @@ class PaneFilesTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             pane_files.read(self.root, 'blob.bin')
 
+    def test_full_paths_reach_your_home_folder_and_nothing_beyond(self):
+        home = self.root / 'home'
+        (home / 'notes').mkdir(parents=True)
+        (home / 'notes' / 'plan.md').write_text('plan')
+        pane = home / 'code' / 'app'
+        (pane / 'src').mkdir(parents=True)
+        (pane / 'src' / 'a.py').write_text('A = 1\n')
+        with patch.dict(os.environ, {'HOME': str(home)}):
+            real = Path(os.path.realpath(home))
+            listed = pane_files.listing(pane, str(home / 'notes'))
+            self.assertEqual((listed['root'], listed['home'], listed['files'], listed['repo']), (str(real / 'notes'), str(real), ['plan.md'], None))
+            self.assertEqual(pane_files.listing(pane, str(home))['files'], ['code/app/src/a.py', 'notes/plan.md'])
+            opened = pane_files.read(pane, str(home / 'notes' / 'plan.md'))
+            self.assertEqual((opened['path'], opened['text']), (str(real / 'notes' / 'plan.md'), 'plan'))
+            self.assertEqual(pane_files.read(pane, str(pane / 'src' / 'a.py'))['path'], 'src/a.py')
+            for folder in ('/etc', str(self.root), 'notes'):
+                with self.assertRaises((PermissionError, ValueError)):
+                    pane_files.listing(pane, folder)
+            with self.assertRaises(PermissionError):
+                pane_files.read(pane, '/etc/hosts')
+            with self.assertRaises(PermissionError):
+                pane_files.read(pane, '../../notes/plan.md')
+
+    def test_listing_names_the_repository_and_branch(self):
+        subprocess.run(['git', 'init', '-q', '-b', 'trunk', str(self.root)], check=True)
+        listed = pane_files.listing(self.root / 'src')
+        self.assertEqual((listed['files'], listed['branch'], listed['repo']), (['app.py'], 'trunk', os.path.realpath(self.root)))
+
+    def test_branch_names_the_pane_folders_branch_and_nothing_outside_git(self):
+        self.assertEqual(pane_files.branch(self.root), {'branch': None})
+        subprocess.run(['git', 'init', '-q', '-b', 'trunk', str(self.root)], check=True)
+        self.assertEqual(pane_files.branch(self.root / 'src'), {'branch': 'trunk'})
+        self.assertEqual(pane_files.branch(self.root / 'gone'), {'branch': None})
+
 
 class PaneEditsTests(unittest.TestCase):
     def test_an_edit_needs_a_listening_page(self):

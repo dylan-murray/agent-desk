@@ -1,7 +1,7 @@
 {
   "name": "Files",
-  "description": "Browse the pane's folder, see what changed, and open files in the editor.",
+  "description": "Browse the pane's folder or any other, see what changed, open files in the editor, and add files to the agent.",
   "icon": "folder",
   "order": 10,
-  "permissions": ["files.read", "editor.open"]
+  "permissions": ["files.read", "files.browse", "editor.open", "agent.input"]
 }

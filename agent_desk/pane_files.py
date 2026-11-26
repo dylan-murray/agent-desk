@@ -1,4 +1,5 @@
-"""Files a pane's editor can open: text files inside the folder the pane was started in.
+"""Files a pane's editor can open: text files inside the folder the pane was started in, or, named by their
+full path, anywhere in your home folder.
 
 Every save names the version it was edited from, so a change made on disk in the meantime
 (by the agent in the pane, say) is reported as a conflict instead of being overwritten.
@@ -6,6 +7,7 @@ Every save names the version it was edited from, so a change made on disk in the
 import hashlib
 import os
 import subprocess
+import time
 from pathlib import Path
 
 MAX_BYTES = 2_000_000
@@ -24,38 +26,83 @@ def _root(cwd):
     return root
 
 
+def _home():
+    return Path(os.path.realpath(Path.home()))
+
+
+def _within(path, folder):
+    return path == folder or folder in path.parents
+
+
 def resolve(cwd, relative):
+    """The file a path names, and how to show it: from the pane's folder when it is inside, else in full.
+
+    A relative path stays inside the pane's folder. A full path may also name a file anywhere in your home folder."""
     if not isinstance(relative, str) or not relative.strip() or '\x00' in relative:
         raise ValueError('Name a file')
     root = _root(cwd)
-    target = os.path.realpath(os.path.join(root, relative))
-    if not target.startswith(os.path.join(root, '')):
-        raise PermissionError('Only files inside the pane\'s folder can be opened here')
-    return root, Path(target)
+    target = Path(os.path.realpath(os.path.join(root, relative)))
+    if root in target.parents:
+        return target, os.path.relpath(target, root)
+    if os.path.isabs(relative) and _home() in target.parents:
+        return target, str(target)
+    raise PermissionError('Only files inside the pane\'s folder or your home folder can be opened here' if os.path.isabs(relative)
+                          else 'Only files inside the pane\'s folder can be opened here')
 
 
-def listing(cwd):
-    root = _root(cwd)
+def folder_root(cwd, folder=None):
+    """The folder a listing starts from: the pane's own, one inside it, or any folder in your home folder."""
+    pane = _root(cwd)
+    if folder is None:
+        return pane
+    if not isinstance(folder, str) or not os.path.isabs(folder) or '\x00' in folder:
+        raise ValueError('Name a folder by its full path')
+    root = Path(os.path.realpath(folder))
+    if not (_within(root, pane) or _within(root, _home())):
+        raise PermissionError('Only folders in your home folder or the pane\'s folder can be browsed')
+    if not root.is_dir():
+        raise FileNotFoundError(f'{folder} is not a folder')
+    return root
+
+
+def _git(root, *args):
+    return subprocess.run(['git', '-C', str(root), *args], capture_output=True, timeout=10, check=True).stdout
+
+
+def branch(cwd):
+    """The branch checked out in the pane's folder, or None outside Git or on a detached HEAD."""
     try:
-        result = subprocess.run(['git', '-C', str(root), 'ls-files', '--cached', '--others', '--exclude-standard', '-z'],
-                                capture_output=True, timeout=10, check=True)
-        files = [name for name in result.stdout.decode(errors='replace').split('\x00') if name]
+        return dict(branch=_git(_root(cwd), 'branch', '--show-current').decode(errors='replace').strip() or None)
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return dict(branch=None)
+
+
+def listing(cwd, folder=None):
+    root = folder_root(cwd, folder)
+    repo = branch = None
+    try:
+        repo = _git(root, 'rev-parse', '--show-toplevel').decode(errors='replace').strip()
+        files = [name for name in _git(root, 'ls-files', '--cached', '--others', '--exclude-standard', '-z').decode(errors='replace').split('\x00') if name]
         files = [name for name in dict.fromkeys(files) if (root / name).is_file()]
+        branch = _git(root, 'branch', '--show-current').decode(errors='replace').strip() or None
     except (OSError, subprocess.SubprocessError):
         files = []
-        for folder, folders, names in os.walk(root):
+        # A folder outside Git, such as one that holds several projects, could be huge; stop after a second and say so.
+        deadline = time.monotonic() + 1
+        for parent, folders, names in os.walk(root):
             folders[:] = sorted(name for name in folders if name not in SKIPPED and not name.startswith('.'))
             for name in sorted(names):
-                files.append(os.path.relpath(os.path.join(folder, name), root))
-                if len(files) >= MAX_LISTED:
-                    break
-            if len(files) >= MAX_LISTED:
+                files.append(os.path.relpath(os.path.join(parent, name), root))
+            if len(files) > MAX_LISTED or time.monotonic() > deadline:
+                files.append(None)
                 break
-    return dict(root=str(root), files=files[:MAX_LISTED], truncated=len(files) > MAX_LISTED)
+    truncated = None in files or len(files) > MAX_LISTED
+    files = [name for name in files if name][:MAX_LISTED]
+    return dict(root=str(root), home=str(_home()), files=files, truncated=truncated, repo=repo, branch=branch)
 
 
 def read(cwd, relative):
-    root, target = resolve(cwd, relative)
+    target, shown = resolve(cwd, relative)
     if not target.is_file():
         raise FileNotFoundError(f'{relative} does not exist')
     if target.stat().st_size > MAX_BYTES:
@@ -67,13 +114,13 @@ def read(cwd, relative):
         text = data.decode('utf-8')
     except UnicodeDecodeError:
         raise ValueError(f'{relative} is not UTF-8 text') from None
-    return dict(path=os.path.relpath(target, root), absolute=str(target), text=text, version=version_of(data))
+    return dict(path=shown, absolute=str(target), text=text, version=version_of(data))
 
 
 def write(cwd, relative, text, version):
     if not isinstance(text, str) or len(text.encode()) > MAX_BYTES:
         raise ValueError(f'Files must be text of at most {MAX_BYTES // 1_000_000} MB')
-    root, target = resolve(cwd, relative)
+    target, shown = resolve(cwd, relative)
     if version is None:
         if target.exists():
             raise FileExistsError(f'{relative} already exists')
@@ -85,15 +132,15 @@ def write(cwd, relative, text, version):
                 theirs = current.decode('utf-8')
             except UnicodeDecodeError:
                 theirs = None
-            return dict(conflict=True, path=os.path.relpath(target, root), text=theirs, version=version_of(current))
+            return dict(conflict=True, path=shown, text=theirs, version=version_of(current))
     data = text.encode()
     target.write_bytes(data)
-    return dict(path=os.path.relpath(target, root), absolute=str(target), version=version_of(data))
+    return dict(path=shown, absolute=str(target), version=version_of(data))
 
 
-def changes(cwd):
-    """How each changed file differs from the last commit, by its path from the pane's folder."""
-    root = _root(cwd)
+def changes(cwd, folder=None):
+    """How each changed file differs from the last commit, by its path from the folder listed."""
+    root = folder_root(cwd, folder)
     try:
         prefix = subprocess.run(['git', '-C', str(root), 'rev-parse', '--show-prefix'], capture_output=True, text=True, timeout=10, check=True).stdout.strip()
         result = subprocess.run(['git', '-C', str(root), 'status', '--porcelain=v1', '-z', '--untracked-files=all'], capture_output=True, timeout=10, check=True)

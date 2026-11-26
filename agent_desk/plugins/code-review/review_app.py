@@ -1432,12 +1432,13 @@ tr.composer-row td{background:var(--bg)!important;padding:8px 12px 10px 46px;whi
 
 /* ---------- the action bar ---------- */
 #bar{position:fixed;left:0;right:0;bottom:0;z-index:55;display:flex;align-items:center;gap:8px;height:var(--barh);padding:0 10px;background:#121214;border-top:1px solid #ffffff12}
-#branch{display:flex;flex:0 1 auto;align-items:center;gap:7px;min-width:0;overflow:hidden;white-space:nowrap;color:var(--fg-muted);font-size:12px}
-#branch svg.i{width:13px;height:13px;flex:none;color:var(--fg-muted)}
+/* The same monospace and lavender branch icon as the pane's own bar in the desk, so the two read alike. */
+#branch{display:flex;flex:0 1 auto;align-items:center;gap:6px;min-width:0;overflow:hidden;white-space:nowrap;color:var(--fg-muted);font:11px var(--mono)}
+#branch svg.i{width:12px;height:12px;flex:none;color:#9085e9}
 #branch-pop{position:fixed;z-index:120;display:flex;align-items:center;gap:6px;max-width:calc(100vw - 12px);padding:5px 5px 5px 10px;border:1px solid var(--border-strong);border-radius:8px;background:var(--raised);box-shadow:0 8px 24px #0000008c;color:var(--fg);font-size:12px}
 #branch-pop[hidden],#hover-tip[hidden]{display:none}
 #hover-tip{position:fixed;z-index:120;display:grid;gap:3px;max-width:260px;padding:8px 10px;border:1px solid var(--border-strong);border-radius:8px;background:var(--raised);box-shadow:0 8px 24px #0000008c;color:var(--fg-muted);font-size:11.5px;line-height:1.4;pointer-events:none}#hover-tip b{color:var(--fg);font-weight:600}#branch-pop code{font:12px var(--mono);overflow-wrap:anywhere;user-select:all}#branch-pop .ib{width:24px;height:24px;flex:none}#branch-pop svg.i{width:13px;height:13px}#branch-pop small{color:var(--amber);font-size:11px;white-space:nowrap}
-#branch #meta{display:flex;min-width:0;overflow:hidden}#branch #meta b{flex:0 1000000 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;font-weight:500;color:var(--fg-2)}#branch #meta .base{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;margin-left:.35em}#send{gap:0}#send .gc-to{margin-left:.3em}#branch #meta.away b{color:var(--amber)}
+#branch #meta{display:flex;min-width:0;overflow:hidden}#branch #meta b{flex:0 1000000 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;font-weight:400;color:var(--fg-2)}#branch #meta .base{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;margin-left:.35em}#send{gap:0}#send .gc-to{margin-left:.3em}#branch #meta.away b{color:var(--amber)}
 #gc-inline{display:flex;flex:0 1000000 auto;align-items:center;gap:6px;min-width:0;margin:0 auto 0 0!important;font-size:11.5px!important;color:var(--fg-muted)}
 #gc-inline p{margin:0!important;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #gc-inline p:empty{display:none}

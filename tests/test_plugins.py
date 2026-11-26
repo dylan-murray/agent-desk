@@ -37,7 +37,7 @@ class ManifestTests(unittest.TestCase):
 
     def test_the_bundled_file_list_is_a_plugin_with_its_permissions_and_button(self):
         files = parse(BUNDLED / 'files')
-        self.assertEqual((files['tab'], files['icon'], files['permissions']), ('Files', 'folder', ['files.read', 'editor.open']))
+        self.assertEqual((files['tab'], files['icon'], files['permissions']), ('Files', 'folder', ['files.read', 'files.browse', 'editor.open', 'agent.input']))
         self.assertEqual(parse(plugin(self.temp.name, 'plain'))['icon'], 'puzzle')
 
     def test_a_manifest_is_checked_strictly(self):

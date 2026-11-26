@@ -189,11 +189,13 @@ function sendReviewPullRequests(frame,agent,url){
   frame.reviewPrs=list;frame.contentWindow?.postMessage({agentDesk:'pull-requests',prs:list},frame.reviewOrigin);
 }
 // Review's send button names the coding agent it goes to; a pane whose agent the desk can't tell names the session.
-const reviewTarget=agent=>{
+const reviewTarget=agent=>paneAgentName(agent)||sessionTitle(agent);
+// The coding agent a pane runs, or nothing for a shell or other command.
+const paneAgentName=agent=>{
   const names={claude:'Claude',codex:'Codex',grok:'Grok',opencode:'OpenCode',pi:'Pi',cortex:'Cortex Code','cursor-agent':'Cursor'};
   // The launch choice says which agent a pane runs, whatever process is in front; an account names its CLI.
   const account=(window.AGENT_DESK_CONFIG?.accounts||[]).find(item=>item.id===agent.launch_profile);
-  return names[account?.harness||agent.launch_profile||agent.harness||'']||sessionTitle(agent);
+  return names[account?.harness||agent.launch_profile||agent.harness||'']||'';
 };
 // Review starts the desk's own code review on the pane's folder the first time it is shown.
 function showReviewStart(view,agent,note){
