@@ -31,6 +31,8 @@ LEGACY_NAMES = {
 PERMISSIONS = {
     'files.read': "Read files in the pane's folder and see which ones changed",
     'editor.open': "Open files in the pane's editor and see which file it shows",
+    'files.browse': "Browse and open files in any folder in your home folder, not only the pane's",
+    'agent.input': "Type a file's path into the pane's agent or shell, and ask you before moving it to another folder",
 }
 ASSET_TYPES = {'.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
                '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2'}

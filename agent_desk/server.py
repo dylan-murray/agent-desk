@@ -610,7 +610,7 @@ class Handler(SimpleHTTPRequestHandler):
             self.wfile.write(body)
             return
         if route == '/config.js':
-            body = ('window.AGENT_DESK_CONFIG=' + json.dumps({'development': DEVELOPMENT, 'annotations': annotations_available(), 'terminal_limit': DESKS.terminal_limit(), 'accounts': [{k: a[k] for k in ('id', 'harness', 'name', 'label')} for a in accounts.accounts()], 'control_command': python_command(ROOT / 'scripts' / 'agent_control.py', 'agent-desk-control') + ' --desk ' + shlex.quote(self.server.desk_url)}) + ';').encode()
+            body = ('window.AGENT_DESK_CONFIG=' + json.dumps({'development': DEVELOPMENT, 'annotations': annotations_available(), 'terminal_limit': DESKS.terminal_limit(), 'home': os.path.realpath(Path.home()), 'accounts': [{k: a[k] for k in ('id', 'harness', 'name', 'label')} for a in accounts.accounts()], 'control_command': python_command(ROOT / 'scripts' / 'agent_control.py', 'agent-desk-control') + ' --desk ' + shlex.quote(self.server.desk_url)}) + ';').encode()
             self.send_response(200)
             self.send_header('Content-Type', 'application/javascript')
             self.send_header('Cache-Control', 'no-store')
@@ -791,13 +791,15 @@ class Handler(SimpleHTTPRequestHandler):
         action = self.path.rsplit('/', 1)[-1]
         try:
             if action == 'list':
-                return self.send_json(pane_files.listing(cwd))
+                return self.send_json(pane_files.listing(cwd, payload.get('folder')))
             if action == 'read':
                 return self.send_json(pane_files.read(cwd, payload.get('path')))
             if action == 'write':
                 return self.send_json(pane_files.write(cwd, payload.get('path'), payload.get('text'), payload.get('version')))
             if action == 'changes':
-                return self.send_json(pane_files.changes(cwd))
+                return self.send_json(pane_files.changes(cwd, payload.get('folder')))
+            if action == 'branch':
+                return self.send_json(pane_files.branch(cwd))
         except PermissionError as exc:
             return self.send_json({'error': str(exc)}, 403)
         except (FileNotFoundError, FileExistsError) as exc:

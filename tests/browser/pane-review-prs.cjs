@@ -83,6 +83,7 @@ const note = message => {if (process.env.VERBOSE) console.log('  ok ' + message)
   await frame.waitForFunction(() => document.querySelector('#prstate a')?.href.endsWith('/pull/7'), null, {timeout: 30000});
   await frame.waitForSelector('#prpick', {timeout: 10000});
   await frame.waitForFunction(() => /^feature · vs /.test(document.querySelector('#meta').textContent), null, {timeout: 15000});
+  assert.equal(await pane.locator('.pane-branch').textContent(), 'feature', 'the pane names its branch beside its folder');
   await frame.locator('#prpick').click();
   await frame.waitForSelector('#pr-menu:not([hidden])');
   const rows = await frame.locator('#pr-menu button').evaluateAll(buttons => buttons.map(b => [b.querySelector('.num').textContent, b.querySelector('.t').textContent, b.querySelector('.st').textContent, b.getAttribute('aria-checked')]));

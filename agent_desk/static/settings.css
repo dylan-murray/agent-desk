@@ -7,6 +7,10 @@
 .settings-group-head p{margin:4px 0 0;color:var(--ink-2);font-size:12px}
 .settings-row{display:flex;align-items:center;justify-content:space-between;gap:18px;margin:0;padding:16px 20px;border:0;border-bottom:1px solid #29292f;min-width:0}
 .settings-row:last-child{border-bottom:0}
+/* A section inside a group: its own small heading, set apart from the rows above it. */
+.settings-subhead{padding:18px 20px 10px;border-bottom:1px solid #29292f}
+.settings-subhead h3{margin:0;color:var(--ink-2);font-size:11px;font-weight:600;letter-spacing:.6px;text-transform:uppercase}
+.settings-subhead p{margin:4px 0 0;color:var(--ink-2);font-size:12px;line-height:1.5}
 .settings-label{display:flex;flex-direction:column;gap:3px;min-width:0;padding:0}
 .settings-label strong,.settings-option-text strong{color:var(--ink-1);font-size:13px;font-weight:500}
 .settings-label span,.settings-option-text>span{color:var(--ink-2);font-size:12px;line-height:1.5}
@@ -35,6 +39,6 @@
 .settings-range output{min-width:40px;text-align:right;color:var(--ink-2);font-size:12px;font-variant-numeric:tabular-nums}
 .settings-row.muted-choices{opacity:.55}
 @media(prefers-reduced-motion:reduce){.settings-option{transition:none}}
-@media(max-width:760px){#settings-page{padding:16px}.settings-group{margin-top:18px}.settings-row,.settings-group-head{padding-left:14px;padding-right:14px}.settings-option{flex-wrap:wrap;padding:12px}.settings-preview{margin-left:26px}.settings-range input{width:120px}}
+@media(max-width:760px){#settings-page{padding:16px}.settings-group{margin-top:18px}.settings-row,.settings-group-head,.settings-subhead{padding-left:14px;padding-right:14px}.settings-option{flex-wrap:wrap;padding:12px}.settings-preview{margin-left:26px}.settings-range input{width:120px}}
 .top-actions .header-nav #open-settings{margin-left:6px}
 @media(max-width:760px){.top-actions .header-nav #open-settings{margin-left:4px}}

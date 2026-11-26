@@ -76,7 +76,9 @@ Paths are inserted through xterm's bracketed-paste support, without submitting t
 
 ### Editor and review
 
-Each local terminal pane has a side panel beside its terminal. A rail down its left edge switches between **Files**, **Editor** and **Review**, each plugin you added, and any tool the pane's agent opens; each item has an icon and a short name, the one shown is marked in the agent's colour, and a dot means it has something new (Files: changes). The title bar names what is shown. Up and down arrows move along the rail. Open the panel with the side panel button in the pane header; **⌘E** (Ctrl+Shift+E on Linux) opens it on Editor and then moves focus between the terminal and the editor. Drag the divider to resize it, use the side button to dock it below instead, or use the expand button to let it fill the pane and hide the terminal until you collapse it. At phone width it stacks under the terminal. Switching tabs keeps each one loaded, and the dock comes back on the same tab after a reload.
+Each local terminal pane has a side panel beside its terminal. A rail down its left edge switches between **Files**, **Editor** and **Review**, each plugin you added, and any tool the pane's agent opens; each item has an icon and a short name, the one shown is marked in the agent's colour, and a dot means it has something new (Files: changes). The title bar names what is shown; the branch checked out in the pane's folder is in the pane's bottom bar, beside the folder, whichever item is shown. Up and down arrows move along the rail. Open the panel with the side panel button in the pane header; **⌘E** (Ctrl+Shift+E on Linux) opens it on Editor and then moves focus between the terminal and the editor. Drag the divider to resize it, use the side button to dock it below instead, or use the expand button to let it fill the pane and hide the terminal until you collapse it. At phone width it stacks under the terminal. Switching tabs keeps each one loaded, and the dock comes back on the same tab after a reload.
+
+A terminal pane's bottom bar shows its folder (and the remote it runs on), the branch checked out there, how long the agent has been working or idle, and CPU and memory for the agent and everything it started. **Settings → Terminal panes → Bottom bar** switches each of these on or off for every pane; right-clicking a pane's bar opens the same choices, and the menu stays open so several can change at once. With all five off the bar is hidden and the terminal takes its height. The choice is saved per browser, and other Agent Desk tabs in that browser follow it.
 
 **Review** opens code review on the changes in the pane's folder: the working tree against `HEAD`, with comments on lines and ranges and exact suggestions, in the desk's own look.
 
@@ -104,6 +106,14 @@ Only the desk page can read and save files, or open a pane's review, this way; a
 
 **Files** shows the pane's folder as a tree, the same files ⌘P searches, with file icons tinted by type. Files changed since the last commit are marked **M** (changed), **A** (added), **U** (new, not in Git yet), **R** (renamed) or **D** (deleted, shown struck through), with the lines added and removed and a five-block bar like GitHub's; a closed folder shows how many changed files it holds. The title bar names the folder and how many files changed. Folders with changes open the first time you look. Type in **Filter files** to narrow the tree to matching paths (Escape clears it), and press **Changed** beside it to show only changed files; the collapse button closes every folder. Click a file to open it in the Editor; Files highlights whichever file the Editor shows. The list refreshes every few seconds.
 
+The path bar above the filter says which folder Files shows, from your home folder down (`~ / code / app`), with a green dot on the folder the pane's agent works in; **Filter** names how many files there are. Click any folder in the path, or the up arrow, to go up, and choose **Open this folder** on a folder to show only it. Files can show any folder in your home folder, and files from those folders open in the Editor too. While you look somewhere else, a strip says where the agent is, with **Back** and **Move Claude here…**. A folder outside Git is read again only every 15 seconds, and a large one shows the files it found in a second and says so.
+
+Right-click a file or folder, or use the **…** that appears on hover, for:
+
+- **Add to Claude** (or **Paste path in terminal** for a shell) types `@src/a.py` into the agent's input without sending it, so you can bring a file or folder into the conversation. A file outside the agent's folder goes by its full path.
+- **Copy path** copies its full path.
+- **Move Claude here…** (folders) asks how. A coding agent can't change folders in the middle of a conversation, so for one you choose **Tell Claude to work there**, which puts that message in its input for you to send, or **Start a new Claude there**, which opens the launcher with that folder and the same agent. A shell offers **Change this terminal's folder**, which runs `cd`, or **Start an agent there**. Files then follows the agent to the new folder. The pane's footer still shows the folder it started in, and the desk forgets the move when the page reloads.
+
 ### Plugins
 
 Files and Code review are plugins, and you can add your own. A plugin is a folder with a `plugin.json`, in `~/.agent-desk/plugins`, `~/.claude/skills` or `~/.agents/skills` (plugins that ship with Agent Desk live in `agent_desk/plugins`). It has a page, a server, or both:
@@ -128,16 +138,19 @@ The folder name is the plugin's ID (lowercase letters, digits and dashes). `name
 
 | Call | Needs | Answers |
 | --- | --- | --- |
-| `pane.info` | nothing | the session's title, folder name and project |
-| `files.list` | `files.read` | the files in the pane's folder |
-| `files.changes` | `files.read` | each changed file, how it changed, and the lines added and removed |
-| `files.read` | `files.read` | a text file's contents (paths are kept inside the folder) |
+| `pane.info` | nothing | the session's title, folder name and project; with `files.browse`, also the folder's full path, the folder its agent was moved to, and the agent's name |
+| `files.list` | `files.read` | the files in the pane's folder, and its branch; with `files.browse`, also its full path and your home folder's, and `folder` lists another folder in your home folder |
+| `files.changes` | `files.read` | each changed file, how it changed, and the lines added and removed (`folder` as for `files.list`) |
+| `files.read` | `files.read` | a text file's contents (relative paths are kept inside the folder; a full path in your home folder needs `files.browse`) |
+| `files.copyPath` | `files.read` | copies a file's full path to the clipboard |
 | `editor.open` | `editor.open` | opens a file in the pane's Editor |
 | `editor.current` | `editor.open` | the file the Editor shows; the `editor` event says when it changes |
+| `agent.mention` | `agent.input` | types a path into the pane's input without sending it: an `@` mention for a coding agent, a quoted word for a shell |
+| `agent.move` | `agent.input` | asks you, in the desk's own dialog, how to move the pane's agent or shell to a folder, and answers with your `choice` |
 | `buttons.set` | nothing | presses, releases or disables one of its own buttons |
 | `tab.set` | nothing | its own tab's `subtitle` (up to 60 characters) and `note` (up to 24) in the title bar, and `badge`, the dot on its rail item; plain text only |
 
-A plugin's page loads `../sdk/agent-desk.js` (and optionally `../sdk/plugin.css` for the desk's colors and type), then calls `AgentDesk.call('files.list')` and listens with `AgentDesk.on('button', ({id, pressed}) => …)`. Calls it has no permission for, and calls that don't exist, are refused. A plugin can't write files or type into the terminal yet.
+A plugin's page loads `../sdk/agent-desk.js` (and optionally `../sdk/plugin.css` for the desk's colors and type), then calls `AgentDesk.call('files.list')` and listens with `AgentDesk.on('button', ({id, pressed}) => …)`. Calls it has no permission for, and calls that don't exist, are refused. A plugin can't write files, and can only type into the terminal through `agent.mention`, which never presses Enter; `agent.move` presses it only for the `cd` you chose.
 
 **Buttons.** The desk draws a plugin's buttons in the panel's title bar while its tab is shown, from the manifest's text only; clicking one sends the plugin a `button` event, with `pressed` for a toggle.
 
