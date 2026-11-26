@@ -30,10 +30,6 @@ def _home():
     return Path(os.path.realpath(Path.home()))
 
 
-def _within(path, folder):
-    return path == folder or folder in path.parents
-
-
 def resolve(cwd, relative):
     """The file a path names, and how to show it: from the pane's folder when it is inside, else in full.
 
@@ -57,12 +53,12 @@ def folder_root(cwd, folder=None):
         return pane
     if not isinstance(folder, str) or not os.path.isabs(folder) or '\x00' in folder:
         raise ValueError('Name a folder by its full path')
-    root = Path(os.path.realpath(folder))
-    if not (_within(root, pane) or _within(root, _home())):
+    root = os.path.join(os.path.realpath(folder), '')
+    if not (root.startswith(os.path.join(pane, '')) or root.startswith(os.path.join(_home(), ''))):
         raise PermissionError('Only folders in your home folder or the pane\'s folder can be browsed')
-    if not root.is_dir():
+    if not os.path.isdir(root):
         raise FileNotFoundError(f'{folder} is not a folder')
-    return root
+    return Path(root)
 
 
 def _git(root, *args):

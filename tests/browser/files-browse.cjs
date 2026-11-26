@@ -41,7 +41,7 @@ const note = message => {if (process.env.VERBOSE) console.log('  ok ' + message)
   page.on('pageerror', error => errors.push(error.message));
   await page.goto(base);await page.waitForLoadState('load');
   const launch = (cwd, argv, name) => page.evaluate(async ([cwd, argv, name]) => {const t = await terminalRequest('/api/terminals/launch', {cwd, argv, name});await refresh();selectPane(t.id);return t.id;}, [cwd, argv, name]);
-  const screen = id => page.evaluate(id => {const buffer = paneViews.get(id).term.buffer.active;let text = '';for (let i = 0; i < buffer.length; i++) text += buffer.getLine(i).translateToString(true) + '\n';return text.replace(/\n(?=\S)/g, '\n');}, id);
+  const screen = id => page.evaluate(id => {const buffer = paneViews.get(id).term.buffer.active;let text = '';for (let i = 0; i < buffer.length; i++) text += buffer.getLine(i).translateToString(true) + '\n';return text;}, id);
   const flat = text => text.replace(/\s+/g, '');
   async function openFiles(id) {
     await page.waitForFunction(id => paneViews.get(id)?.term && !paneViews.get(id).restoring, id);
