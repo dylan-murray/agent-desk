@@ -53,8 +53,11 @@ def folder_root(cwd, folder=None):
         return pane
     if not isinstance(folder, str) or not os.path.isabs(folder) or '\x00' in folder:
         raise ValueError('Name a folder by its full path')
-    root = os.path.join(os.path.realpath(folder), '')
-    if not (root.startswith(os.path.join(pane, '')) or root.startswith(os.path.join(_home(), ''))):
+    root = os.path.realpath(folder)
+    base = str(pane) if root == str(pane) or root.startswith(os.path.join(pane, '')) else str(_home())
+    if root == base:
+        return Path(base)
+    if not root.startswith(os.path.join(base, '')):
         raise PermissionError('Only folders in your home folder or the pane\'s folder can be browsed')
     if not os.path.isdir(root):
         raise FileNotFoundError(f'{folder} is not a folder')
