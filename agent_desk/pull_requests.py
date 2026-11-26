@@ -376,6 +376,10 @@ class PullRequests:
         self.woken.set()
         return {'ok': True}
 
+    def hidden_urls(self, terminal):
+        with self.lock:
+            return sorted(self.forgotten.get(terminal, ()))
+
     def hidden(self, terminal):
         """The pull requests this terminal hid, newest first."""
         with closing(self.connect()) as db:

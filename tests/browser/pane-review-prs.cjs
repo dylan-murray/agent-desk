@@ -114,13 +114,31 @@ const note = message => {if (process.env.VERBOSE) console.log('  ok ' + message)
   assert.equal(await frame.locator('#codex').isDisabled(), false);
   note('switching back shows the checked-out work again, without #8\'s notes');
 
+  await pane.hover();await pane.locator('.pane-pr-hide').click();
+  await page.waitForFunction(([id, url]) => (everyAgent().find(a => a.id === id)?.pull_requests_hidden || []).some(hidden => hidden === url), [id, PR7], {timeout: 20000});
+  await pause(1500);
+  assert.equal(await frame.locator('#prstate a').getAttribute('href'), PR7, 'the checked-out branch\'s pull request stays in Review after the pane hides it');
+  await frame.locator('#prpick').click();await frame.waitForSelector('#pr-menu:not([hidden])');
+  assert.deepEqual(await frame.locator('#pr-menu button .num').allTextContents(), ['#7', '#8']);
+  await frame.locator('#pr-menu button[data-url$="/pull/8"]').click();
+  await frame.waitForSelector('section.file[data-path="farewell.py"]', {timeout: 30000});
+  await pane.hover();await pane.locator('.pane-pr-hide').click();
+  await frame.waitForSelector('section.file[data-path="app.py"]', {timeout: 30000});
+  assert.equal(await frame.locator('#prstate a').getAttribute('href'), PR7, 'hiding the PR shown goes back to the branch\'s');
+  assert.equal(await frame.locator('#prpick').count(), 0, 'nothing else to switch to');
+  assert.equal(await frame.locator('text=Use an f-string here too').count(), 0, '#8\'s GitHub comment goes with it');
+  await page.screenshot({path: evidence('pane-review-prs-03-hidden.png')});
+  note('hiding the branch\'s PR from the pane keeps it in Review; hiding another one drops it from Review and goes back to the branch');
+  for (const url of [PR7, PR8]) await page.evaluate(async ({id, url}) => {await terminalRequest('/api/pull-requests/unhide', {id, url});await refresh();}, {id, url});
+  await frame.waitForSelector('#prpick', {timeout: 20000});
+
   await page.setViewportSize({width: 390, height: 844});await pause(500);
   await pane.locator('.pane-dock-expand').click();await pause(300);
   await frame.locator('#prpick').click();await frame.waitForSelector('#pr-menu:not([hidden])');
   const fits = await frame.evaluate(() => {const r = document.querySelector('#pr-menu').getBoundingClientRect();return r.left >= 0 && r.right <= innerWidth;});
   assert.equal(fits, true, 'the menu stays inside a phone-width review');
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 390);
-  await page.screenshot({path: evidence('pane-review-prs-03-narrow.png')});
+  await page.screenshot({path: evidence('pane-review-prs-04-narrow.png')});
   note('at 390px the menu fits inside the review');
 
   await page.evaluate(id => terminalRequest('/api/terminals/stop', {id}), id);
