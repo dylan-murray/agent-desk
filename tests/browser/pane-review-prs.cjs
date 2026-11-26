@@ -115,7 +115,7 @@ const note = message => {if (process.env.VERBOSE) console.log('  ok ' + message)
   note('switching back shows the checked-out work again, without #8\'s notes');
 
   await pane.hover();await pane.locator('.pane-pr-hide').click();
-  await page.waitForFunction(id => everyAgent().find(a => a.id === id)?.pull_requests_hidden?.includes('https://github.com/fixture/project/pull/7'), id, {timeout: 20000});
+  await page.waitForFunction(([id, url]) => (everyAgent().find(a => a.id === id)?.pull_requests_hidden || []).some(hidden => hidden === url), [id, PR7], {timeout: 20000});
   await pause(1500);
   assert.equal(await frame.locator('#prstate a').getAttribute('href'), PR7, 'the checked-out branch\'s pull request stays in Review after the pane hides it');
   await frame.locator('#prpick').click();await frame.waitForSelector('#pr-menu:not([hidden])');
