@@ -167,6 +167,7 @@ const note = message => {if (process.env.VERBOSE) console.log('  ok ' + message)
   assert.equal(await ghThread.locator('.cm').first().isVisible(), true, 'Expand every comment did not open the thread');
   note('a comment thread collapses to one line from its header, and the toolbar expands every comment');
   assert.match(await frame.locator('#meta').textContent(), /^feature · vs /);
+  await until(async () => (await pane.locator('.pane-branch').textContent()) === 'feature', 'the pane should name the branch its folder switched to');
   await frame.locator('.thread-box', {hasText: 'f-strings read better'}).scrollIntoViewIfNeeded();
   await page.screenshot({path: evidence('pane-review-06-github.png')});
   note('once the branch has a pull request, the review covers the whole branch and its GitHub comment lands on its line');

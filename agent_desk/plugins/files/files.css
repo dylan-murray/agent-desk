@@ -1,7 +1,25 @@
 body{overflow:auto}
 svg{flex-shrink:0;fill:none;stroke:currentColor;stroke-width:1.3;stroke-linecap:round;stroke-linejoin:round}
-/* The filter stays on top while the tree scrolls; Changed lives in it because it narrows the same list. */
-.filter{position:sticky;top:0;z-index:1;display:flex;align-items:center;gap:7px;height:30px;margin:0;padding:0 6px 0 10px;border-bottom:1px solid #ffffff0b;background:#0f0f11;color:var(--ink-muted)}
+/* Where you are and the filter stay on top while the tree scrolls; Changed lives in the filter because it narrows the same list. */
+header{position:sticky;top:0;z-index:2;background:#0f0f11}
+.path{display:flex;align-items:center;gap:4px;height:30px;padding:0 8px 0 4px;border-bottom:1px solid #ffffff0b}
+#up{display:grid;place-items:center;flex-shrink:0;width:22px;height:22px;border:0;border-radius:5px;background:none;color:var(--ink-2)}
+#up:hover:not(:disabled){background:#ffffff0d;color:var(--ink-1)}#up:disabled{opacity:.35;cursor:default}#up svg{width:13px;height:13px}
+/* A long path gives way from the left, so the folder you are in always shows. */
+#crumbs{display:flex;align-items:center;flex:1;min-width:0;overflow:hidden;white-space:nowrap;font-size:12px}
+.crumb{display:inline-flex;align-items:center;gap:5px;flex-shrink:1;min-width:0;max-width:max-content;height:22px;padding:0 4px;border:0;border-radius:4px;background:none;color:var(--ink-muted);overflow:hidden;text-overflow:ellipsis}
+button.crumb:hover{background:#ffffff0d;color:var(--ink-1)}
+.crumb.current{flex-shrink:0;color:var(--ink-1);font-weight:550}.crumb.lead{flex-shrink:0;cursor:default}
+.sep{flex-shrink:0;color:#ffffff2e;font-size:11px}
+/* Where the pane's agent works: a small green dot on that folder, in the path and in the tree. */
+.here{flex-shrink:0;width:6px;height:6px;border-radius:50%;background:var(--good);box-shadow:0 0 0 2px #199e7033}
+.row .here{margin-left:2px}
+#away{display:flex;align-items:center;gap:4px;min-height:28px;padding:3px 8px 3px 10px;border-bottom:1px solid #ffffff0b;background:#ffffff05;color:var(--ink-2);font-size:11.5px}
+#away[hidden]{display:none}#away>span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}#away b{font-weight:550;color:var(--ink-1)}
+#away button{flex-shrink:0;height:22px;padding:0 8px;border:1px solid transparent;border-radius:6px;background:none;color:var(--ink-2);font-size:11px;white-space:nowrap}
+#away button:hover{background:#ffffff0d;color:var(--ink-1)}
+#away button[data-move]{border-color:var(--border-strong);color:var(--ink-1)}#away button[data-move]:hover{border-color:#ffffff38}
+.filter{display:flex;align-items:center;gap:7px;height:30px;margin:0;padding:0 6px 0 10px;border-bottom:1px solid #ffffff0b;color:var(--ink-muted)}
 .filter>svg{width:13px;height:13px}
 .filter input{flex:1;min-width:0;height:100%;border:0;outline:0;background:none;color:var(--ink-1);font:12px inherit}
 .filter input::placeholder{color:var(--ink-muted)}
@@ -26,9 +44,16 @@ svg{flex-shrink:0;fill:none;stroke:currentColor;stroke-width:1.3;stroke-linecap:
 .row .end{margin-left:auto;display:flex;align-items:center;gap:8px;flex-shrink:0;padding-left:10px}
 .row .mark{width:9px;font:600 10px var(--mono);text-align:right}
 .row .count{font:10.5px var(--mono);color:var(--amber)}
+/* Each row's actions sit behind …, shown on hover or focus; right-click opens the same menu. */
+.row .more{display:none;place-items:center;width:18px;height:18px;margin-right:-6px;border-radius:4px;color:var(--ink-muted)}
+.row:hover .more,.row:focus-visible .more{display:grid}.row .more:hover{background:#ffffff14;color:var(--ink-1)}.row .more svg{width:12px;height:12px;fill:currentColor;stroke:none}
+#menu{position:fixed;z-index:5;display:flex;flex-direction:column;min-width:170px;padding:4px;border:1px solid #36363b;border-radius:8px;background:#1b1b1e;box-shadow:0 10px 26px #0007}
+#menu[hidden]{display:none}
+#menu button{height:26px;padding:0 10px;border:0;border-radius:5px;background:none;color:var(--ink-1);text-align:left;font-size:12px;white-space:nowrap}
+#menu button:hover,#menu button:focus-visible{background:#ffffff0d;outline:0}
 /* File icons take a quiet tint by type, so a long list is easier to scan. */
 .ft{color:#7d7b74}.folder .ft{color:#8fa3bf}
-.ft.py{color:#6ea8d8}.ft.js,.ft.ts{color:#d8c46e}.ft.md{color:#a5a5b8}.ft.json,.ft.toml,.ft.yml{color:#c9a46a}.ft.css,.ft.html{color:#c98ab8}.ft.sh{color:#7fc6a8}.ft.go,.ft.rs{color:#d89a6e}
+.ft.py{color:#6ea8d8}.ft.js,.ft.ts{color:#d8c46e}.ft.md{color:#a5a5b8}.ft.json,.ft.toml,.ft.yml{color:#c9a46a}.ft.css,.ft.html{color:#c98ab8}.ft.rb{color:#d87e7e}.ft.sh{color:#7fc6a8}.ft.go,.ft.rs{color:#d89a6e}
 .lines{font:10.5px var(--mono);color:var(--ink-muted)}.lines i{font-style:normal;color:var(--add)}.lines b{font-weight:400;color:var(--del)}
 /* Like GitHub: up to five blocks, filled in proportion to the lines changed. */
 .bars{display:inline-flex;gap:1px}.bars i{width:4px;height:8px;border-radius:1px;background:#ffffff1c}.bars i.a{background:var(--add)}.bars i.d{background:var(--del)}
